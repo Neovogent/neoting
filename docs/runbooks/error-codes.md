@@ -560,3 +560,43 @@ ambiguous in the other direction, and the two incidents — "Meta's signature
 failed" and "Stripe's signature failed" — genuinely share a runbook: verify
 against the **raw** body, before parsing, and check whether a proxy re-serialised
 it.
+
+## `NT-WFL-001` — the approval workflow is still active
+
+**Status:** `409` · **Surface:** `POST /v1/approval-workflows/{workflowId}/deletion` · **Added by:** review package H (7 Sep 2026)
+
+**Symptom.** Somebody presses the bin on a workflow card and gets *"«Name» is
+arming an approval step right now. Turn it off first — that goes through
+Review → Approve — and then it can be deleted."*
+
+**What it means.** An ARMED workflow cannot be deleted by an ingest-class
+operation. Turning it off first is a `policy.activate` proposal, and that
+proposal is a human decision with a review card and an audit line behind it.
+
+**Why it exists.** Deleting an active policy removes an approval gate — the same
+class of act as arming one, read backwards. Without this refusal,
+disarm-by-DELETE would be the way around `policy.activate` entirely: the gate
+would disappear with no review, no approver named and nothing in the audit chain
+saying which control went away. The workflow surface is deliberately
+compose-freely / arm-through-approval, and this is the third side of that
+triangle.
+
+**This is not an error the user caused.** They asked for something reasonable in
+the wrong order, and the detail names the order.
+
+**Diagnose.**
+
+```sql
+SELECT id, name, business_id, is_active, updated_at
+  FROM approval_workflows
+ WHERE id = :workflowId;
+```
+
+**Fix.** Turn the workflow off from its card — that stages a `policy.activate`
+proposal with `active: false`, which the practice's super admin approves — then
+delete it. A workflow that is already inactive deletes immediately, and deleting
+one that does not exist is a `204`, never this code.
+
+⚠ **Deleting a workflow does not erase history.** `approvals.workflow_id` is
+`ON DELETE SET NULL`, so the record of who approved what survives the policy
+that asked them to.

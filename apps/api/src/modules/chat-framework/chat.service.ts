@@ -105,6 +105,66 @@ export const EXPORT_GUIDANCE =
   "It goes through Review → Approve, and only your practice's super admin can " +
   'release it. Nothing leaves the product on its own.';
 
+/**
+ * **The dangling offer, made actionable** — review item 51 §1.
+ *
+ * Asked to *"set a rule so documents auto-publish when ready"*, the assistant
+ * refuses, and the refusal is RIGHT and stays: Governance §10 and D44 forbid
+ * any rule that releases a document without a human. What was wrong is what
+ * came next — it ended with *"Would you like to create a coding rule
+ * instead?"* and no way to say yes. The accountant had to re-type the whole
+ * request, correctly phrased, to reach a flow the assistant had just offered
+ * them.
+ *
+ * `offer: 'rule'` is that question with a button behind it. The web renders an
+ * actionable card; pressing it re-asks with a rule-shaped utterance and enters
+ * the SAME `LIVE_RULE` beat, so nothing about the staging path changes.
+ *
+ * Deterministic and keyed on the MODEL's own intent, exactly like
+ * `EXPORT_GUIDANCE` above and for its reasons: both providers agree, the
+ * refusal sentences stay the server's, and it needs no prompt change and
+ * therefore no §9.8 re-record. It never fires over a `decorate()` degradation.
+ *
+ * ⚠ It offers, and offers ONLY. It creates nothing, drafts nothing, and does
+ * not change the reply the model wrote — the refusal is the answer and this is
+ * a next step beside it.
+ */
+const AUTOMATION_ASK =
+  // ⚠ No trailing `\b`: `auto[- ]?approv` ends mid-word in "auto-approve", so a
+  // word boundary there can never match. Found by the test below, which is why
+  // it names the exact utterance rather than a shape.
+  /\bauto[- ]?(publish|approv)|\b(publish|approve)(es|s|d|ing)? (them |it )?(automatically|on its own)|\bwithout (my |any )?(approval|review)\b/i;
+
+/** The same utterance shape, said as a rule ask rather than an automation one. */
+const RULE_ASK = /\bset\b[^.]{0,20}\brules?\b|\bmake (a|the) rule\b|\bcoding rule\b/i;
+
+/**
+ * A coding-rule instruction, however it is phrased — and ⚠ **this is the one
+ * the walkthrough proved was needed.**
+ *
+ * `decorate()` offers the client picker on the LIVE_RULE branch, which assumes
+ * the model classified the ask. With NO client in scope it frequently cannot:
+ * `readContext` returns an empty chart for an unscoped turn, and the prompt
+ * tells the model to code against the client's own categories — so *"Whenever
+ * Bidfood documents arrive, code them Cost of Sales — Food"* came back as a
+ * polite GENERAL asking for a category list, and the picker never appeared.
+ * The accountant was told what was missing and still given no way to supply it,
+ * which is item 51 §2's defect wearing a different sentence.
+ *
+ * So the picker is offered on the UTTERANCE too, and only when there is no
+ * client: the missing client is the reason the model could not answer, and it
+ * is the one thing a picker can fix. It offers and nothing else.
+ *
+ * ⚠ It matches a rule INSTRUCTION ("whenever X arrives, code them Y"), not an
+ * utterance that merely mentions rules. `RULE_ASK`'s "set a rule for…" is
+ * deliberately absent: *"set rules for X so documents auto-publish"* is an
+ * automation ask that has not been answered yet, and it must get the OFFER —
+ * asking which client to hang a rule on before they have said they want one is
+ * a question about the wrong thing. The two are kept disjoint here rather than
+ * ordered around each other.
+ */
+const RULE_SHAPED = /\bwhenever\b[^.]{0,80}\bcode\b|\bcode (them|it|these|those)\b/i;
+
 export interface ChatTurnInput {
   readonly utterance: string;
   readonly businessId?: string | undefined;
@@ -119,6 +179,17 @@ export interface ChatTurnOutput {
   references?: { type: GroundedRecord['type']; id: string; label: string }[];
   /** Server-composed illustrations of a grounded answer — see `display.ts`. */
   display?: ChatDisplayBlock[];
+  /**
+   * ⚠ **SERVER-SET, never the model's** — there is no field in `ModelTurn` a
+   * model could put either of these in.
+   *
+   * `awaiting: 'client'` means the turn understood the action and has no client
+   * to hang it on. `offer: 'rule'` means a refusal named something the
+   * accountant CAN have. Both are affordances for the UI; neither changes what
+   * the turn did, which is nothing.
+   */
+  awaiting?: 'client';
+  offer?: 'rule';
   usage: {
     model: string;
     tier: 'judgment' | 'workhorse' | 'mechanical';
@@ -213,6 +284,35 @@ export class ChatService {
     // returning it directly and this override catches the stragglers — and now
     // ROUTES them (intent SHOW_EXPORTS, the Export screen opens) instead of
     // answering prose about where the screen is. See EXPORT_GUIDANCE above.
+    /**
+     * Review item 51 §2, the unscoped case. A rule-shaped utterance with NO
+     * client is answerable by nobody until a client is named — see RULE_SHAPED
+     * for why the LIVE_RULE branch alone was not enough. Checked FIRST so a
+     * turn that needs a client asks for one rather than re-offering the rule
+     * the accountant has already accepted.
+     */
+    if (
+      (turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') &&
+      input.businessId === undefined &&
+      RULE_SHAPED.test(input.utterance)
+    ) {
+      decorated.awaiting = 'client';
+    }
+
+    /**
+     * Review item 51 §1. Keyed on the MODEL's own intent so it can never fire
+     * over a routed turn or a `decorate()` degradation, and placed BEFORE the
+     * export override because an automation ask is the more specific reading of
+     * an utterance that could match both.
+     */
+    if (
+      decorated.awaiting === undefined &&
+      (turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') &&
+      (AUTOMATION_ASK.test(input.utterance) || RULE_ASK.test(input.utterance))
+    ) {
+      decorated.offer = 'rule';
+    }
+
     if ((turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') && EXPORT_ASK.test(input.utterance)) {
       decorated.intent = 'SHOW_EXPORTS';
       decorated.reply = EXPORT_GUIDANCE;
@@ -376,8 +476,24 @@ export class ChatService {
 
     if (turn.intent === 'LIVE_RULE') {
       if (businessId === undefined) {
+        /**
+         * ⚠ **Review item 51 §2 — this was the dead end.** The reply was
+         * *"Pick a client first"* and the screen offered no way to pick one:
+         * the scope chip is at the top of the workspace, and the accountant
+         * had named the client in the sentence they had just typed.
+         *
+         * `awaiting: 'client'` hands the UI the in-chat picker
+         * (`ChatClientPicker`, already built for uploads held pending a client
+         * answer — one picker, not two) and it re-asks the same utterance
+         * scoped. The never-guess rule is intact and is the reason this is a
+         * picker rather than a resolver: a rule that codes the wrong client's
+         * books is invisible until a return is wrong, so the client is chosen
+         * BY NAME, by a human, every time — even when the sentence named one.
+         */
         output.intent = 'GENERAL';
-        output.reply = 'Pick a client first — a coding rule belongs to one client, not to the practice.';
+        output.awaiting = 'client';
+        output.reply =
+          'A coding rule belongs to one client, not to the practice. Which client is this rule for?';
         return output;
       }
       const built = await scopedDb(this.prisma, context, (db) => buildRuleDraft(db, businessId, turn, categories));

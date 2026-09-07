@@ -13,7 +13,6 @@ import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { Modal } from '../components/DynamicComponents/Modal';
-import { WorkflowCard, blankWorkflow } from '../components/DynamicComponents/WorkflowCard';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { RolePicker } from '../components/DynamicComponents/RolePicker';
 // ⚠ EVERY SUB-TAB IS LAZY, and that is a budget decision, not a style. This is
@@ -36,7 +35,11 @@ import { RolePicker } from '../components/DynamicComponents/RolePicker';
 // The two modals on this route are lazy for the same reason the tabs are: both
 // open on a click, neither is needed to paint the screen.
 const DocumentPreview = lazy(() => import('../components/DynamicComponents/DocumentPreview').then((m) => ({ default: m.DocumentPreview })));
-const WorkflowEditor = lazy(() => import('../components/DynamicComponents/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })));
+// The whole Workflows tab in one lazy chunk (review package H) — the card,
+// the editor and this view's near-duplicate of the Approvals grid, replaced
+// by the component both views now share. It is also what finally filters the
+// list BY CLIENT: this tab rendered every workflow in the practice.
+const WorkflowsPanel = lazy(() => import('../components/DynamicComponents/WorkflowsPanel'));
 const ClientInbox = lazy(() => import('./ClientInbox').then((m) => ({ default: m.ClientInbox })));
 // Lazy for the same reason as DocumentPreview above: it mounts only inside the
 // chase Modal, and its ~3.2 kB gzip chunk was part of what pushed this route —
@@ -72,7 +75,7 @@ import { channelLabel } from '../lib/channels';
 import { receivedViaText } from '../lib/channelLabels';
 import { resendClientSetupLink } from '../api/setup-link';
 import { errorLabel } from '../api/slices';
-import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
+import type { BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
 /**
  * Copy for the client detail screen — Governance §12.6, following the shape of
@@ -83,6 +86,22 @@ import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, 
  * inserted clause — see the note at the head of ActionCard for why.
  */
 const m = defineMessages({
+  // ── Documents tab ───────────────────────────────────────────────────────
+  documentsEmpty: { id: 'clients.clientDetailView.documentsEmpty', defaultMessage: 'No documents yet.' },
+  /* ── The client's own Trash (review item 61) ────────────────────────────
+     The register and its Trash are one surface, one sub-tab apart: a deleted
+     document is still a document, and the Documents tab is where this client's
+     documents live. See `ClientTrashPanel`'s header for why not Settings. */
+  subTabRegister: { id: 'clients.clientDetailView.subTabRegister', defaultMessage: 'Register' },
+  subTabTrash: { id: 'clients.clientDetailView.subTabTrash', defaultMessage: 'Trash' },
+  uploadDocuments: { id: 'clients.clientDetailView.uploadDocuments', defaultMessage: 'Upload Documents' },
+  bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
+  download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
+  bulkRetryFailed: { id: 'clients.clientDetailView.bulkRetryFailed', defaultMessage: 'Retry failed' },
+  retryTitle: {
+    id: 'clients.clientDetailView.retryTitle',
+    defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
+  },
   starClient: { id: 'clients.clientDetailView.starClient', defaultMessage: 'Star client' },
   unstarClient: { id: 'clients.clientDetailView.unstarClient', defaultMessage: 'Unstar client' },
   // ── Status column ───────────────────────────────────────────────────────
@@ -417,40 +436,6 @@ const m = defineMessages({
   },
 
   // ── Approvals tab: workflows ────────────────────────────────────────────
-  workflowsHeading: { id: 'clients.clientDetailView.workflowsHeading', defaultMessage: 'Workflows' },
-  workflowsIntro: {
-    id: 'clients.clientDetailView.workflowsIntro',
-    defaultMessage:
-      'Approvals are opt-in. With no active workflow this client has no approval step at all — items go Ready → publish with nothing pausing.',
-  },
-  newWorkflow: { id: 'clients.clientDetailView.newWorkflow', defaultMessage: 'New workflow' },
-  deleteWorkflowTitle: { id: 'clients.clientDetailView.deleteWorkflowTitle', defaultMessage: 'Delete the "{name}" workflow?' },
-  deleteWorkflowDetail: {
-    id: 'clients.clientDetailView.deleteWorkflowDetail',
-    defaultMessage: '{count, plural, one {# stage} other {# stages}}, applying to {appliesTo}.',
-  },
-  deleteWorkflowConsequence: {
-    id: 'clients.clientDetailView.deleteWorkflowConsequence',
-    defaultMessage: 'Items on it stop pausing for approval and publish straight through.',
-  },
-  deleteWorkflowConfirmLabel: { id: 'clients.clientDetailView.deleteWorkflowConfirmLabel', defaultMessage: 'Yes, delete it' },
-
-  // ── Documents tab ───────────────────────────────────────────────────────
-  documentsEmpty: { id: 'clients.clientDetailView.documentsEmpty', defaultMessage: 'No documents yet.' },
-  /* ── The client's own Trash (review item 61) ────────────────────────────
-     The register and its Trash are one surface, one sub-tab apart: a deleted
-     document is still a document, and the Documents tab is where this client's
-     documents live. See `ClientTrashPanel`'s header for why not Settings. */
-  subTabRegister: { id: 'clients.clientDetailView.subTabRegister', defaultMessage: 'Register' },
-  subTabTrash: { id: 'clients.clientDetailView.subTabTrash', defaultMessage: 'Trash' },
-  uploadDocuments: { id: 'clients.clientDetailView.uploadDocuments', defaultMessage: 'Upload Documents' },
-  bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
-  download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
-  bulkRetryFailed: { id: 'clients.clientDetailView.bulkRetryFailed', defaultMessage: 'Retry failed' },
-  retryTitle: {
-    id: 'clients.clientDetailView.retryTitle',
-    defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
-  },
   retryDetail: {
     id: 'clients.clientDetailView.retryDetail',
     defaultMessage:
@@ -718,7 +703,7 @@ export function ClientDetailView() {
     starredClientIds, toggleStarClient,
     onboardingLinks, sendOnboardingLink, resendOnboardingLink,
     tasks, setTaskStatus, auditLog, settings, conversations, selectConversation, setActiveTab,
-    approvalWorkflows, saveWorkflow, deleteWorkflow,
+    approvalWorkflows,
     businessAccounts, inviteBusinessUser, openRegistrationLink, colleagues, addTask,
     advanceApproval, rejectApproval,
     clientSideApprovals, approvalRequests, sendApprovalRequest, resendApprovalRequest, openApprovalLink,
@@ -741,7 +726,6 @@ export function ClientDetailView() {
   const [previewId, setPreviewId] = useQueryParam('doc');
   const preview = previewId ? documents.find((d) => d.id === previewId) ?? null : null;
   const setPreview = (doc: Document | null) => setPreviewId(doc ? doc.id : null);
-  const [editingWorkflow, setEditingWorkflow] = useState<ApprovalWorkflow | null>(null);
   const [inviting, setInviting] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
@@ -863,7 +847,7 @@ export function ClientDetailView() {
   const clientApprovals = approvals.filter((a) => a.clientName === client.name);
   /** Live workflows this client's items are actually running through. */
   const clientWorkflows = approvalWorkflows.filter(
-    (w) => w.active && clientApprovals.some((a) => a.workflowId === w.id),
+    (w) => w.isActive && clientApprovals.some((a) => a.workflowId === w.id),
   );
   const chase = chases.find((c) => c.clientId === client.id);
   const setupLink = onboardingLinks.find((l) => l.clientId === client.id);
@@ -1688,47 +1672,17 @@ export function ClientDetailView() {
                 ]}
               />
 
-              <div>
-                <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-                  <div>
-                    <h3 className="font-sans font-bold text-lg text-white tracking-tight">{intl.formatMessage(m.workflowsHeading)}</h3>
-                    <p className="text-[12px] text-zinc-500 mt-0.5">
-                      {intl.formatMessage(m.workflowsIntro)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setEditingWorkflow(blankWorkflow())}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
-                  >
-                    <Plus size={15} strokeWidth={2.5} />
-                    {intl.formatMessage(m.newWorkflow)}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {approvalWorkflows.map((w) => (
-                    <WorkflowCard
-                      key={w.id}
-                      workflow={w}
-                      usage={clientApprovals.filter((a) => a.workflowId === w.id).length}
-                      onEdit={() => setEditingWorkflow(w)}
-                      onToggle={() => saveWorkflow({ ...w, active: !w.active })}
-                      onDelete={async () => {
-                        const ok = await confirm({
-                          tone: 'red',
-                          title: intl.formatMessage(m.deleteWorkflowTitle, { name: w.name }),
-                          detail: intl.formatMessage(m.deleteWorkflowDetail, {
-                            count: w.stages.length,
-                            appliesTo: w.appliesTo,
-                          }),
-                          consequence: intl.formatMessage(m.deleteWorkflowConsequence),
-                          confirmLabel: intl.formatMessage(m.deleteWorkflowConfirmLabel),
-                        });
-                        if (ok) deleteWorkflow(w.id);
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
+              {/* ⚠ Scoped to THIS client, which it never was. The grid this
+                  replaces rendered `approvalWorkflows.map(...)` unfiltered, so
+                  a policy pointed at another client appeared here looking as
+                  though it governed this one — the incidental find behind
+                  review item 51 §4's "check what that tab currently lists". */}
+              <Suspense fallback={null}>
+                <WorkflowsPanel
+                  businessId={client.id}
+                  usageFor={(id) => clientApprovals.filter((a) => a.workflowId === id).length}
+                />
+              </Suspense>
             </div>
           )}
 
@@ -2104,15 +2058,6 @@ export function ClientDetailView() {
             onSend={(invite) => { inviteBusinessUser(client.id, invite); setInviting(false); }}
             onClose={() => setInviting(false)}
           />
-        )}
-        {editingWorkflow && (
-          <Suspense fallback={null}>
-            <WorkflowEditor
-              workflow={editingWorkflow}
-              onSave={(w) => { saveWorkflow(w); setEditingWorkflow(null); }}
-              onClose={() => setEditingWorkflow(null)}
-            />
-          </Suspense>
         )}
         {preview && (
           <Modal onClose={() => setPreview(null)}>

@@ -959,6 +959,70 @@ Two chunk-placement facts S12 measured, for the next stage that wires a surface:
 - **A module's chunk is decided by REACHABILITY, not by usage.** The zod/client barrels are statically imported by floor modules, so every generated sub-module any lazy chunk touches gets hoisted into `index` — a lazy import does not keep generated code off the floor once its barrel is floor-reachable. The marginal cost is per-EXPORT, which is why `proposals.ts` calls the plain generated function inside its own `useQuery` rather than pulling the hook/queryKey machinery.
 - The rest of S12 (`chases.ts`, the view boards, `LiveProposalCard`, `ProposalFlowModal`) landed on lazy chunks as intended: ChasesView 16.7 kB, ApprovalsView 15.5 kB, InboxesView 13.8 kB, `LiveProposalCard` 3.1 kB shared between the Approvals and Inboxes chunks.
 
+### Review package H gave the floor back — 7 Sep 2026 (items 51/52/53)
+
+Paired A/B, both sides built with `vite build --manifest` and walked for the
+route's transitive static closure unioned with the entry's:
+
+| Route | main | branch | Δ | headroom vs 250,000 |
+|---|---|---|---|---|
+| floor | 208,060 | 204,255 | **−3,805** | — |
+| ApprovalsView | 239,055 | 232,965 | **−6,090** | 17,035 |
+| ClientDetailView | 245,343 | 238,815 | **−6,528** | 11,185 |
+| InboxesView | 249,540 | 246,019 | **−3,521** | 3,981 |
+| AIWorkspaceView | 304,837 | 304,744 | **−93** | still over, as it already was |
+
+**The package's own contract additions cost +856 B of FLOOR and briefly put the
+worst route 412 B OVER budget** — six operations and ten schemas, in a zod tag
+directory nothing on the floor imports. That is the reachability rule at its
+sharpest, and it is worth knowing why it bites so hard: orval emits every schema
+as a top-level `zod.object(...)` CALL, and Rollup may not tree-shake a call, so
+the barrel pins ALL of them onto every route that touches
+`@neoting/contracts/zod`.
+
+`packages/contracts/scripts/mark-zod-pure.mjs` is the reclaim — a
+`/*#__PURE__*/` annotation on each generated schema, the `strip-zod-describe`
+seam and the same reasoning — and it pays for this package and 3.6 kB besides,
+**product-wide**. The rest of the win is structural: `WorkflowsPanel` took
+`WorkflowCard` and `WorkflowEditor` off BOTH routes' static graphs.
+
+⚠ **AIWorkspaceView is the route to watch, and it is the one this package very
+nearly cost.** The two chat cards add ~3.7 kB to its own closure; the floor
+reclaim covers them with 93 B to spare, so it lands fractionally UNDER main
+rather than over. That is a rounding error, not headroom — the route has been
+over the 250 kB budget since long before this package and stays ~55 kB over. The
+breach is not this change's and neither is its fix; the next thing added to that
+route should assume no cushion.
+
+### Workflows are server-backed now, and the tab is one lazy component
+
+`components/DynamicComponents/WorkflowsPanel.tsx` is the WHOLE Workflows tab —
+cards, editor, the coding-rules list and the activation proposal — reached
+through `lazy()` from both `ApprovalsView` and `ClientDetailView`.
+
+Both views carried a near-duplicate of that screen, and ⚠ **`ClientDetailView`'s
+rendered `approvalWorkflows.map(…)` UNFILTERED**, so every workflow in the
+practice appeared on every client looking as though it governed them. One
+component fixes that class of bug by construction rather than by remembering.
+
+Two things to keep:
+
+- **`api/workflows.ts` must stay off the floor.** It touches the generated
+  approvals client; only the lazy panel imports it, and nothing in `AppContext`
+  does — the `api/proposals.ts` rule.
+- **Save writes a DRAFT; Turn on / Turn off stages a `policy.activate`
+  proposal.** Different buttons because they are different acts, and the server
+  enforces it (no write operation accepts `isActive`), so this screen describes
+  the rule rather than being it.
+
+⚠ **`ApprovalWorkflow` moved to PENCE and to one client.** `thresholdAbovePence`
+mirrors the contract's `x-nt-money` field; the synthetic generators still work
+in float pounds, so `lib/generate.ts` multiplies at its two comparison sites and
+the editor converts at the control. `businessId` replaced `clientIds[]`, `active`
+became `isActive`, and **`autoPublishOnApproval` is deleted** — D42 removed
+auto-publish from this release and D44 reserves release for the super admin, so
+the toggle could not do what its name said.
+
 ### 🚨 THE WORST ROUTE WAS OVER BUDGET ON 2 Sep 2026 — measured, not projected
 
 > **Resolved 3 Sep 2026, and the figures below are the wrong quantity anyway.**

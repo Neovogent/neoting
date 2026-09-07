@@ -4466,6 +4466,276 @@ paths:
   # WEBHOOKS
   # ==========================================================================
 
+  # ==========================================================================
+  # APPROVAL WORKFLOWS — review package H (items 51/52/53, 7 Sep 2026)
+  #
+  # `approval_workflows` has been a table since the init migration and had NO
+  # operations here and no service in `apps/api`: the Workflows tab composed,
+  # saved and toggled workflows entirely in React state, so every policy an
+  # accountant wrote died on reload. This is the read/write surface, and the
+  # order matters — nothing else in that package is honest until a workflow
+  # can be saved.
+  #
+  # ⚠ **A saved workflow is INERT.** Create and replace write a draft; neither
+  # can set `isActive`. Arming one decides what pauses for other people's
+  # approvals, which is a policy change, so it goes through `policy.activate`
+  # → Review → Approve like every other state change (Governance §10, D44).
+  # ==========================================================================
+
+  /approval-workflows:
+    get:
+      operationId: listApprovalWorkflows
+      summary: Approval workflows the caller can see
+      description: |
+        Every workflow on every client workspace the caller reaches, or one
+        client's with `businessId`. Newest first.
+
+        **One workflow governs exactly one client** (`businessId` is required
+        and always present). Approvals are opt-in: a client with no ACTIVE
+        workflow has no approval step at all and its Ready items are released
+        for export without pausing. The same policy across three clients is
+        three workflows — deliberately, because the alternative was a
+        practice-level row whose reach no RLS predicate could express.
+      tags: [approvals]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of workflows, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApprovalWorkflow' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: createApprovalWorkflow
+      summary: Save a new workflow, inactive
+      description: |
+        Creates the row and returns it with a server-minted id.
+
+        **`isActive` is false and there is no field here that could set it.**
+        Composing a policy is an accountant's ordinary work (D44's compose-and-
+        edit half); arming it is the `policy.activate` proposal. That split is
+        why this is `ingest` rather than a side-effect endpoint standing beside
+        the Review → Approve spine — it writes a draft and moves nothing.
+      tags: [approvals]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalWorkflowWriteRequest' }
+      responses:
+        '201':
+          description: The stored workflow, inactive.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalWorkflow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /approval-workflows/draft:
+    post:
+      operationId: draftApprovalWorkflow
+      summary: Compile a described policy into a structured workflow
+      description: |
+        The editor's "Describe it instead" panel, served by the pinned model
+        under the §9 discipline (review item 52). It **stores nothing** and is
+        not a workflow: it returns a draft the human then edits and saves
+        through `POST /approval-workflows`, which is what makes the panel's own
+        promise — *every field below is editable* — structurally true.
+
+        The description is wrapped as `<untrusted_content>` before the model
+        sees it (§9.6), the answer is Zod-validated in `.strict()` mode (§9.2),
+        and the model picks **words and shapes, never ids**: an approver is a
+        role or a name it read in the sentence, and a category is refused
+        outright when it is not on this client's own chart of accounts rather
+        than fuzzy-matched onto the nearest one. Fuzzy-matching a chart is how
+        a client's food costs quietly become drink costs (`drafts.ts`).
+
+        `status: refused` is a normal answer, not an error: a description that
+        names no approver, or names a category this client does not have, gets
+        a `reason` an accountant can act on.
+      tags: [approvals]
+      x-nt-side-effect: none
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalWorkflowDraftRequest' }
+      responses:
+        '200':
+          description: What the description was taken to mean, or why it was refused.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalWorkflowDraftResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: |
+            The model was unreachable or answered in a shape this surface
+            refuses twice (`NT-MDL-001` / `NT-MDL-003`), or the practice's
+            daily AI budget is spent (`NT-MDL-002`). Governance §9.3: an honest
+            error with a retry, never a guess — and "Set it up by hand" is
+            always there.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /approval-workflows/{workflowId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    put:
+      operationId: replaceApprovalWorkflow
+      summary: Replace a workflow's editable fields
+      description: |
+        The whole workflow travels, replacing what was stored — naturally
+        idempotent, and the editor already holds every field.
+
+        **`isActive` and `businessId` are not editable here**, and neither is a
+        field on the request: re-pointing a policy at a different client, or
+        arming it, are not text edits. Editing an ACTIVE workflow is allowed
+        and takes effect immediately — it is the same authority that composed
+        it, and forcing a disarm/re-arm round trip through Review → Approve for
+        a renamed stage would train people to approve without reading.
+      tags: [approvals]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalWorkflowEditRequest' }
+      responses:
+        '200':
+          description: The stored workflow.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalWorkflow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /approval-workflows/{workflowId}/deletion:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      operationId: deleteApprovalWorkflow
+      summary: Delete an inactive workflow
+      description: |
+        **Refuses while the workflow is active** (`409`, `NT-WFL-001`). Deleting
+        an armed policy removes an approval gate, which is the same class of
+        change as arming one; disarm it through `policy.activate` first and the
+        removal of the gate gets the human review it deserves. An inactive
+        workflow gates nothing, so deleting it is ordinary tidying.
+
+        Idempotent: deleting a workflow that does not exist is a `204`. Any
+        `approvals` rows that referenced it keep their history — the FK is
+        `ON DELETE SET NULL`, so the record of who approved what survives the
+        policy that asked them to.
+      tags: [approvals]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Gone, or never there — the same true answer either way.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409':
+          description: |
+            `NT-WFL-001` — the workflow is active, so deleting it would remove
+            an approval gate with no review. Disarm it through
+            `policy.activate` first. `NT-IDM-001` for a reused
+            `Idempotency-Key`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # RULES — the read surface an approved rule never had (review item 51 §4)
+  #
+  # `rule.create` has been approvable since METH Stage 13 and the row it writes
+  # was visible NOWHERE afterwards: no operation listed it, no screen rendered
+  # it. A rule that cannot be seen cannot be audited or retired, and the chat
+  # flow item 51 asks for lands its result in exactly that blind spot.
+  # ==========================================================================
+
+  /rules:
+    get:
+      operationId: listRules
+      summary: Coding rules in force for a client
+      description: |
+        What an approved `rule.create` actually produced, per client. Read-only
+        and deliberately so: a rule comes into being through Review → Approve,
+        and there is no PATCH here that could edit one behind that path.
+
+        Retiring a rule has no operation yet — recorded rather than half-built,
+        because switching one off is its own proposal with its own review copy,
+        not a DELETE.
+      tags: [approvals]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of rules, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Rule' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsappWebhook
@@ -4798,6 +5068,12 @@ components:
       required: true
       schema: { type: string }
 
+    WorkflowId:
+      name: workflowId
+      in: path
+      required: true
+      schema: { type: string }
+
     DocumentLinkCode:
       name: code
       in: path
@@ -5103,6 +5379,12 @@ components:
         # 200-vs-201 distinction is invisible to the browser and the dialog
         # would claim to have staged something it did not.
         - NT-PRP-007   # an identical proposal is already awaiting review
+        # Approval workflows (review package H). A DELETE-shaped refusal, not a
+        # proposal one, which is why it is its own family: deleting an armed
+        # workflow would remove an approval gate with no review — the way round
+        # `policy.activate` — so the ingest-class operation refuses and points
+        # at the proposal instead.
+        - NT-WFL-001   # the approval workflow is still active
         # The model runtime (MDL family, Governance §9). Deliberately NOT `CHS`
         # or a `CHAT` family: these fire when the MODEL failed, not when the
         # chase engine or the chat feature did, and an alert that cannot tell
@@ -5327,6 +5609,11 @@ components:
         One interpreted turn. `draft` is the only field that can lead to a state
         change, and only by the caller taking it to `POST /action-proposals` —
         nothing here has changed anything.
+
+        `draft` is a ready-to-send proposal request the UI renders as a card,
+        typed as the real request body on purpose: the model cannot draft
+        something `POST /action-proposals` would reject, because there is no
+        shape there that endpoint does not already accept.
       properties:
         intent: { $ref: '#/components/schemas/ChatIntent' }
         reply:
@@ -5336,13 +5623,25 @@ components:
             this is exactly `Information not available in this client's records.`
             and nothing else (§9.4).
         draft:
-          allOf:
-            - $ref: '#/components/schemas/CreateActionProposalRequest'
-          description: |
-            A ready-to-send proposal request the UI renders as a card. Typed as
-            the real request body on purpose: the model cannot draft something
-            `POST /action-proposals` would reject, because there is no shape
-            here that endpoint does not already accept.
+          # A bare `$ref` — it was a one-member `allOf` carrying a description
+          # until 7 Sep 2026, which is one redundant intersection layer for
+          # prose that belongs on the parent. The wire shape is unchanged.
+          #
+          # ⚠ **This field cannot be parsed by the generated client, and the
+          # wrapper was not why.** `CreateActionProposalRequest`'s own members
+          # are each `allOf: [ProposalRequestBase, {kind, payload}]` — two
+          # `.strict()` halves, which orval emits as an intersection that
+          # rejects EVERY input because each half reports the other's keys as
+          # unrecognized. `packages/contracts/CLAUDE.md` documents the gap and
+          # names its two existing workarounds (`proposal-body.ts`,
+          # `api/chases.ts`); `apps/web/src/api/chat.ts` is now the third.
+          #
+          # The consequence was live and long-standing: `createChatTurnResponse`
+          # failed on EVERY turn carrying a draft, so the whole LIVE_RULE beat
+          # answered *"The assistant answered in an unexpected shape (draft)"*
+          # in the browser. Found by walking review item 51's own journey, which
+          # is the flow it broke.
+          $ref: '#/components/schemas/CreateActionProposalRequest'
         navigation: { $ref: '#/components/schemas/ChatNavigation' }
         references:
           type: array
@@ -5357,6 +5656,31 @@ components:
             filled every value from the same records `references` cites (see
             ChatDisplayBlock). Optional and absent on every turn that predates
             it, so nothing existing changes.
+        awaiting:
+          type: string
+          enum: [client]
+          description: |
+            **Server-set, never the model's** — there is no field in the output
+            schema a model could put this in.
+
+            Present when the turn understood the action but has no client to
+            hang it on: a coding rule belongs inside one client workspace, and
+            with the scope on "All clients" the turn used to degrade to
+            `GENERAL` with the sentence *"Pick a client first"* and no way to
+            pick one (review item 51 §2). The UI answers it with the in-chat
+            client picker and re-asks the same utterance scoped. Never a guess:
+            the client is chosen by name, by a human, every time.
+        offer:
+          type: string
+          enum: [rule]
+          description: |
+            **Server-set**, and an affordance rather than an answer. Present
+            when a refusal named something the accountant *can* have — asked to
+            auto-publish or auto-approve, the assistant correctly refuses
+            (Governance §10, D44: no rule releases a document without a human)
+            and then offers a coding rule instead. Until now that offer was a
+            dangling question the user had to answer by retyping; this turns it
+            into a card with a button, entering the same `LIVE_RULE` flow.
         usage: { $ref: '#/components/schemas/ChatUsage' }
         modelVersion:
           type: string
@@ -6482,6 +6806,297 @@ components:
           type: integer
           description: The cap the storage policy will enforce independently of the API.
 
+    # ---- approval workflows (review package H) ----------------------------
+
+    ApprovalWorkflowStage:
+      type: object
+      required: [name, approver, canEdit]
+      description: |
+        One step in the chain. Stages run in order; an item sits at the highest
+        stage its own value demands, because the ones below it are already
+        satisfied by the same amount.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+          description: What this step is called on screen — "Manager review".
+        approver:
+          type: string
+          minLength: 1
+          maxLength: 60
+          description: |
+            A role ("Finance Director") or a person's name. **Words, never a
+            user id** — the model that drafts a workflow reads names out of a
+            sentence and has no way to know a real id, the `documentQuery`
+            doctrine applied to people.
+        thresholdAbovePence:
+          type: integer
+          x-nt-money: true
+          minimum: 0
+          description: |
+            Only items above this clear through the stage. Absent means every
+            item passes through it.
+        canEdit:
+          type: boolean
+          description: |
+            Whether this approver may correct the coding as well as sign off.
+            Forced false for a client-side stage — the business owner sees the
+            coding, not a form.
+        clientSide:
+          type: boolean
+          description: |
+            Approved by someone at the client business rather than inside the
+            practice, delivered the way chasing is: an emailed link, no app and
+            no login.
+
+    ApprovalWorkflowBranch:
+      type: object
+      required: [field, addApprover, label]
+      description: |
+        A condition that pulls an extra approver in — the branching linear
+        workflows cannot express.
+
+        There is no `operator`: it is implied by `field` and nothing ever read
+        it (`amount` is always "over", `supplierAge`/`category` are always
+        "is"). A stored operator that no evaluator consults is a field that can
+        silently disagree with the behaviour.
+      properties:
+        field:
+          type: string
+          enum: [amount, supplierAge, category]
+        thresholdAbovePence:
+          type: integer
+          x-nt-money: true
+          minimum: 0
+          description: Required when `field` is `amount`; absent otherwise.
+        value:
+          type: string
+          maxLength: 64
+          description: |
+            What the non-money fields test — `new` for `supplierAge`, a category
+            code for `category`. Absent when `field` is `amount`.
+        addApprover:
+          type: string
+          minLength: 1
+          maxLength: 60
+          description: Who this condition adds. Words, never a user id.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: |
+            The sentence a person reads. Composed from the fields above rather
+            than typed freely, so the words and the condition the engine tests
+            cannot drift apart.
+
+    ApprovalWorkflow:
+      type: object
+      required: [id, businessId, name, appliesTo, specificity, stages, branches, selfApproval, isActive, createdAt, updatedAt]
+      description: |
+        One client's approval policy.
+
+        **There is no auto-publish field, and its absence is the point.** The
+        editor carried an "Auto-publish once approved" toggle and the parser
+        emitted "Publishes automatically once fully approved"; under D42 there
+        is no auto-publish in this release and under D44 only the firm's super
+        admin releases. A stored switch nothing could honour is the class of
+        claim D42 exists to stop, so the final stage IS the release and no
+        field says otherwise.
+      properties:
+        id: { type: string }
+        businessId:
+          type: string
+          description: The one client workspace this governs. Required, never null.
+        name: { type: string, minLength: 1, maxLength: 80 }
+        appliesTo:
+          type: string
+          maxLength: 120
+          description: |
+            Which items it claims — `All cost items`, `All sales items`,
+            `All expense claims`, or `Category: …`. An unrecognised scope
+            claims NOTHING, deliberately: under-matching is a workflow nobody
+            notices, over-matching holds a client's whole purchase ledger at a
+            stage it was never meant to reach.
+        specificity:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Higher wins when more than one workflow could claim an item.
+        stages:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowStage' }
+        branches:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowBranch' }
+        selfApproval:
+          type: boolean
+          description: Whether the person who proposed an item may approve it themselves.
+        isActive:
+          type: boolean
+          description: |
+            Armed. **Only an approved `policy.activate` proposal changes this** —
+            no write operation on this resource accepts it.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ApprovalWorkflowEditRequest:
+      type: object
+      required: [name, appliesTo, specificity, stages, branches, selfApproval]
+      description: |
+        Everything about a workflow a human may change by typing. `isActive` and
+        `businessId` are absent by design — see `ApprovalWorkflow`.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        appliesTo: { type: string, minLength: 1, maxLength: 120 }
+        specificity: { type: integer, minimum: 0, maximum: 100 }
+        stages:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowStage' }
+        branches:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowBranch' }
+        selfApproval: { type: boolean }
+
+    ApprovalWorkflowWriteRequest:
+      type: object
+      required: [businessId, name, appliesTo, specificity, stages, branches, selfApproval]
+      description: |
+        `ApprovalWorkflowEditRequest` plus the client, and ⚠ **spelled out in
+        full rather than composed with `allOf`** — deliberately, and the
+        duplication is the cheaper half of the trade.
+
+        `packages/contracts/CLAUDE.md` records the orval gap: `allOf` between
+        two `.strict()` objects emits an INTERSECTION, and a strict intersection
+        rejects every possible input because each half reports the other half's
+        keys as unrecognized. Two consumers already carry hand-written
+        workarounds for it (`proposal-body.ts`, `api/chases.ts`). This schema
+        was written with `allOf` first and `POST /approval-workflows` answered
+        `400` on every valid body — found by walking the screen, not by a test,
+        because the generated types were happy. Writing the seven fields out
+        costs a paragraph and needs no workaround at all.
+      properties:
+        businessId:
+          type: string
+          description: |
+            The client this workflow governs, fixed at creation. A workflow
+            cannot be re-pointed later — that is a new policy for a different
+            client, not an edit.
+        name: { type: string, minLength: 1, maxLength: 80 }
+        appliesTo: { type: string, minLength: 1, maxLength: 120 }
+        specificity: { type: integer, minimum: 0, maximum: 100 }
+        stages:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowStage' }
+        branches:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowBranch' }
+        selfApproval: { type: boolean }
+
+    ApprovalWorkflowDraftRequest:
+      type: object
+      required: [businessId, description]
+      properties:
+        businessId:
+          type: string
+          description: |
+            Whose chart of accounts a category in the description is checked
+            against. Required: a policy drafted with no client is a policy whose
+            category could not be validated.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: |
+            The accountant's own sentence. Wrapped as `<untrusted_content>`
+            before the model sees it — it is a description to interpret, never
+            an instruction to follow (§9.6).
+
+    ApprovalWorkflowDraftResult:
+      type: object
+      required: [status]
+      description: |
+        `drafted` carries the structured workflow plus a plain-English account
+        of what was understood and what had to be assumed — shown beside the
+        form so the guess can be checked before it is saved. `refused` carries
+        the reason instead, and is a normal answer.
+
+        `workflow` is typed as the CREATE REQUEST on purpose: the model cannot
+        draft something `POST /approval-workflows` would reject, because there
+        is no shape here that operation does not already accept. It is a bare
+        `$ref` rather than a one-member `allOf` for the reason
+        `ApprovalWorkflowWriteRequest`'s own description gives.
+      properties:
+        status:
+          type: string
+          enum: [drafted, refused]
+        workflow:
+          $ref: '#/components/schemas/ApprovalWorkflowWriteRequest'
+        understood:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 400 }
+          description: What the description was taken to mean.
+        assumed:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 400 }
+          description: |
+            What it did not say, and therefore had to be defaulted — and, more
+            importantly, what it asked for that this product will not do: a
+            category that is not on the client's chart, or an auto-publish.
+            400 rather than 200 because a refusal has to explain itself, and
+            the first live eval recording found the shorter cap rejecting
+            exactly those two sentences.
+        reason:
+          type: string
+          maxLength: 400
+          description: Present with `refused`. Names what is wrong and what would fix it.
+        modelVersion:
+          type: string
+          description: Pinned model ID plus config revision, so a draft is reproducible (§9.8).
+        promptVersion:
+          type: string
+          description: The prompt's version, from the repo — never a dashboard value (§9.8).
+
+    Rule:
+      type: object
+      required: [id, businessId, tier, sets, isActive, createdAt]
+      description: |
+        A coding rule in force — what an approved `rule.create` produced.
+        `actionProposalId` is the audit anchor: no rule exists without the
+        proposal a human approved to create it (Governance §10).
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        tier: { $ref: '#/components/schemas/RuleTier' }
+        scopeKey:
+          type: [string, 'null']
+          description: The supplier name the rule matches, spelled as this client's documents spell it.
+        conditions:
+          type: [object, 'null']
+          additionalProperties: true
+        sets:
+          type: object
+          additionalProperties: true
+          description: The coding fields this rule sets when it wins.
+        isActive: { type: boolean }
+        createdVia:
+          type: [string, 'null']
+          description: |
+            How the rule was drafted before approval — `chat`, `correction`.
+            Provenance for a human reading the list, never authority.
+        actionProposalId:
+          type: [string, 'null']
+          description: The approved proposal that created it. Null only for rows that predate the spine.
+        createdAt: { type: string, format: date-time }
+
     # ---- action proposals -------------------------------------------------
 
     ProposalKind:
@@ -6495,8 +7110,10 @@ components:
         METH Stage 2 (issue #120) added the four demo-push kinds — `chase.send`,
         `publish.batch`, `bank.confirm-match` and `rule.create` — registered as
         `ProposalNotImplementedError` stubs until their stages land executors.
-        Later surfaces still add `rule.activate`, `policy.activate` and
-        `setting.change`.
+        `policy.activate` landed 7 Sep 2026 with the workflows surface (review
+        package H): a saved workflow is inert, and arming or disarming it —
+        which decides what pauses for *other people's* approvals — is the state
+        change. Later surfaces still add `rule.activate` and `setting.change`.
 
         **Open question for Shakib — deliberately not decided here.** The OTP
         portal's editable-overlay correction (SoT Stage 8.4) is a client fixing a
@@ -6524,6 +7141,7 @@ components:
         - business.reactivate     # bring a removed client back; the exact mirror of offboard, soft, idempotent
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
+        - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
 
     CreateActionProposalRequest:
       description: |
@@ -6549,6 +7167,7 @@ components:
         - $ref: '#/components/schemas/BusinessReactivateProposalRequest'
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
+        - $ref: '#/components/schemas/PolicyActivateProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -6569,6 +7188,7 @@ components:
           business.reactivate: '#/components/schemas/BusinessReactivateProposalRequest'
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
+          policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -6782,6 +7402,45 @@ components:
           properties:
             kind: { const: document.purge }
             payload: { $ref: '#/components/schemas/DocumentPurgePayload' }
+
+    PolicyActivateProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: policy.activate }
+            payload: { $ref: '#/components/schemas/PolicyActivatePayload' }
+
+    PolicyActivatePayload:
+      type: object
+      required: [workflowId, active]
+      description: |
+        Arm or disarm one approval workflow (review package H).
+
+        The workflow itself is written by ordinary `ingest`-class operations —
+        composing a policy is an accountant's own work under D44. **What needs
+        a human's approval is the gate**: arming one makes other people's items
+        stop and wait, and disarming one silently removes a control a client may
+        be relying on. Both directions travel through the same kind, because
+        both change what the approval spine does.
+
+        Review renders the workflow the way the Workflows tab does — its
+        stages, its thresholds, its branches — composed server-side from the
+        stored row, never from this payload.
+      properties:
+        workflowId:
+          type: string
+          description: |
+            The workflow to arm or disarm. Resolved through RLS at proposal
+            time and re-resolved at execution: a workflow the caller cannot
+            reach is absent, never forbidden.
+        active:
+          type: boolean
+          description: |
+            True arms it, false disarms it. Idempotent at execution — a
+            workflow already in the requested state is `alreadyApplied`, not a
+            second effect.
 
     ResolveDuplicateProposalRequest:
       allOf:

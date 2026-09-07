@@ -58,6 +58,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "test:eval:workflow": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "e2e:smoke": {
       "dependsOn": ["build"],
       "cache": false

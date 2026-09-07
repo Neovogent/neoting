@@ -14,63 +14,74 @@ import type {
  * They exist to show the shape of the feature, so between them they cover the
  * whole rule vocabulary rather than repeating one pattern: the specificity
  * ladder (type → supplier → category), conditional branching on amount and on
- * a new supplier, per-stage thresholds, a client-side stage delivered by SMS,
- * self-approval, auto-publish, and one workflow switched off.
+ * a new supplier, per-stage thresholds, a client-side stage delivered by an
+ * emailed link, self-approval, and one workflow switched off.
  *
  * Client scope is the load-bearing part. American Burger has opted in and has
  * five; Ananda Group has one narrow rule for capital spend and nothing
- * else, so its routine invoices publish without pausing — which is the
+ * else, so its routine invoices go through without pausing — which is the
  * wireframe's "opt-in, default OFF" made visible rather than asserted.
+ *
+ * ⚠ **Three things changed with review package H, and each one is a real
+ * change to what these rows mean:**
+ *
+ * 1. **`businessId`, singular** — prisma's shape, taken in session. `wf-2`
+ *    (Capital expenditure) named clients `1` AND `2`; it is now client `1`'s,
+ *    and Ananda Group keeps the one workflow that was already theirs alone.
+ *    The same policy across two clients is two workflows, which is what this
+ *    table has always been able to store and the old array never was.
+ * 2. **Thresholds are PENCE**, matching the contract's `x-nt-money` field.
+ * 3. **`autoPublishOnApproval` is gone.** D42 removed auto-publish from this
+ *    release and D44 reserves release for the super admin, so the flag could
+ *    not do what its name said. Nothing replaces it — the last stage IS the
+ *    approval, and releasing is a separate named act.
  */
 export const seedWorkflows: ApprovalWorkflow[] = [
   {
     id: 'wf-1',
     name: 'Costs — standard',
     appliesTo: 'All cost items',
-    clientIds: ['1'],
+    businessId: '1',
     specificity: 1,
     stages: [
       { name: 'Manager review', approver: 'You', canEdit: true },
-      { name: 'Finance Director', approver: 'S. Patel', thresholdAbove: 1000, canEdit: false },
+      { name: 'Finance Director', approver: 'S. Patel', thresholdAbovePence: 100000, canEdit: false },
       // The business signs off its own large spend. Delivered by SMS + OTP —
       // this is the stage that makes the client-side approval screen exist.
-      { name: 'Client sign-off', approver: 'John Doe (Director)', thresholdAbove: 1000, canEdit: false, clientSide: true },
+      { name: 'Client sign-off', approver: 'John Doe (Director)', thresholdAbovePence: 100000, canEdit: false, clientSide: true },
     ],
     branches: [
-      { field: 'amount', operator: '>', value: '2000', addApprover: 'Finance Director', label: 'Amount over £2,000 adds the Finance Director' },
-      { field: 'supplier-age', operator: 'is', value: 'new', addApprover: 'Compliance', label: 'A brand-new supplier adds Compliance' },
+      { field: 'amount', thresholdAbovePence: 200000, addApprover: 'Finance Director', label: 'Amount over £2,000 adds the Finance Director' },
+      { field: 'supplierAge', value: 'new', addApprover: 'Compliance', label: 'A brand-new supplier adds Compliance' },
     ],
     selfApproval: false,
-    autoPublishOnApproval: true,
-    active: true,
+    isActive: true,
   },
   {
     id: 'wf-2',
     name: 'Capital expenditure',
     appliesTo: 'Category: Computer Equipment, Kitchen Equipment',
-    clientIds: ['1', '2'],
+    businessId: '1',
     specificity: 4,
     stages: [
       { name: 'Manager review', approver: 'R. Okafor', canEdit: true },
       { name: 'Finance Director', approver: 'S. Patel', canEdit: false },
-      { name: 'Partner sign-off', approver: 'J. Whitfield', thresholdAbove: 5000, canEdit: false },
+      { name: 'Partner sign-off', approver: 'J. Whitfield', thresholdAbovePence: 500000, canEdit: false },
     ],
-    branches: [{ field: 'amount', operator: '>', value: '10000', addApprover: 'Partner', label: 'Over £10,000 requires a second partner' }],
+    branches: [{ field: 'amount', thresholdAbovePence: 1000000, addApprover: 'Partner', label: 'Over £10,000 requires a second partner' }],
     selfApproval: false,
-    autoPublishOnApproval: false,
-    active: true,
+    isActive: true,
   },
   {
     id: 'wf-3',
     name: 'Sales invoices',
     appliesTo: 'All sales items',
-    clientIds: ['1'],
+    businessId: '1',
     specificity: 2,
     stages: [{ name: 'Manager review', approver: 'R. Okafor', canEdit: true }],
     branches: [],
     selfApproval: true,
-    autoPublishOnApproval: true,
-    active: false,
+    isActive: false,
   },
   {
     /**
@@ -81,19 +92,18 @@ export const seedWorkflows: ApprovalWorkflow[] = [
     id: 'wf-4',
     name: 'Trusted food suppliers',
     appliesTo: 'Supplier: Bidfood, Brakes, Booker',
-    clientIds: ['1'],
+    businessId: '1',
     specificity: 3,
     stages: [
       { name: 'Manager review', approver: 'R. Okafor', canEdit: true },
       // Only the unusually large delivery gets a second pair of eyes.
-      { name: 'Finance Director', approver: 'S. Patel', thresholdAbove: 2500, canEdit: false },
+      { name: 'Finance Director', approver: 'S. Patel', thresholdAbovePence: 250000, canEdit: false },
     ],
     branches: [
-      { field: 'amount', operator: '>', value: '5000', addApprover: 'Finance Director', label: 'Over £5,000 is not a routine delivery — adds the Finance Director' },
+      { field: 'amount', thresholdAbovePence: 500000, addApprover: 'Finance Director', label: 'Over £5,000 is not a routine delivery — adds the Finance Director' },
     ],
     selfApproval: true,
-    autoPublishOnApproval: true,
-    active: true,
+    isActive: true,
   },
   {
     /**
@@ -104,18 +114,17 @@ export const seedWorkflows: ApprovalWorkflow[] = [
     id: 'wf-5',
     name: 'Marketing and advertising',
     appliesTo: 'Category: Marketing, Advertising',
-    clientIds: ['1'],
+    businessId: '1',
     specificity: 4,
     stages: [
       { name: 'Manager review', approver: 'You', canEdit: true },
-      { name: 'Client sign-off', approver: 'John Doe (Director)', thresholdAbove: 500, canEdit: false, clientSide: true },
+      { name: 'Client sign-off', approver: 'John Doe (Director)', thresholdAbovePence: 50000, canEdit: false, clientSide: true },
     ],
     branches: [
-      { field: 'supplier-age', operator: 'is', value: 'new', addApprover: 'Compliance', label: 'A new advertising platform adds Compliance' },
+      { field: 'supplierAge', value: 'new', addApprover: 'Compliance', label: 'A new advertising platform adds Compliance' },
     ],
     selfApproval: false,
-    autoPublishOnApproval: true,
-    active: true,
+    isActive: true,
   },
   {
     /**
@@ -127,18 +136,17 @@ export const seedWorkflows: ApprovalWorkflow[] = [
     id: 'wf-7',
     name: 'Wholesale suppliers',
     appliesTo: 'Supplier: Costco, Sysco, Brakes',
-    clientIds: ['2'],
+    businessId: '2',
     specificity: 3,
     stages: [
       { name: 'Manager review', approver: 'You', canEdit: true },
-      { name: 'Finance Director', approver: 'S. Patel', thresholdAbove: 2000, canEdit: false },
+      { name: 'Finance Director', approver: 'S. Patel', thresholdAbovePence: 200000, canEdit: false },
     ],
     branches: [
-      { field: 'amount', operator: '>', value: '3000', addApprover: 'Compliance', label: 'Over £3,000 from a wholesaler is worth a second look' },
+      { field: 'amount', thresholdAbovePence: 300000, addApprover: 'Compliance', label: 'Over £3,000 from a wholesaler is worth a second look' },
     ],
     selfApproval: false,
-    autoPublishOnApproval: true,
-    active: true,
+    isActive: true,
   },
   {
     /**
@@ -148,18 +156,17 @@ export const seedWorkflows: ApprovalWorkflow[] = [
     id: 'wf-6',
     name: 'Travel and entertaining',
     appliesTo: 'Category: Travel, Entertaining, Subsistence',
-    clientIds: ['1', '2'],
+    businessId: '1',
     specificity: 4,
     stages: [
       { name: 'Manager review', approver: 'R. Okafor', canEdit: false },
-      { name: 'Partner sign-off', approver: 'J. Whitfield', thresholdAbove: 750, canEdit: false },
+      { name: 'Partner sign-off', approver: 'J. Whitfield', thresholdAbovePence: 75000, canEdit: false },
     ],
     branches: [
-      { field: 'amount', operator: '>', value: '1500', addApprover: 'Finance Director', label: 'Over £1,500 adds the Finance Director — disallowable spend at this size is a P11D question' },
+      { field: 'amount', thresholdAbovePence: 150000, addApprover: 'Finance Director', label: 'Over £1,500 adds the Finance Director — disallowable spend at this size is a P11D question' },
     ],
     selfApproval: false,
-    autoPublishOnApproval: false,
-    active: true,
+    isActive: true,
   },
 ];
 

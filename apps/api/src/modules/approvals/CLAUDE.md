@@ -791,9 +791,107 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
       approved by Shakib on the issue. Unit-tested (filters/order/projection)
       and integration-tested (own practice sees its pending row, the other
       practice's page is empty; reading never touches `reviewedAt`).
-- [ ] Approval *workflows* (multi-stage/branching), expiry sweep, pseudonym
-      map.
+- [x] **Approval *workflows*** — landed 7 Sep 2026 (review package H). See the
+      section above; it was not merely unbuilt, it was a table with no surface.
+      Still open in that area: nothing writes the `approvals` table, so a
+      workflow's stages do not yet HOLD a document — the policy is stored,
+      armed through Review → Approve and rendered, and the engine that creates
+      per-item approval rows from it is its own change.
+- [ ] Expiry sweep, pseudonym map.
+- [ ] **Retiring a coding rule.** `GET /v1/rules` shows what is in force;
+      switching one off is a proposal with its own review copy and is not
+      built. Recorded rather than half-built.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## Approval WORKFLOWS became real (7 Sep 2026 — review package H, items 51/52/53)
+
+⚠ **The TODO at the bottom of this file said "Approval *workflows*
+(multi-stage/branching)" as unbuilt. It was worse than unbuilt.**
+`ApprovalWorkflow` has been a prisma table since the init migration with **zero**
+operations in the contract and **zero** references anywhere in `apps/api` — the
+Workflows tab composed, saved, toggled and deleted policies entirely in React
+state. Nothing writes the `approvals` table either: the shipped spine is
+`ActionProposal`, and `ApprovalWorkflow`/`Approval` are SoT Stage 9 design tables
+only `prisma/seed.ts` had ever touched, in a stage shape no surface read.
+
+### The split that shapes everything here
+
+**A workflow written through `approval-workflows.service.ts` is INERT.**
+`isActive` is on neither write body and the service never sets it; only the
+`policy.activate` executor does, on the far side of Review → Approve.
+
+That is Governance §10 read literally, not ceremony. Composing a policy is an
+accountant's own work (D44's compose half) and costs nobody anything while it
+sits unarmed. Arming it is a state change on the approval spine itself: from
+that moment other people's items stop and wait, and disarming it silently
+removes a control a client may be relying on. **Both directions are the same
+kind**, because "off" is not the safe direction — it is the direction that
+removes a check, and a table that priced it as safe would be the way around the
+gate. Deletion is refused while active (`NT-WFL-001`) for the same reason:
+disarm-by-DELETE would be that way round with no review and no audit line.
+
+| File | What it owns |
+|---|---|
+| `approval-workflows.service.ts` | list · create · replace · delete · `draft` · `listRules`. `writableFields()` is the ONE expression that builds a workflow write, which is why no branch can arm one |
+| `approval-workflows.controller.ts` | both controllers — the workflows one and `RulesController`, together because the second is one read on the same service under the same tag |
+| `workflow-draft/` | item 52's model task: `workflow-instructions.ts` (prompt + Zod + tool schema, offline), `bedrock-workflow.ts` (the wire), `compose-draft.ts` (the PURE mapper, where the chart refusal lives), `select-workflow-model.ts` |
+| `validation-dedupe/proposals/activate-policy.ts` | the executor — one boolean, idempotent on STATE rather than on a proposal stamp |
+
+### `GET /v1/rules` — the read surface an approved rule never had
+
+`rule.create` has been approvable since METH S13 and the row it wrote was
+visible **nowhere** afterwards: no operation listed it, no screen rendered it. A
+rule that starts coding a client's documents unattended and cannot be seen
+cannot be audited or retired. Read-only — retiring one is its own proposal with
+its own review copy, not a DELETE, and that is recorded rather than half-built.
+
+### `policy.activate` is the NINTH tier-1 kind
+
+By `rule.create`'s argument one step wider. §10.5 lets an approved policy act
+with no per-item proposal on the sole ground that the policy itself was approved
+through this contract; a workflow does not merely code documents — it decides
+whether anything stops for a signature at all.
+
+⚠ **Its review card reads the workflow through `RenderContext`**, the seam the
+correction advisory opened, and for the same reason: `PolicyActivatePayload` is
+`.strict()` and carries an id and a boolean, so a reviewer asked to arm a policy
+would otherwise be signing for `workflowId: cl9x…`. `readWorkflowForReview`
+reuses `toWorkflow` — the same mapper the read surface uses — deliberately: two
+places that decode those `Json` columns are two places that can disagree about
+what a stored workflow means, and the card would then describe a policy the tab
+does not show.
+
+### Item 52's model task, and why it lives here
+
+`selectWorkflowModel` keys on **`AI_CHAT`**, where `selectCodingModel` keys on
+`EXTRACTOR`. That file's argument is that the coding rung reads the same
+document, in the same job, on the same meter as the extractor; none of it is
+true here. This is an accountant TALKING to the assistant — free text in, a
+structured intent out, one call per click — which is what `AI_CHAT` names.
+`AI_CHAT=demo` gets no model and an honest 503 pointing at *"Set it up by
+hand"*; ⚠ the demo stand-in is deliberately NOT extended, because a stand-in
+that filled a policy form with plausible stages is `chat-framework`'s
+"degrades the judgement while the screen looks identical" failure one surface
+over, and an accountant would save it.
+
+⚠ **`bedrock-workflow.ts` is the THIRD copy of the forced-tool-call wire**
+(after `bedrock-extractor.ts` and `bedrock-coding.ts`) and the duplication is
+recorded rather than removed: a shared helper needs `costPence`, a
+`modules/chat-framework` seam export, from `common/`, which inverts the
+layering. Worth extracting on the day a FOURTH arrives.
+
+§9.8: `pnpm test:eval:workflow`, its own family for `CODING_PROMPT_VERSION`'s
+reason. 10 cases, 36 assertions, 100%, 0 injection leaks, recorded live.
+
+### Two traps this package paid for, both worth knowing
+
+- ⚠ **`allOf` + `.strict()` bit twice.** `ApprovalWorkflowWriteRequest` was
+  written as `allOf` and 400'd on every valid body; it is spelled out in full
+  now, which needs no workaround at all. `packages/contracts/CLAUDE.md`
+  documents the gap — prefer writing a composed request out over composing it.
+- ⚠ **`createApprovalWorkflowResponse` does not exist.** orval emits a Response
+  schema for a 200 and not for a 201, so the create is checked against
+  `replaceApprovalWorkflowResponse` (the same shape) in the tests.
 
 ## Two more `PermittedAction`s, and the rule about naming them (6 Sep 2026 — review items 44, 57)
 

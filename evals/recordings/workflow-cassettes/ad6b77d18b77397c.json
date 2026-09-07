@@ -1,0 +1,64 @@
+{
+  "key": "ad6b77d18b77397c",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Manager review with Compliance for new suppliers",
+          "scope": {
+            "kind": "costs"
+          },
+          "stages": [
+            {
+              "name": "Manager review",
+              "approver": "Manager",
+              "canEdit": true,
+              "clientSide": false
+            }
+          ],
+          "branches": [
+            {
+              "field": "supplierAge",
+              "addApprover": "Compliance"
+            }
+          ],
+          "selfApproval": false,
+          "understood": [
+            "Every item goes through a single manager review stage.",
+            "A brand-new supplier adds Compliance as an extra approver on top of the manager review, regardless of amount."
+          ],
+          "assumed": [
+            "Scope set to costs as no specific scope was mentioned.",
+            "Self-approval is not allowed.",
+            "The manager is a practice-side role and can edit coding.",
+            "No threshold on the manager review stage — all items are reviewed."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1936,
+      "output_tokens": 282,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

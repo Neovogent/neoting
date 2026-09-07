@@ -852,17 +852,40 @@ async function main() {
     ],
   });
 
+  // ⚠ **THE STAGE SHAPE CHANGED (7 Sep 2026, review package H)** and this row
+  // was the only thing that had ever written this table. It carried
+  // `{index, approvers[], condition}` and an `appliesTo` OBJECT, neither of
+  // which any surface read — the Workflows tab was browser state — so the seed
+  // was describing a workflow format the product did not have. It now writes
+  // exactly what `ApprovalWorkflow` in the contract says, and what the tab
+  // renders: named stages with an approver and a threshold in PENCE, branches
+  // in their own column, and `appliesTo` as the scope sentence.
+  //
+  // ⚠ `isActive: true` is now STATED. The column defaults to false because a
+  // saved workflow is a draft and arming one goes through `policy.activate` →
+  // Review → Approve. This row is armed deliberately: it is the demo's live
+  // policy, and a seeded Approvals tab with nothing armed teaches nothing.
   await prisma.approvalWorkflow.create({
     data: {
       id: 'wfl_001',
       businessId: 'biz_burger',
       name: 'Purchases over £2,000',
       specificity: 10,
+      isActive: true,
+      selfApproval: false,
+      appliesTo: 'All cost items',
       stages: [
-        { index: 0, name: 'Preparer review', approvers: ['usr_tom'], condition: { always: true }, canEdit: true },
-        { index: 1, name: 'Director sign-off', approvers: ['usr_dee'], condition: { amountAtLeastPence: pounds(2000) }, canEdit: false },
+        { name: 'Preparer review', approver: 'Bookkeeper', canEdit: true },
+        { name: 'Director sign-off', approver: 'Finance Director', thresholdAbovePence: pounds(2000), canEdit: false },
       ],
-      appliesTo: { itemType: 'costs' },
+      branches: [
+        {
+          field: 'supplierAge',
+          value: 'new',
+          addApprover: 'Compliance',
+          label: 'A brand-new supplier adds Compliance',
+        },
+      ],
     },
   });
 

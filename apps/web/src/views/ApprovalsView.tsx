@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import {
-  CheckCircle, X, GitBranch, Plus, ShieldCheck, Lock, Clock, Search, Send, Download,
+  CheckCircle, X, GitBranch, ShieldCheck, Lock, Clock, Search, Send, Download,
   Smartphone, MessageSquare, Eye, FileWarning,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,14 +23,18 @@ import { currency } from '../lib/resolver';
 // `DocumentPreview`, `LiveProposalCard`, `ReviewGate` and `Tooltip` behind it)
 // on that route's static graph. They are shared components now, and the editor
 // is lazy on both screens because it is a modal nobody has opened yet.
-import { WorkflowCard, blankWorkflow } from '../components/DynamicComponents/WorkflowCard';
-// The editor is a modal and the heaviest thing on the Workflows tab (6.9 kB
-// gzip of its own). Eager, it was downloaded by everyone who opened Approvals,
-// whether or not they ever edited a workflow. `lazy()` is the whole reason it
-// is a separate module from `WorkflowCard`.
-const WorkflowEditor = lazy(() => import('../components/DynamicComponents/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })));
+/**
+ * The whole Workflows tab, in one lazily-loaded chunk (review package H).
+ *
+ * It replaces `WorkflowCard` + `blankWorkflow` + a `lazy()` `WorkflowEditor`
+ * and roughly sixty lines of grid, delete-confirm and editor wiring that this
+ * view kept a near-duplicate of alongside `ClientDetailView`'s. Both are gone
+ * from this route's STATIC graph now — the card was in it, and the tab is the
+ * one place that needs `api/workflows.ts`, which touches the generated
+ * approvals client. See `apps/web/CLAUDE.md` -> *Bundle*.
+ */
+const WorkflowsPanel = lazy(() => import('../components/DynamicComponents/WorkflowsPanel'));
 import { ConfirmStep } from '../components/DynamicComponents/ConfirmStep';
-import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import type { ApprovalItem, ApprovalWorkflow, Document } from '../lib/types';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 /**
@@ -80,6 +84,12 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = {
 };
 
 const m = defineMessages({
+  scopeMine: { id: 'approvals.approvalsView.scopeMine', defaultMessage: 'Waiting on me' },
+  scopeAll: { id: 'approvals.approvalsView.scopeAll', defaultMessage: 'All pending' },
+  searchPlaceholder: {
+    id: 'approvals.approvalsView.searchPlaceholder',
+    defaultMessage: 'Search supplier or approver...',
+  },
   heading: { id: 'approvals.approvalsView.heading', defaultMessage: 'Approvals' },
   summary: {
     id: 'approvals.approvalsView.summary',
@@ -93,13 +103,6 @@ const m = defineMessages({
   queueLoadError: {
     id: 'approvals.approvalsView.queueLoadError',
     defaultMessage: 'The approval queue could not be loaded',
-  },
-  newWorkflowAction: { id: 'approvals.approvalsView.newWorkflowAction', defaultMessage: 'New workflow' },
-  scopeMine: { id: 'approvals.approvalsView.scopeMine', defaultMessage: 'Waiting on me' },
-  scopeAll: { id: 'approvals.approvalsView.scopeAll', defaultMessage: 'All pending' },
-  searchPlaceholder: {
-    id: 'approvals.approvalsView.searchPlaceholder',
-    defaultMessage: 'Search supplier or approver...',
   },
   columnApprover: { id: 'approvals.approvalsView.columnApprover', defaultMessage: 'Approver' },
   columnBranching: { id: 'approvals.approvalsView.columnBranching', defaultMessage: 'Branching' },
@@ -146,31 +149,6 @@ const m = defineMessages({
     defaultMessage:
       'Read the review to see exactly what will be approved. Approvals override every auto-publish path.',
   },
-  deleteWorkflowTitle: {
-    id: 'approvals.approvalsView.deleteWorkflowTitle',
-    defaultMessage: 'Delete the "{name}" workflow?',
-  },
-  deleteWorkflowDetail: {
-    id: 'approvals.approvalsView.deleteWorkflowDetail',
-    defaultMessage: '{count, plural, one {# stage} other {# stages}}, applying to {appliesTo}.',
-  },
-  deleteWorkflowConsequence: {
-    id: 'approvals.approvalsView.deleteWorkflowConsequence',
-    defaultMessage: 'Items on it stop pausing for approval and publish straight through.',
-  },
-  deleteWorkflowConfirm: {
-    id: 'approvals.approvalsView.deleteWorkflowConfirm',
-    defaultMessage: 'Yes, delete it',
-  },
-  deleteWorkflowAudit: {
-    id: 'approvals.approvalsView.deleteWorkflowAudit',
-    defaultMessage: 'Deleted approval workflow',
-  },
-  workflowsBlurb: {
-    id: 'approvals.approvalsView.workflowsBlurb',
-    defaultMessage:
-      'No cap on how many workflows you can run, and stages can branch on conditions — the two things that push firms onto ApprovalMax.',
-  },
   columnOutcome: { id: 'approvals.approvalsView.columnOutcome', defaultMessage: 'Outcome' },
   outcomeApproved: { id: 'approvals.approvalsView.outcomeApproved', defaultMessage: 'Approved' },
   outcomeRejected: { id: 'approvals.approvalsView.outcomeRejected', defaultMessage: 'Rejected' },
@@ -201,10 +179,6 @@ const m = defineMessages({
     defaultMessage:
       'Click any value to correct it — the item stays on its approval stage until you pass it.',
   },
-  saveWorkflowAudit: {
-    id: 'approvals.approvalsView.saveWorkflowAudit',
-    defaultMessage: 'Saved approval workflow',
-  },
   closePreviewLabel: {
     id: 'approvals.approvalsView.closePreviewLabel',
     defaultMessage: 'Close the document',
@@ -214,7 +188,7 @@ const m = defineMessages({
 export function ApprovalsView() {
   const intl = useIntl();
   const {
-    approvals, approvalWorkflows, clients, saveWorkflow, deleteWorkflow,
+    approvals, approvalWorkflows, clients,
     advanceApproval, rejectApproval, startConversation, logAudit, documents,
     session, refetchBusinesses,
   } = useAppContext();
@@ -253,8 +227,6 @@ export function ApprovalsView() {
     if (first) setDetail(first);
   }, [approvals]));
   useTourAction('tour:reset', useCallback(() => { setDetail(null); setNoteFor(null); }, []));
-  const confirm = useConfirm();
-  const [editing, setEditing] = useState<ApprovalWorkflow | null>(null);
 
   /**
    * The stage an item sits on, which decides both whether the current user can
@@ -433,15 +405,6 @@ export function ApprovalsView() {
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
-            {tab === 'Workflows' && (
-              <button
-                onClick={() => setEditing(blankWorkflow(intl))}
-                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                {intl.formatMessage(m.newWorkflowAction)}
-              </button>
-            )}
           </div>
         </div>
       </header>
@@ -545,43 +508,12 @@ export function ApprovalsView() {
           )}
 
           {tab === 'Workflows' && (
-            <div data-tour="workflows" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {approvalWorkflows.map((w) => (
-                <WorkflowCard
-                  key={w.id}
-                  workflow={w}
-                  usage={approvals.filter((a) => a.workflowId === w.id && a.state === 'pending').length}
-                  onEdit={() => setEditing(w)}
-                  onToggle={() => saveWorkflow({ ...w, active: !w.active })}
-                  onDelete={async () => {
-                    const ok = await confirm({
-                      tone: 'red',
-                      title: intl.formatMessage(m.deleteWorkflowTitle, { name: w.name }),
-                      detail: intl.formatMessage(m.deleteWorkflowDetail, {
-                        count: w.stages.length,
-                        appliesTo: w.appliesTo,
-                      }),
-                      consequence: intl.formatMessage(m.deleteWorkflowConsequence),
-                      confirmLabel: intl.formatMessage(m.deleteWorkflowConfirm),
-                    });
-                    if (!ok) return;
-                    deleteWorkflow(w.id);
-                    logAudit({ action: intl.formatMessage(m.deleteWorkflowAudit), scope: w.name, reviewOpened: true });
-                  }}
+            <div data-tour="workflows">
+              <Suspense fallback={null}>
+                <WorkflowsPanel
+                  usageFor={(id) => approvals.filter((a) => a.workflowId === id && a.state === 'pending').length}
                 />
-              ))}
-              <div className="border border-dashed border-white/10 rounded-[32px] p-6 flex flex-col items-center justify-center text-center gap-3 min-h-[220px]">
-                <p className="text-[13px] text-zinc-500 leading-relaxed max-w-xs">
-                  {intl.formatMessage(m.workflowsBlurb)}
-                </p>
-                <button
-                  onClick={() => setEditing(blankWorkflow(intl))}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
-                >
-                  <Plus size={15} />
-                  {intl.formatMessage(m.newWorkflowAction)}
-                </button>
-              </div>
+              </Suspense>
             </div>
           )}
 
@@ -678,15 +610,6 @@ export function ApprovalsView() {
             } : {})}
             onClose={() => setDetail(null)}
           />
-        )}
-        {editing && (
-          <Suspense fallback={null}>
-            <WorkflowEditor
-              workflow={editing}
-              onSave={(w) => { saveWorkflow(w); logAudit({ action: intl.formatMessage(m.saveWorkflowAudit), scope: w.name, reviewOpened: true }); setEditing(null); }}
-              onClose={() => setEditing(null)}
-            />
-          </Suspense>
         )}
       </AnimatePresence>
       {/* The document behind the row, opened without leaving the queue. */}

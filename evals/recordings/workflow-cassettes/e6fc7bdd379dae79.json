@@ -1,0 +1,70 @@
+{
+  "key": "e6fc7bdd379dae79",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Computer Equipment Approval",
+          "scope": {
+            "kind": "categories",
+            "categoryNames": [
+              "Computer equipment"
+            ]
+          },
+          "stages": [
+            {
+              "name": "Finance Director review",
+              "approver": "Finance Director",
+              "canEdit": true,
+              "clientSide": false
+            },
+            {
+              "name": "Client sign-off",
+              "approver": "Client",
+              "canEdit": false,
+              "clientSide": true,
+              "thresholdAboveGbp": 1000
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "Computer equipment items go to the Finance Director first.",
+            "Items over £1,000 then require client sign-off as a second stage.",
+            "The client is the business owner/director, so they are client-side."
+          ],
+          "assumed": [
+            "Self-approval is not allowed.",
+            "The Finance Director (practice-side, first stage) can edit the coding.",
+            "The client-side approver cannot edit the coding.",
+            "No specific client name was given; labelled as 'Client'."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1934,
+      "output_tokens": 326,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

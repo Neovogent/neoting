@@ -320,8 +320,11 @@ export function workflowFor(
   claimDocumentIds: ReadonlySet<string> = new Set<string>(),
 ): ApprovalWorkflow | undefined {
   const candidates = workflows.filter((w) => {
-    if (!w.active) return false;
-    if (!w.clientIds.includes(doc.clientId)) return false;
+    if (!w.isActive) return false;
+    // One workflow, one client (review package H) — prisma's shape, taken in
+    // session. This used to be `clientIds.includes`, which is what let a
+    // practice-wide workflow appear on a client it had never been pointed at.
+    if (w.businessId !== doc.clientId) return false;
 
     if (w.appliesTo.startsWith('Category:')) {
       return listed(w.appliesTo, 'Category:').includes(doc.category.toLowerCase());
@@ -340,11 +343,18 @@ export function workflowFor(
   return candidates.sort((a, b) => b.specificity - a.specificity)[0];
 }
 
-/** Which branch conditions fire for this amount / supplier. */
+/**
+ * Which branch conditions fire for this amount / supplier.
+ *
+ * ⚠ `total` is float POUNDS (every synthetic `Document.total` is) and the
+ * threshold is integer PENCE, so the comparison converts. It converts HERE
+ * rather than in the stored value because the stored value is money and money
+ * is integer pence — the invariant survives a synthetic model that predates it.
+ */
 export function branchesFor(workflow: ApprovalWorkflow, total: number, newSupplier: boolean) {
   return workflow.branches.filter((b) => {
-    if (b.field === 'amount') return total > Number(b.value);
-    if (b.field === 'supplier-age') return newSupplier;
+    if (b.field === 'amount') return b.thresholdAbovePence !== undefined && total * 100 > b.thresholdAbovePence;
+    if (b.field === 'supplierAge') return newSupplier;
     return false;
   });
 }
@@ -383,7 +393,8 @@ export function buildApprovals(
      * sign-off) had no way of appearing until someone approved by hand.
      */
     const stageIndex = workflow.stages.reduce(
-      (best, s, i) => (s.thresholdAbove !== undefined && doc.total > s.thresholdAbove ? i : best),
+      // Pounds against pence — see branchesFor.
+      (best, s, i) => (s.thresholdAbovePence !== undefined && doc.total * 100 > s.thresholdAbovePence ? i : best),
       0,
     );
     const stage = workflow.stages[stageIndex];

@@ -1,0 +1,60 @@
+{
+  "key": "261fdb2798d9d2ff",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Manager approval over £500",
+          "scope": {
+            "kind": "costs"
+          },
+          "stages": [
+            {
+              "name": "Manager review",
+              "approver": "Manager",
+              "canEdit": true,
+              "clientSide": false,
+              "thresholdAboveGbp": 500
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "Items over £500 require manager approval.",
+            "The description asked for automatic publishing to Xero once approved."
+          ],
+          "assumed": [
+            "Scope set to costs as no specific scope was mentioned.",
+            "Self-approval is not permitted.",
+            "The manager is a practice-side role with editing rights.",
+            "Automatic release/publishing to Xero is not supported — releasing remains the super admin's own act."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1937,
+      "output_tokens": 269,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

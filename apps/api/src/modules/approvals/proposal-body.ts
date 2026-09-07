@@ -50,6 +50,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'business.reactivate',
   'document.purge',
   'document.resolve-duplicate',
+  'policy.activate',
 ];
 
 const KNOWN_KINDS = new Set<string>(Object.values(ProposalKind));
