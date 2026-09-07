@@ -290,6 +290,14 @@ export class BusinessesService {
         // invite-path record has no sector until they register, and not every
         // client is working towards a filing date.
         industry: row.industry,
+        // ⚠ The VAT registration, 7 Sep 2026. The accountant's Client details
+        // has always had a VAT NUMBER row and it read `—` for every live
+        // client, because the value never crossed the wire — the same number
+        // was visible in the CLIENT's own portal at the time. Both fields, not
+        // just the number: registered-with-no-number-yet is a real onboarding
+        // state and reads differently to not registered.
+        vatNumber: row.vatNumber,
+        vatRegistered: row.vatRegistered,
         nextDeadline: row.nextDeadline === null ? null : toIsoDate(row.nextDeadline),
         // Null for a client with no primary contact, and null for a primary
         // contact with no address on file (`contacts.email` is nullable — a

@@ -2130,6 +2130,7 @@ export function ClientDetailView() {
                   assigneeUserId: draft.assigneeId === '' ? null : draft.assigneeId,
                   dueDate: draft.dueDate === '' ? null : draft.dueDate,
                   dependsOnTaskId: draft.dependsOn === '' ? null : draft.dependsOn,
+                  cadence: draft.cadence === '' ? null : draft.cadence,
                 });
               } else {
                 addTask({
@@ -2725,6 +2726,23 @@ const addTaskMessages = defineMessages({
     defaultMessage: 'No active colleagues to assign to — add one under Team first.',
   },
   dueLabel: { id: 'clients.addTaskForm.dueLabel', defaultMessage: 'Due' },
+  /* ⚠ RECURRENCE HAD NO CONTROL AT ALL until 7 Sep 2026, and the server has
+     had it since the item-54 package: `TaskCreateRequest.cadence`, and
+     `setTaskStatus` returns the next occurrence when a task carrying one is
+     completed. A live walk found the whole feature unreachable — a practice
+     could not create a recurring task, so the code that creates the next one
+     could never run. The words below name the two cadences the enum has
+     (monthly, quarterly) and say what completing one does, because "repeats
+     monthly" alone does not tell you when the next one appears. */
+  repeats: { id: 'clients.addTaskForm.repeats', defaultMessage: 'Repeats' },
+  repeatsNone: { id: 'clients.addTaskForm.repeatsNone', defaultMessage: 'Once — it is done when it is done' },
+  repeatsMonthly: { id: 'clients.addTaskForm.repeatsMonthly', defaultMessage: 'Every month' },
+  repeatsQuarterly: { id: 'clients.addTaskForm.repeatsQuarterly', defaultMessage: 'Every quarter' },
+  repeatsNote: {
+    id: 'clients.addTaskForm.repeatsNote',
+    defaultMessage:
+      'Ticking a repeating task opens the next one straight away, dated a period later. Nothing runs on a timer — the next one appears because you finished this one.',
+  },
   blockedBy: { id: 'clients.addTaskForm.blockedBy', defaultMessage: 'Blocked by' },
   blockedByOptional: { id: 'clients.addTaskForm.blockedByOptional', defaultMessage: '(optional)' },
   blockedByNone: { id: 'clients.addTaskForm.blockedByNone', defaultMessage: 'Nothing — it can start now' },
@@ -2747,7 +2765,7 @@ function AddTaskForm({ client, colleagues, existing, live, onAdd, onClose }: {
   existing: WorkflowTask[];
   /** Live, the assignee list is the practice's real members; otherwise the cast. */
   live: boolean;
-  onAdd: (draft: { title: string; assigneeId: string; dueDate: string; dependsOn: string }) => void;
+  onAdd: (draft: { title: string; assigneeId: string; dueDate: string; dependsOn: string; cadence: '' | 'monthly' | 'quarterly' }) => void;
   onClose: () => void;
 }) {
   const intl = useIntl();
@@ -2768,6 +2786,7 @@ function AddTaskForm({ client, colleagues, existing, live, onAdd, onClose }: {
   // cannot take — so it starts empty rather than showing a date it would then
   // refuse. An empty due date is a real state on the wire.
   const [due, setDue] = useState('');
+  const [cadence, setCadence] = useState<'' | 'monthly' | 'quarterly'>('');
   const [dependsOn, setDependsOn] = useState('');
 
   const problem = !title.trim()
@@ -2833,6 +2852,26 @@ function AddTaskForm({ client, colleagues, existing, live, onAdd, onClose }: {
 
           <div>
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+              {intl.formatMessage(addTaskMessages.repeats)}
+            </div>
+            <select
+              value={cadence}
+              onChange={(e) => setCadence(e.target.value as '' | 'monthly' | 'quarterly')}
+              className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors appearance-none"
+            >
+              <option value="" className="bg-card">{intl.formatMessage(addTaskMessages.repeatsNone)}</option>
+              <option value="monthly" className="bg-card">{intl.formatMessage(addTaskMessages.repeatsMonthly)}</option>
+              <option value="quarterly" className="bg-card">{intl.formatMessage(addTaskMessages.repeatsQuarterly)}</option>
+            </select>
+            {cadence !== '' && (
+              <p className="text-[12px] text-zinc-500 mt-2 leading-relaxed">
+                {intl.formatMessage(addTaskMessages.repeatsNote)}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
               {intl.formatMessage(addTaskMessages.blockedBy)}{' '}
               <span className="text-zinc-600 normal-case tracking-normal font-semibold">{intl.formatMessage(addTaskMessages.blockedByOptional)}</span>
             </div>
@@ -2859,7 +2898,7 @@ function AddTaskForm({ client, colleagues, existing, live, onAdd, onClose }: {
             {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
-            onClick={() => onAdd({ title: title.trim(), assigneeId, dueDate: due, dependsOn })}
+            onClick={() => onAdd({ title: title.trim(), assigneeId, dueDate: due, dependsOn, cadence })}
             disabled={!!problem}
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
           >

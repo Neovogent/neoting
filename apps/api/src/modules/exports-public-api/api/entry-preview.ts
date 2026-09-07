@@ -5,6 +5,13 @@ import type { ExportEntryPreview, ExportEntryRefusal } from '../emitters/export-
 import { selectEmitter } from '../emitters/select-emitter.js';
 
 import type { AnalysisAccountChart } from './analysis-account-chart.js';
+
+/**
+ * The one warning a publish preview must never show: it is caused by the
+ * preview itself passing a null `sourceLink`, not by anything about the
+ * document, and the export mints the link before the file is written.
+ */
+const PREVIEW_ONLY_WARNING = 'source-link-missing';
 import { documentToCanonicalRow, type ExportableDocumentRow } from './document-to-canonical.js';
 
 /**
@@ -37,11 +44,26 @@ import { documentToCanonicalRow, type ExportableDocumentRow } from './document-t
  * preview that INVENTED a plausible-looking code would put a string on a review
  * card that resolves to nothing.
  *
- * So the preview passes `null`, the emitter does exactly what it does for a
+ * So the preview passes `null` and the emitter does exactly what it does for a
  * linkless row — writes the reference and the provenance tag, and raises
- * `source-link-missing` — and the card carries that warning. The one column
- * that will differ between this preview and the file is therefore the one the
- * preview declares it does not yet know, rather than the one it quietly guessed.
+ * `source-link-missing`. The one column that will differ between this preview
+ * and the file is therefore the one the preview declares it does not yet know,
+ * rather than the one it quietly guessed.
+ *
+ * ⚠ **BUT THE WARNING IS STRIPPED BEFORE THE CARD SEES IT** (7 Sep 2026, found
+ * on a live release). It fired on EVERY row of EVERY publish — it has to, since
+ * this path always passes `null` — and it read *"This row has no
+ * source-document link… D43 requires one on every exported transaction"*, which
+ * tells the one person who can stop the release that they are about to break a
+ * scope-fence decision. They are not: the link is minted by the export a moment
+ * later, and the file carries it. A warning that is true of the preview and
+ * false of the file, on every row, every time, is the thing this file's own
+ * `chart` note warns against three paragraphs down — "a card raising an alarm
+ * about a defect that no longer exists, which is the fastest way to teach
+ * somebody to skip the warnings that matter."
+ *
+ * The EXPORT's copy of this warning is untouched and still means what it says:
+ * there, a missing link is a real linkless row in a real file.
  *
  * ## ⚠ `chart` is how the Analysis account column does NOT differ
  *
@@ -83,7 +105,19 @@ export function previewExportEntries(
     rows.push(built.row);
   }
 
-  const preview = selectEmitter(target).previewEntries(rows);
+  const emitted = selectEmitter(target).previewEntries(rows);
+  // See the ⚠ above: this path cannot mint, so every document would carry
+  // `source-link-missing` and none of them means anything. Dropped here, at the
+  // one seam that knows WHY the link is absent, rather than in the renderer —
+  // which would have to guess whether a linkless row came from a preview or
+  // from a genuinely unroutable document.
+  const preview: ExportEntryPreview = {
+    ...emitted,
+    documents: emitted.documents.map((document) => ({
+      ...document,
+      warnings: document.warnings.filter((warning) => warning.code !== PREVIEW_ONLY_WARNING),
+    })),
+  };
   // `refusals` is omitted rather than sent empty: the payload this lands in is
   // hashed and stored per proposal, and an always-present empty array is bytes
   // on every review that say nothing.

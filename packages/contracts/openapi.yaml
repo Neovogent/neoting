@@ -10542,6 +10542,25 @@ components:
             the client registers, which is why it is nullable rather than
             defaulted to a word nobody chose.
           type: [string, 'null']
+        vatNumber:
+          type: [string, 'null']
+          description: |
+            The VAT registration on the business's own record, or null when it
+            holds none.
+
+            ⚠ Added 7 Sep 2026. The accountant's Client details had a VAT
+            NUMBER row that read `—` for EVERY live client whatever the record
+            held — the field simply never crossed the wire, so the only value
+            it could ever show came from the synthetic seed. The same record's
+            number was visible in the client's OWN portal at the time, and the
+            practice-side Edit details form offered to change a value the page
+            beside it never displayed.
+        vatRegistered:
+          type: boolean
+          description: |
+            Whether the business is VAT registered. Distinct from a null
+            `vatNumber`: registered-but-number-not-yet-recorded is a real state
+            during onboarding and reads differently to not registered at all.
         nextDeadline:
           description: |
             The next filing date this client is working towards, `YYYY-MM-DD`.

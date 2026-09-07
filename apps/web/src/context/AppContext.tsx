@@ -1027,6 +1027,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               // display only, absent stays absent.
               contactName: b.primaryContactName ?? undefined,
               mobile: b.primaryContactMobile ?? undefined,
+              // ⚠ The VAT number, 7 Sep 2026 widening — the third field on
+              // this panel that drew a permanent em dash on every live client
+              // whatever the record held, and the one the client's own portal
+              // was showing correctly at the same moment. Same stance as the
+              // two above: display only, absent stays absent.
+              vatNumber: b.vatNumber ?? undefined,
               setupLinkSentAt: b.setupLinkSentAt ?? undefined,
               // The raw status beside the derived badge below: the client's
               // Settings tab forks on it (setup link while un-onboarded, the
