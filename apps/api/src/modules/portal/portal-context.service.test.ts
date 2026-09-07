@@ -40,6 +40,14 @@ interface Fixture {
         /** The two columns `PortalSummary.subscription` adds — Stripe's plan ref and the renewal date. */
         plan?: string | null;
         subscriptionCurrentPeriodEnd?: Date | null;
+        /** The record's own profile columns — `PortalContext.profile`. */
+        tradingName?: string | null;
+        companyNumber?: string | null;
+        legalStructure?: string | null;
+        industry?: string | null;
+        website?: string | null;
+        vatRegistered?: boolean | null;
+        vatNumber?: string | null;
       }
     >
   >;
