@@ -2591,3 +2591,59 @@ with confidences and provenance; `biz_burger`'s chart derives and PERSISTS as
 `RETAIL_AND_HOSPITALITY`; a correction to `COS_FOOD_AND_DRINK` is accepted,
 files as *"Confirmed by you"*, and moves the document to READY. Both API (2,638)
 and web (901) suites pass on the reseeded database.
+
+---
+
+## The live walk — what the DEPLOYED product does (7 Sep 2026)
+
+Everything above this line was verified against the repo. This section is the
+first pass verified against **staging**, driven in a browser as a real practice
+would: a new firm at `/signup`, a restaurant client onboarded through the emailed
+setup link, nine documents and a bank statement through **real Bedrock and
+Textract**, a release exported, real SES mail read in a real inbox. Evidence:
+`assets/2026-09-07-live-e2e/` (69 screenshots).
+
+**41 review items confirmed working on the running system. 11 defects found —
+every one of them invisible to a test suite that was, and stayed, entirely
+green.** All 11 fixed, merged (#272, #273) and re-driven on staging afterwards.
+
+⚠ **The shape of the misses is worth more than the list.** Nine of the eleven are
+about what a person SEES rather than what a function returns, and the two that
+are not are about a feature existing everywhere except where somebody could ask
+for it:
+
+| Found live | The class of mistake |
+|---|---|
+| A dialog opened inside another dialog anchored to that card, not the viewport — off-screen, reading as a dead button | `position: fixed` under a transformed ancestor. Invisible to jsdom, which computes no layout |
+| Every publish review warned that the release broke D43 | A warning structurally guaranteed by the preview's own null link. True of the preview, false of the file, on every row |
+| A cost billed to a DIFFERENT COMPANY sat unflagged at 97% confidence | Nothing compared the document's own bill-to against the client it was filed under |
+| Recurring tasks had no control to create one | Contract, server and tests complete; the dialog never asked. The next-occurrence code could never run |
+| The VAT number never crossed the wire | Third field on that panel to draw a permanent em dash on live data. A panel written against the seed, over a wire that never carried it |
+| A file name rendered as a supplier, styled exactly like a real party | The board could not be scanned for "did the pipeline actually know this?" |
+| "Register on their behalf" promised six steps and asked nothing of the client | Four steps, and it still emails a sign-in link. Both step blurbs were the OTHER path's |
+| Onboarding re-asked for four values the accountant had just keyed | The record held them; the wire did not carry them to the step |
+| An escalation captioned `NOTHING_MATCHED` under prose about arithmetic | `basis` is the bucket every escalation shares; `escalationReason` was on the wire all along |
+| "Uploaded by 5b-blurred-restaurant.png" | A file name where a person's name belongs |
+| The approval card said `REPAIRS_AND_MAINTENANCE` where the suggestion said "Expenses: Repairs and maintenance" | Two vocabularies for one decision, and the enum was on the screen the approval is echoed from |
+
+**And the Stripe webhook, which is why no subscription has ever activated
+itself.** Stripe had been mailing delivery failures since 4 Sep. The endpoint was
+never at fault — DNS, TLS, CloudFront, the WAF and the route were all checked
+first and a hand-signed probe returned 200 throughout. **Two enabled endpoints
+were registered against the same URL**, 94 seconds apart on 28 Aug, a double
+submit during setup: every event was delivered twice, each signed with its own
+endpoint's secret, and the app holds one — so half of all deliveries 401'd. One
+clean endpoint now (`we_1UD6OJGMdHp4NCWvfHo2CxBW`), its secret in Secrets
+Manager, both duplicates DISABLED rather than deleted. `docs/runbooks/stripe-billing.md`
+§6 carries the diagnosis and the instruction to list endpoints before registering
+another. ⚠ A third endpoint on that account belongs to a DIFFERENT application
+and is the second failure email; deliberately untouched.
+
+**Still open after this pass:** item 16's range/year/date modes (contract +
+engine, and the ask is recorded above), item 45 (one click in the Stripe
+dashboard, the owner's), the chase SEND itself (staging a chase is outward-facing
+and the permission guard stopped it mid-walk — staged, reviewed and denied were
+all verified, but nothing was let leave), and the Stripe card form, which needs a
+real card.
+
+Report: <https://claude.ai/code/artifact/408d0c03-be35-46a2-a592-39ddeccb742a>
