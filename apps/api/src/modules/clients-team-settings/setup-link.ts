@@ -126,7 +126,7 @@ export const INVITE_LINK_PATH = '/invite';
  * because a caller constructing the service by hand should not have to invent an
  * origin.
  */
-export const DEFAULT_APP_ORIGIN = 'https://app.neoting.neovogent.com';
+export const DEFAULT_APP_ORIGIN = 'https://neoacc.neovogent.com';
 
 /** `<origin>/app/setup?setupToken=<token>` — the whole of the client's link. */
 export function buildSetupLink(appOrigin: string, token: string): string {

@@ -316,12 +316,21 @@ const EnvSchema = z.object({
 
   // The web app's public origin — where `/p/<token>` (the chase portal) and
   // `/app/setup` are served. Read by chase.send composition to build the full
-  // portal URL the reviewed message carries; the default is the staging
+  // portal URL the reviewed message carries; the default is the customer-facing
   // frontend so a task definition that never sets it keeps working links.
   // Local .env sets http://localhost:5173. The two hard-coded
   // DEFAULT_APP_ORIGIN constants (clients-team-settings, auth-tenancy) are the
   // acknowledged siblings to migrate onto this key.
-  APP_ORIGIN: z.string().default('https://app.neoting.neovogent.com'),
+  //
+  // ⚠ **`neoacc.neovogent.com` IS THE PRODUCT'S ONE PUBLIC NAME** (owner, 8 Sep
+  // 2026). This value is not cosmetic: it is the host printed inside every
+  // chase link, setup link and sign-in link a CLIENT receives, and a client
+  // does not know which of our hostnames are ours. `app.neoting.neovogent.com`
+  // still resolves and is still an alias on the distribution — links already
+  // sent keep working — but nothing new should be minted on it.
+  //
+  // The API is a different name and stays one: `api.neoting.neovogent.com`.
+  APP_ORIGIN: z.string().default('https://neoacc.neovogent.com'),
 
   // ── Outbound email (S2) ──────────────────────────────────────────────────
   //
