@@ -98,6 +98,7 @@ const m = defineMessages({
   },
   canSend: { id: 'portal.livePortalPeople.canSend', defaultMessage: 'Can send documents' },
   canSeeTotals: { id: 'portal.livePortalPeople.canSeeTotals', defaultMessage: 'Can see totals' },
+  canClaim: { id: 'portal.livePortalPeople.canClaim', defaultMessage: 'Can claim expenses' },
   accessOwner: { id: 'portal.livePortalPeople.accessOwner', defaultMessage: 'Owner' },
   accessUserAdmin: { id: 'portal.livePortalPeople.accessUserAdmin', defaultMessage: 'User administrator' },
   accessStandard: { id: 'portal.livePortalPeople.accessStandard', defaultMessage: 'Member' },
@@ -412,6 +413,12 @@ const e = defineMessages({
   accessLabel: { id: 'portal.portalPersonEditor.accessLabel', defaultMessage: 'What they can do here' },
   canSendLabel: { id: 'portal.portalPersonEditor.canSendLabel', defaultMessage: 'Can send documents' },
   canSeeTotalsLabel: { id: 'portal.portalPersonEditor.canSeeTotalsLabel', defaultMessage: 'Can see totals' },
+  canClaimLabel: { id: 'portal.portalPersonEditor.canClaimLabel', defaultMessage: 'Can submit expense claims' },
+  canClaimNote: {
+    id: 'portal.portalPersonEditor.canClaimNote',
+    defaultMessage:
+      'Lets this person mark something they paid for themselves, so the company owes them back. Off by default — it is the one permission here that can cost the company money.',
+  },
   canSeeTotalsNote: {
     id: 'portal.portalPersonEditor.canSeeTotalsNote',
     defaultMessage: 'Leave this off for staff who photograph receipts but should not see the figures.',
@@ -472,6 +479,10 @@ function PortalPersonEditor({
   );
   const [canSendDocuments, setCanSend] = useState(person?.canSendDocuments ?? true);
   const [canSeeTotals, setCanSeeTotals] = useState(person?.canSeeTotals ?? false);
+  // Defaults FALSE for a new person, matching the column and the contract:
+  // it grants a power nobody holds by default — obliging the company to pay
+  // somebody — so an omitted answer is the safer one, not the compatible one.
+  const [canSubmitExpenseClaims, setCanClaim] = useState(person?.canSubmitExpenseClaims ?? false);
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -484,6 +495,7 @@ function PortalPersonEditor({
           access,
           canSendDocuments,
           canSeeTotals,
+          canSubmitExpenseClaims,
         };
         await invitePerson(sessionToken, input);
         return;
@@ -494,6 +506,7 @@ function PortalPersonEditor({
         access,
         canSendDocuments,
         canSeeTotals,
+        canSubmitExpenseClaims,
       });
     },
     onSuccess: onSaved,
@@ -584,6 +597,12 @@ function PortalPersonEditor({
             note={intl.formatMessage(e.canSeeTotalsNote)}
             checked={canSeeTotals}
             onChange={setCanSeeTotals}
+          />
+          <Toggle
+            label={intl.formatMessage(e.canClaimLabel)}
+            note={intl.formatMessage(e.canClaimNote)}
+            checked={canSubmitExpenseClaims}
+            onChange={setCanClaim}
           />
 
           {error !== null && (

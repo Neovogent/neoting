@@ -51,6 +51,7 @@ const OWNER: PortalPersonRow = {
   access: 'BUSINESS_ADMIN',
   canSendDocuments: true,
   canSeeTotals: true,
+  canSubmitExpenseClaims: false,
   isYou: true,
   isActive: true,
   addedAt: '2026-08-01T09:00:00.000Z',
@@ -64,6 +65,7 @@ const STAFF: PortalPersonRow = {
   jobTitle: 'Staff',
   access: 'BUSINESS_STANDARD',
   canSeeTotals: false,
+  canSubmitExpenseClaims: false,
   isYou: false,
 };
 

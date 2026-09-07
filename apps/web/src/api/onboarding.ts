@@ -347,6 +347,8 @@ export interface BusinessPortalHome {
    * False when the server did not say. See the parse.
    */
   readonly canManageBilling: boolean;
+  /** Whether THIS person may mark an upload as one they paid for (item 50). */
+  readonly canSubmitExpenseClaims: boolean;
   readonly lastDocumentAt: string | null;
   /** The itemised asks (Phase 5) — what "waiting for N documents" actually names. */
   readonly items: readonly BusinessPortalAsk[];
@@ -406,6 +408,7 @@ const portalHomeShape = z.object({
       // deploy. Closed is the one that cannot leak, and the server refuses
       // either way — this is presentation.
       canManageBilling: z.boolean().nullish(),
+      canSubmitExpenseClaims: z.boolean().nullish(),
       lastDocumentAt: z.string().nullish(),
       // The plan (contract change, 2 Sep 2026). `nullish` twice over on
       // purpose: absent means an older server, null means a client who has
@@ -453,6 +456,10 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
     awaitingYou: body.summary.awaitingYou,
     subscriptionActive: body.summary.subscriptionActive,
     canManageBilling: body.summary.canManageBilling ?? false,
+    // Absent (an older server) reads as NOT permitted — the safe direction for
+    // a capability that can cost the company money, and the same `?? false`
+    // stance `canManageBilling` takes one line up.
+    canSubmitExpenseClaims: body.summary.canSubmitExpenseClaims ?? false,
     lastDocumentAt: body.summary.lastDocumentAt ?? null,
     items: (body.items ?? []).map((item) => ({
       transactionId: item.transactionId,

@@ -195,7 +195,7 @@ export class PortalContextService {
           ? null
           : await db.contact.findFirst({
               where: { id: facts.contactId, businessId: facts.businessId, deactivatedAt: null },
-              select: { id: true, portalRole: true, isPrimary: true },
+              select: { id: true, portalRole: true, isPrimary: true, canSubmitExpenseClaims: true },
             });
 
       // ⚠ `notDeleted()` on BOTH document reads, and they have to move
@@ -289,6 +289,12 @@ export class PortalContextService {
           // `mayManageBilling` rather than restated — a second copy of a
           // permission rule is how a screen and a server come to disagree.
           canManageBilling: mayManageBilling(portalActorFor(acting)),
+          // The claim capability, straight off the roster row (review item
+          // 50). Not derived from a role like `canManageBilling` above: this
+          // one is granted per PERSON by the client's own owner, so the column
+          // IS the rule and there is nothing to compute. A chase session names
+          // no contact and therefore cannot claim — there is nobody to owe.
+          canSubmitExpenseClaims: acting?.canSubmitExpenseClaims ?? false,
           lastDocumentAt: latest?.createdAt.toISOString() ?? null,
           subscription: toClientSubscription(business),
         },

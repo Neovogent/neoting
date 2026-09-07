@@ -9282,8 +9282,28 @@ components:
         business knowing how many documents are in review inside the practice,
         or what the practice's approval queue looks like — those are the firm's
         working state. This is the client's own side of the same pipeline.
-      required: [documentsSent, awaitingYou, subscriptionActive, canManageBilling]
+      required: [documentsSent, awaitingYou, subscriptionActive, canManageBilling, canSubmitExpenseClaims]
       properties:
+        canSubmitExpenseClaims:
+          type: boolean
+          description: |
+            Whether the person holding THIS session may mark an upload as
+            something they paid for themselves (review item 50).
+
+            **A fact for honest degradation, never a gate** — the same standing
+            `canManageBilling` has below it. `POST /portal/uploads` refuses an
+            `expenseClaim` from a session without the capability regardless of
+            what a browser believes, and refuses one from a chase link outright.
+
+            ⚠ It exists because the alternative is the S12 lie: a tick offering
+            to claim money back, on a screen belonging to somebody who has not
+            been granted it, whose upload then succeeds while owing them
+            nothing. This one degrades by HIDING — an unclaimable upload is
+            simply an upload, and there is nothing a person without the
+            permission could do with the control.
+
+            Required rather than optional, for `Me.isOwner`'s reason: an
+            omitted boolean and `false` are indistinguishable once rendered.
         canManageBilling:
           type: boolean
           description: |

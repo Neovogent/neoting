@@ -66,6 +66,7 @@ export interface PortalPersonRow {
   readonly access: WorkspaceRole;
   readonly canSendDocuments: boolean;
   readonly canSeeTotals: boolean;
+  readonly canSubmitExpenseClaims: boolean;
   /** True on exactly one row — the person holding this session. */
   readonly isYou: boolean;
   /** False for somebody whose access was revoked. Removal is deactivation, never deletion. */
@@ -117,6 +118,7 @@ function toRow(person: {
   access: WorkspaceRole;
   canSendDocuments: boolean;
   canSeeTotals: boolean;
+  canSubmitExpenseClaims: boolean;
   isYou: boolean;
   isActive: boolean;
   addedAt: string;
@@ -129,6 +131,7 @@ function toRow(person: {
     access: person.access,
     canSendDocuments: person.canSendDocuments,
     canSeeTotals: person.canSeeTotals,
+    canSubmitExpenseClaims: person.canSubmitExpenseClaims,
     isYou: person.isYou,
     isActive: person.isActive,
     addedAt: person.addedAt,
@@ -143,6 +146,7 @@ export interface InvitePersonInput {
   readonly access: PortalAccessRole;
   readonly canSendDocuments: boolean;
   readonly canSeeTotals: boolean;
+  readonly canSubmitExpenseClaims: boolean;
 }
 
 /**
@@ -182,6 +186,7 @@ export interface UpdatePersonInput {
   readonly access?: PortalAccessRole;
   readonly canSendDocuments?: boolean;
   readonly canSeeTotals?: boolean;
+  readonly canSubmitExpenseClaims?: boolean;
 }
 
 export async function updatePerson(
