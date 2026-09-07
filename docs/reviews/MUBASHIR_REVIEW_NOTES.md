@@ -1161,7 +1161,36 @@ The red line is `LivePortalSettings.tsx`'s generic `fault` message (`portal.live
 
 **Verification path:** hit the endpoint once with the portal bearer and read the response code + `NT-` problem, and/or read the staging api task logs for the Stripe SDK error string; fixes 1–2 are Stripe-Dashboard-side (save the live-mode portal config; re-scope or re-mint the restricted key), not code. **Web follow-up regardless of cause:** the fault line violates the app's own error rule (frontend ten, item 5 — plain English **plus the `NT-` code**); route it through `errorLabel` so the next person can tell these four causes apart from a screenshot.
 
-**🔶 DIAGNOSED — one dashboard step owed (5 Sep 2026, branch `fix/review-items-17-45-64`).**
+**✅ RESOLVED (7 Sep 2026) — it was cause A, and it is fixed and proven.**
+
+**Diagnosed by asking Stripe rather than reading logs.** The runbook's two
+candidate causes are distinguishable in one call:
+`stripe billing_portal configurations list --live` returned **`data: []`** —
+this account had **no live-mode customer-portal configuration at all**. Cause A,
+exactly as §5's per-mode warning predicted: the configuration is per MODE, the
+account went through a test→live switch on 2 Sep, and test-mode configuration
+does not carry over. Cause B (the restricted key's Customer Portal permission)
+was never the problem.
+
+**Fixed** by creating the live-mode configuration to §5's own spec —
+`bpc_1UD2PRGMdHp4NCWvSHAkVKwe`, active: payment-method update, invoice history
+and cancellation **on**; plan switch and quantity **off** (there is one plan,
+one per business); return URL, terms and privacy links pointing at the app's
+own legal pages.
+
+**Proven with the STAGING KEY, not with an admin one** — the distinction
+matters, because the key's permissions were the other hypothesis. A
+`billing_portal/sessions` create using the exact `rk_live_` key the API holds
+returned a session (`bps_1UD2Q1GMdHp4NCWvSL81HDy5`), which is the same call the
+button makes. Nothing in the repo changed: this was always a Stripe-side
+configuration fact, which is why #259 could only diagnose it.
+
+⚠ One unrelated thing the check turned up, recorded rather than acted on: the
+staging key lacks `connected_account_read`, so `GET /v1/account` refuses. No
+product path calls it today — it surfaced only because that was the probe used
+to confirm the key and my CLI were on the same account (they are:
+`acct_1RQtbxGMdHp4NCWv`). Left alone; granting a permission nothing needs is
+the opposite of the least-privilege the restricted key exists for.
 
 **Root cause, from the code and the module's recorded facts** (the AWS session on this machine had expired, so the log line itself is the owner's one remaining read): hypotheses 3 and 4 are RULED OUT statically — staging allowlists both web origins in `BILLING_RETURN_ORIGINS` (`infra/envs/staging/services.tf:317`) and the portal sends its own session's `businessId`; the panel showing **Active** also rules out `NT-BIL-001` (the webhook resolved that business BY its Stripe customer id, so the binding exists). What remains is Stripe refusing `billing_portal/sessions` **in live mode** — hypothesis 1 (no live-mode customer-portal configuration saved; the config §7 verified on 28 Aug was the SANDBOX's, and Stripe portal configs are per-mode) or hypothesis 2 (the hand-minted `rk_live_` key lacking the separately-granted **Customer Portal** permission). Both are 4xx refusals that `http-stripe-client.ts#refuse` collapsed into one "temporarily unavailable" NT-SRV-001 — which the panels then swallowed for the generic sentence in the screenshot.
 
