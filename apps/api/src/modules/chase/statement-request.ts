@@ -29,15 +29,58 @@ export const STATEMENT_ITEM_PREFIX = 'statement:';
 
 export const statementItemRef = (period: string): string => `${STATEMENT_ITEM_PREFIX}${period}`;
 
-/** The `YYYY-MM` a chase's itemRefs ask for, or null when it is not a statement request. */
+/**
+ * The two shapes a statement period may take on the wire and on `itemRefs`.
+ *
+ * ⚠ **The range was added 8 Sep 2026 (review item 16, the owner picked "start
+ * and end date").** A whole calendar month is still `YYYY-MM` and always will
+ * be: it is what every chase raised before that date carries, it is what the
+ * detection engine raises for a period gap, and it is the thing a client
+ * actually says out loud. The range is `YYYY-MM-DD..YYYY-MM-DD`, INCLUSIVE at
+ * both ends — the same rule the Export screen states in words, because a
+ * person picking "1 Aug to 31 Aug" means August.
+ *
+ * One string, not two fields, and that is deliberate: this value is an
+ * `itemRefs` tag, a proposal-identity component and a `chase.send` payload
+ * member, so a second field would have to be threaded through all three and
+ * every one of them would need a rule for "what if only one is set".
+ */
+const MONTH = /^[0-9]{4}-(0[1-9]|1[0-2])$/u;
+const DAY = '[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])';
+const RANGE = new RegExp(`^${DAY}\.\.${DAY}$`, 'u');
+
+/** True for either accepted shape. The one place that decides. */
+export function isStatementPeriod(period: string): boolean {
+  if (MONTH.test(period)) return true;
+  if (!RANGE.test(period)) return false;
+  // A range that runs backwards is not a period, it is a typo. Refusing it
+  // here keeps `periodWindow` total: every value that gets past this line
+  // produces a window with start < end.
+  const [from, to] = period.split('..') as [string, string];
+  return from <= to;
+}
+
+/** The period a chase's itemRefs ask for, or null when it is not a statement request. */
 export function statementPeriodOf(itemRefs: readonly string[]): string | null {
   const tag = itemRefs.find((ref) => ref.startsWith(STATEMENT_ITEM_PREFIX));
   const period = tag?.slice(STATEMENT_ITEM_PREFIX.length) ?? '';
-  return /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(period) ? period : null;
+  return isStatementPeriod(period) ? period : null;
 }
 
-/** The month's [start, end) as UTC instants — the overlap window `received` tests. */
+/**
+ * The period's [start, end) as UTC instants — the overlap window `received`
+ * tests. Half-open at the end whichever shape came in, so the caller's
+ * comparison never has to know which it was.
+ */
 export function periodWindow(period: string): { readonly start: Date; readonly end: Date } {
+  if (period.includes('..')) {
+    const [from, to] = period.split('..') as [string, string];
+    const end = new Date(`${to}T00:00:00.000Z`);
+    // Inclusive on the wire, half-open here: the day the client named is IN
+    // the period, so the window has to reach the start of the next one.
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start: new Date(`${from}T00:00:00.000Z`), end };
+  }
   const year = Number.parseInt(period.slice(0, 4), 10);
   const month = Number.parseInt(period.slice(5, 7), 10);
   return { start: new Date(Date.UTC(year, month - 1, 1)), end: new Date(Date.UTC(year, month, 1)) };

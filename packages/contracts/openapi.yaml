@@ -8563,8 +8563,26 @@ components:
             properties:
               statementPeriod:
                 type: [string, 'null']
-                pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
-                description: The calendar month whose bank statement is wanted, `YYYY-MM`. Present ⇒ this is a statement request.
+                pattern: '^([0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])\.\.[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$'
+                description: |
+                  The period whose bank statement is wanted. Present ⇒ this is a
+                  statement request.
+
+                  Two shapes, and both are permanent:
+
+                  - `YYYY-MM` — a whole calendar month. What the detection
+                    engine raises for a period gap, what every chase created
+                    before 8 Sep 2026 carries, and what a client says out loud.
+                  - `YYYY-MM-DD..YYYY-MM-DD` — an explicit range, **inclusive at
+                    both ends** (review item 16; the same rule the Export screen
+                    states in words, because a person picking "1 Aug to 31 Aug"
+                    means August). The server refuses a range that runs
+                    backwards.
+
+                  One string rather than two fields because this value is also
+                  an `itemRefs` tag and a proposal-identity component; a second
+                  field would need threading through both, and a rule for what
+                  it means when only one of them is set.
               businessId:
                 type: [string, 'null']
                 description: Server-stamped at creation for a statement request (a transaction chase derives its business from the chased transactions; a statement request has no transactions to derive from).

@@ -5,10 +5,10 @@ import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import { requestStatementProposal } from '../../api/proposals';
 import { Modal } from './Modal';
-import { ukLongMonth, UkMonthField } from './UkDateField';
+import { ukLongDate, ukLongMonth, UkDateField, UkMonthField } from './UkDateField';
 
 /**
- * Ask a client for a month's bank statement — the accountant's side of the
+ * Ask a client for a period's bank statement — the accountant's side of the
  * engine (c) chase (Phase 5). The `OffboardClientDialog` posture, exactly:
  * confirming CREATES a `chase.send` proposal and stops. The engine composes
  * the message server-side (month, working portal link, the client's PRIMARY
@@ -34,7 +34,7 @@ const m = defineMessages({
   detail: {
     id: 'bank.requestStatement.detail',
     defaultMessage:
-      'Confirming queues a request for {client}. The message is composed at review — the month, a secure upload link, and the client’s registered contact — and it sends only when your practice’s super admin approves it.',
+      'Confirming queues a request for {client}. The message is composed at review — the period, a secure upload link, and the client’s registered contact — and it sends only when your practice’s super admin approves it.',
   },
   /**
    * Item 24 — the same sentence for somebody who holds the release. It says
@@ -45,9 +45,29 @@ const m = defineMessages({
   detailYours: {
     id: 'bank.requestStatement.detailYours',
     defaultMessage:
-      'Confirming queues a request for {client}. The message is composed at review — the month, a secure upload link, and the client’s registered contact — and it sends once you have read that review and approved it in Approvals.',
+      'Confirming queues a request for {client}. The message is composed at review — the period, a secure upload link, and the client’s registered contact — and it sends once you have read that review and approved it in Approvals.',
   },
   monthLabel: { id: 'bank.requestStatement.monthLabel', defaultMessage: 'Which month?' },
+  /* ── The period, review item 16, the owner's choice of 8 Sep 2026 ─────────
+     He was offered three shapes and picked "start and end date", for the
+     reason that makes it the right one: a range already IS a month, a quarter,
+     a year or a single day, so one control answers all four asks without four
+     modes to explain. A whole month stays its own choice because it is the
+     common case and picking "1 Aug" and "31 Aug" by hand to mean August is
+     work the product can do for you. */
+  periodLabel: { id: 'bank.requestStatement.periodLabel', defaultMessage: 'Which period?' },
+  modeMonth: { id: 'bank.requestStatement.modeMonth', defaultMessage: 'A whole month' },
+  modeRange: { id: 'bank.requestStatement.modeRange', defaultMessage: 'Between two dates' },
+  fromLabel: { id: 'bank.requestStatement.fromLabel', defaultMessage: 'From' },
+  toLabel: { id: 'bank.requestStatement.toLabel', defaultMessage: 'To' },
+  rangeChosen: {
+    id: 'bank.requestStatement.rangeChosen',
+    defaultMessage: 'Asking for the statement covering {from} to {to}. Both days are included.',
+  },
+  rangeBackwards: {
+    id: 'bank.requestStatement.rangeBackwards',
+    defaultMessage: 'The end date is before the start date — swap them.',
+  },
   // ⚠ The confirm's gate is now the CONTROL's — a month and a year are chosen
   // or they are not — so this line no longer has to explain a regex. It says
   // what will be asked for, in words, which is what the accountant is about to
@@ -79,10 +99,22 @@ export default function RequestStatementDialog({
   // siblings cannot make different claims about the same person.
   const { session } = useAppContext();
   const canRelease = holdsReleaseAuthority(session);
-  const [period, setPeriod] = useState('');
+  const [mode, setMode] = useState<'month' | 'range'>('month');
+  const [month, setMonth] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  /**
+   * The one string the wire takes — `YYYY-MM` or `YYYY-MM-DD..YYYY-MM-DD`,
+   * inclusive at both ends. Empty whenever the choice is incomplete, which is
+   * also what disables the confirm: the gate is the CONTROL's, never a regex
+   * the accountant has to discover.
+   */
+  const backwards = mode === 'range' && from !== '' && to !== '' && to < from;
+  const period = mode === 'month' ? month : from !== '' && to !== '' && !backwards ? `${from}..${to}` : '';
 
   const confirm = async () => {
     setBusy(true);
@@ -112,7 +144,27 @@ export default function RequestStatementDialog({
         <p className="text-[13px] text-zinc-400 leading-relaxed">{intl.formatMessage(canRelease ? m.detailYours : m.detail, { client: clientName })}</p>
 
         <div>
-          <label htmlFor="statement-month" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+          <span className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+            {intl.formatMessage(m.periodLabel)}
+          </span>
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            {(['month', 'range'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setMode(option)}
+                aria-pressed={mode === option}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
+                  mode === option
+                    ? 'bg-brand/10 text-brand border border-brand/25'
+                    : 'text-zinc-400 border border-white/5 hover:text-white'
+                }`}
+              >
+                {intl.formatMessage(option === 'month' ? m.modeMonth : m.modeRange)}
+              </button>
+            ))}
+          </div>
+          <label htmlFor="statement-month" className="sr-only">
             {intl.formatMessage(m.monthLabel)}
           </label>
           {/*
@@ -122,16 +174,46 @@ export default function RequestStatementDialog({
             out against a `YYYY-MM` regex he had no way to discover. Two selects,
             with the month as a NAME: nothing to parse and nothing to guess at.
 
-            ⚠ Still ONE MONTH, not a range. `chase.send`'s `statementPeriod` is a
-            single `YYYY-MM` on the wire and the engine composes the message from
-            it — so the rest of item 16's ask (a range, a year, a single date;
-            the SMS/email checkboxes; the preview step) is a contract and engine
-            widening, written up in the review notes rather than half-built here.
+            ⚠ A RANGE SHIPS TOO, since 8 Sep 2026 — `statementPeriod` now takes
+            `YYYY-MM-DD..YYYY-MM-DD` beside `YYYY-MM`, and a range already IS a
+            quarter, a year or a single day, which is why the owner chose it over
+            four separate modes. The month stays its own choice because picking
+            "1 Aug" and "31 Aug" by hand to mean August is work the product can
+            do for you.
           */}
-          <UkMonthField id="statement-month" value={period} onChange={setPeriod} />
-          {period !== '' && (
+          {mode === 'month' ? (
+            <UkMonthField id="statement-month" value={month} onChange={setMonth} />
+          ) : (
+            <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="statement-from" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">
+                  {intl.formatMessage(m.fromLabel)}
+                </label>
+                <UkDateField id="statement-from" value={from} onChange={setFrom} />
+              </div>
+              <div>
+                <label htmlFor="statement-to" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">
+                  {intl.formatMessage(m.toLabel)}
+                </label>
+                <UkDateField id="statement-to" value={to} onChange={setTo} />
+              </div>
+            </div>
+          )}
+          {/* The ask restated in words — what the accountant is putting their
+              name to, not the ISO string that will travel. */}
+          {mode === 'month' && month !== '' && (
             <p className="text-[12px] font-semibold text-zinc-400 mt-2">
-              {intl.formatMessage(m.monthChosen, { month: ukLongMonth(intl, period) })}
+              {intl.formatMessage(m.monthChosen, { month: ukLongMonth(intl, month) })}
+            </p>
+          )}
+          {mode === 'range' && backwards && (
+            <p role="alert" className="text-[12px] font-semibold text-amber-400 mt-2">
+              {intl.formatMessage(m.rangeBackwards)}
+            </p>
+          )}
+          {mode === 'range' && period !== '' && (
+            <p className="text-[12px] font-semibold text-zinc-400 mt-2">
+              {intl.formatMessage(m.rangeChosen, { from: ukLongDate(intl, from), to: ukLongDate(intl, to) })}
             </p>
           )}
         </div>
