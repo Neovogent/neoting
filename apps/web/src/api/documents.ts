@@ -134,6 +134,8 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     supplier: party,
     date: fromIsoDate(row.documentDate ?? row.receivedAt),
     total: fromPence(row.totalPence),
+    // Nothing read is not zero. See `Document.totalKnown`.
+    totalKnown: row.totalPence !== null && row.totalPence !== undefined,
     category: row.categoryCode ?? '—',
     status: STATE_TO_STATUS[row.state] ?? 'processing',
     // The contract guarantees a reason on REJECTED and FAILED, so it is shown

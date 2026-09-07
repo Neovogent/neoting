@@ -1,3 +1,4 @@
+import { currency } from './resolver';
 import type { Document } from './types';
 
 /**
@@ -42,5 +43,30 @@ export function DocumentTitle({ doc }: { doc: Pick<Document, 'displayTitle' | 's
     <span title={text} className={documentTitleClass(isFallback)}>
       {text}
     </span>
+  );
+}
+
+/**
+ * The money cell on a document board.
+ *
+ * ⚠ A total nobody could read is `—`, never `£0.00` (8 Sep 2026, found live on
+ * a handwritten receipt). `fromPence(null)` is 0 and `currency(0)` renders a
+ * confident figure, so a board printing it asserted a total the document's own
+ * detail said it did not have — the same mistake as a file name rendered as a
+ * supplier, one column over.
+ *
+ * A genuine zero still prints as £0.00: the predicate is whether the SERVER
+ * sent a total, not whether the number is falsy.
+ */
+export function documentTotal(doc: Pick<Document, 'total' | 'totalKnown' | 'currency'>): string | null {
+  return doc.totalKnown === false ? null : currency(doc.total, doc.currency);
+}
+
+export function DocumentTotal({ doc }: { doc: Pick<Document, 'total' | 'totalKnown' | 'currency'> }) {
+  const text = documentTotal(doc);
+  return text === null ? (
+    <span className="text-zinc-500 font-medium tabular-nums">—</span>
+  ) : (
+    <span className="text-white font-bold tabular-nums">{text}</span>
   );
 }
