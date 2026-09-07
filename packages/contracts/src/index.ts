@@ -16,3 +16,10 @@
  * why integration takes a week instead of two days.
  */
 export { ntFetch, NtProblemError, NtTransportError } from './http-client.js';
+/**
+ * The retention window (review items 61 + 67). Not a generated artefact and not
+ * in `openapi.yaml` — a product policy figure that the server's purge sweep and
+ * the browser's confirmation copy must state identically, and this is the one
+ * package both can see. See `retention.ts` for the whole argument.
+ */
+export { TRASH_RETENTION_DAYS, TRASH_RETENTION_POLICY_ID } from './retention.js';

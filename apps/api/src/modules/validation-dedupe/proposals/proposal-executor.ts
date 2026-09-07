@@ -1,6 +1,7 @@
 import type {
   ArchivePayload,
   BusinessOffboardPayload,
+  BusinessReactivatePayload,
   ErrorCode,
   BankConfirmMatchPayload,
   BankRemoveStatementPayload,
@@ -51,6 +52,7 @@ export interface ProposalPayloadMap {
   'rule.create': RuleCreatePayload;
   'document.revoke-link': RevokeLinkPayload;
   'business.offboard': BusinessOffboardPayload;
+  'business.reactivate': BusinessReactivatePayload;
   'document.purge': DocumentPurgePayload;
   'document.resolve-duplicate': DuplicateResolvePayload;
 }

@@ -27,6 +27,7 @@ import { DataTable, Pill, type Column } from '../components/DynamicComponents/Da
  * through the side door.
  */
 import { Modal } from '../components/DynamicComponents/Modal';
+import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
 import {
   applyToEach, refreshTrash, restoreDocument, softDeleteDocument, useDeletedDocuments, useDocumentCounts,
 } from '../api/document-lifecycle';
@@ -323,10 +324,17 @@ const m = defineMessages({
     id: 'documents.documentsView.trashTitle',
     defaultMessage: '{count, plural, one {Move # document to Trash?} other {Move # documents to Trash?}}',
   },
+  /**
+   * ⚠ The window joined this sentence on 7 Sep 2026 (review item 61). The
+   * 2 Sep work deliberately promised no recovery period — *"a figure would be
+   * a promise the product does not keep"* — and it was right, because nothing
+   * enforced one. `scripts/purge-expired-trash.ts` enforces one now, so the
+   * promise can be made; both clauses of it, every time.
+   */
   trashConsequence: {
     id: 'documents.documentsView.trashConsequence',
     defaultMessage:
-      'They move to the Trash tab and leave the register. Nothing is lost — you can restore any of them from there. Deleting for good is a separate, approved step.',
+      'They move to the Trash tab and leave the register. Nothing is lost — you can restore any of them from there for {days} days, and anything already exported is held indefinitely. Deleting for good is a separate, approved step.',
   },
   trashConfirm: { id: 'documents.documentsView.trashConfirm', defaultMessage: 'Move to Trash' },
   trashAudit: { id: 'documents.documentsView.trashAudit', defaultMessage: 'Moved documents to Trash' },
@@ -356,11 +364,12 @@ const m = defineMessages({
   trashEmpty: {
     id: 'documents.documentsView.trashEmpty',
     defaultMessage:
-      'The Trash is empty. A document you delete from the register lands here, keeps its extraction, and can be restored until somebody deletes it for good.',
+      'The Trash is empty. A document you delete from the register lands here, keeps its extraction, and can be restored for {days} days — or until somebody deletes it for good. Anything already exported is held indefinitely.',
   },
   trashFooter: {
     id: 'documents.documentsView.trashFooter',
-    defaultMessage: '{count, plural, one {# document in Trash} other {# documents in Trash}} — restorable until deleted for good',
+    defaultMessage:
+      '{count, plural, one {# document in Trash} other {# documents in Trash}} — restorable for {days} days from the day each was deleted',
   },
   /**
    * A refusal from `POST …/deletion` or `…/restoration` — the SERVER's sentence
@@ -716,7 +725,7 @@ export function DocumentsView() {
       tone: 'brand',
       title: intl.formatMessage(m.trashTitle, { count: sel.length }),
       detail: sel.map((d) => d.supplier).slice(0, 4).join(' · ') || intl.formatMessage(m.deleteDocsFallback),
-      consequence: intl.formatMessage(m.trashConsequence),
+      consequence: intl.formatMessage(m.trashConsequence, { days: TRASH_RETENTION_DAYS }),
       confirmLabel: intl.formatMessage(m.trashConfirm),
     });
     if (!ok) return;
@@ -1427,9 +1436,12 @@ export function DocumentsView() {
                   onRowClick={(d) => setViewerId(d.id)}
                   emptyMessage={intl.formatMessage(
                     query ? m.allEmptySearch : filtersActive ? m.allEmptyFiltered : m.trashEmpty,
+                    // The window is only in the Trash-empty branch; the other
+                    // two ignore the argument, which ICU permits.
+                    { days: TRASH_RETENTION_DAYS },
                   )}
                   bulkActions={trashActions}
-                  footer={intl.formatMessage(m.trashFooter, { count: trashFiltered.length })}
+                  footer={intl.formatMessage(m.trashFooter, { days: TRASH_RETENTION_DAYS, count: trashFiltered.length })}
                 />
               )}
             </div>

@@ -184,11 +184,25 @@ export class DocumentsService {
    * because it was deleted in between.
    */
   async getDocumentCounts(ctx: ScopeContext, query: CountsQuery): Promise<DocumentCounts> {
-    const business = query.businessId === undefined ? {} : { businessId: query.businessId };
+    // ⚠ The live-client predicate rides ALONG with the business filter and is
+    // not a second thought, because this header's own contract with the list
+    // beneath it is that they serve the same set (review item 67). `GET
+    // /documents` stopped carrying an offboarded client's documents on the
+    // un-scoped boards; a header that still counted them would put a number on
+    // a screen no filter beneath it could ever reach — which is exactly the
+    // "decorative number on a screen an accountant reconciles against" this
+    // endpoint was built to abolish. `buildFilters` carries the whole argument,
+    // including why the `businessId: null` arm has to be there.
+    const business: Prisma.DocumentWhereInput =
+      query.businessId === undefined
+        ? { OR: [{ businessId: null }, { business: { is: { isActive: true } } }] }
+        : { businessId: query.businessId };
     // Always present: the generated schema carries the contract's `default: 30`
     // (orval emits `.default()` for numbers, though not for booleans — see
     // `buildFilters`). It is echoed back in the response, because a number on a
     // screen that cannot say which window produced it is not checkable.
+    const vaultScope: Prisma.VaultItemWhereInput =
+      query.businessId === undefined ? { business: { is: { isActive: true } } } : { businessId: query.businessId };
     const horizon = query.expiringWithinDays;
     const expiringBefore = new Date(Date.now() + horizon * MS_PER_DAY);
 
@@ -201,12 +215,17 @@ export class DocumentsService {
         // Trash, whatever pipeline state it holds — deletion is orthogonal to
         // state, which is the whole reason it is a timestamp.
         db.document.count({ where: { ...business, deletedAt: { not: null } } }),
-        db.vaultItem.count({ where: business }),
+        // ⚠ The vault counts take the id-only filter, NOT the document one
+        // above: `vault_items.business_id` is required, so there is no unrouted
+        // arm to allow for, and `VaultItemWhereInput` would not accept the
+        // document relation anyway. An offboarded client's vault items are
+        // excluded by resolving the ids through the same `isActive` relation.
+        db.vaultItem.count({ where: vaultScope }),
         // `lt` and no lower bound: an ALREADY-expired certificate is the most
         // expiring thing on this screen, and a window that quietly dropped it
         // would be a worse lie than the zero this replaces. Items with no
         // expiry date are excluded by the comparison itself.
-        db.vaultItem.count({ where: { ...business, expiresAt: { not: null, lt: expiringBefore } } }),
+        db.vaultItem.count({ where: { ...vaultScope, expiresAt: { not: null, lt: expiringBefore } } }),
       ]),
     );
 
@@ -414,6 +433,41 @@ const EXTRACTION_SORT = dateField<{ id: string; createdAt: Date }>('createdAt', 
  */
 function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
   return {
+    // ⚠ **THE ORPHAN FIX — review item 67, and it is the data-integrity half.**
+    //
+    // > *"One client was deleted but their document is still here"*
+    //
+    // `business.offboard` removes the client from `GET /businesses`
+    // (`ACTIVE_FILTER` in `businesses.service.ts`) and said nothing whatsoever
+    // about their documents, so the documents stayed on every practice-wide
+    // board — in To Review, offering Publish, under a CLIENT column whose
+    // dictionary no longer held the name and which therefore rendered the raw
+    // cuid `cmtndidpz003y96czwm24v0vc`. An offboarded client's documents
+    // sitting in a working queue is wrong under any deletion policy, and the
+    // cuid was merely the symptom that made it visible.
+    //
+    // **The rule is the one the businesses list already keeps, said once more
+    // one table over: the DEFAULT listing serves live clients.** A caller who
+    // names a `businessId` still gets that client's documents whether the
+    // client is live or removed — D12 keeps the books reachable by id, and the
+    // client's own screens and its Trash are reached exactly that way. It is
+    // only the un-scoped, whole-practice queues that stop carrying a removed
+    // client's work as though it were still to do. This is a product filter,
+    // never a tenancy boundary; RLS narrowed the set before it ran.
+    //
+    // ⚠ **The `businessId: null` arm is load-bearing, not defensive.** An
+    // UNROUTED document has no business at all, and Prisma's `is:` on an
+    // optional to-one matches only rows whose relation EXISTS and passes — so
+    // the relation filter alone would have emptied the Unrouted queue, trading
+    // one invisible pile of documents for another.
+    //
+    // A relation filter rather than an `in` over resolved ids, deliberately:
+    // that second query's answer can be stale by the time this one runs, and it
+    // would be capped by whatever limit it used — the defect `api/paged.ts`
+    // exists to prevent, reintroduced on the server.
+    ...(query.businessId === undefined
+      ? { OR: [{ businessId: null }, { business: { is: { isActive: true } } }] }
+      : {}),
     // Trash, and it comes FIRST because it is the predicate that decides which
     // universe the rest of these filters narrow. `deleted` defaults to false in
     // the contract, but orval emits `zod.boolean().optional()` for it rather

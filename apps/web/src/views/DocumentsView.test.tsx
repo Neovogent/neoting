@@ -215,7 +215,12 @@ test('⚠ the delete confirmation says it goes to Trash and is restorable — ne
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
   expect(await screen.findByText('Move 1 document to Trash?')).toBeTruthy();
-  expect(document.body.textContent).toContain('Nothing is lost — you can restore any of them from there.');
+  // ⚠ The window joined this sentence with review item 61, and BOTH clauses of
+  // it must be here: a screen printing "30 days" without "anything already
+  // exported is held indefinitely" would promise a deletion D43 refuses.
+  expect(document.body.textContent).toContain(
+    'you can restore any of them from there for 30 days, and anything already exported is held indefinitely',
+  );
   // The button says where it goes. A reversible act dressed as an irreversible
   // one is how people learn to click through the warning that matters.
   expect(screen.getByRole('button', { name: 'Move to Trash' })).toBeTruthy();
@@ -258,7 +263,9 @@ test('an empty Trash teaches what it is for, rather than saying "nothing here"',
   fireEvent.click(screen.getByRole('button', { name: 'Trash' }));
 
   expect(screen.getAllByText(/The Trash is empty/).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/can be restored until somebody deletes it for good/).length).toBeGreaterThan(0);
+  // The window and its exemption, both (review item 61).
+  expect(screen.getAllByText(/can be restored for 30 days/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/already exported is held indefinitely/).length).toBeGreaterThan(0);
 });
 
 /**

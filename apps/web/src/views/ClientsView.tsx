@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import {
   Search, Plus, Sparkles, Send, ExternalLink, Activity, LayoutGrid, Rows3,
   Star, Columns3, Download, Check, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
+
+/** Removed clients + Restore (review item 67). Its own chunk — see the TABS note. */
+const RemovedClientsPanel = lazy(() => import('./RemovedClientsPanel'));
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
@@ -24,7 +27,14 @@ import { EXPORT_HINT } from '../lib/exportRules';
  * `tab === 'Starred'` compares against. The words on the buttons are a separate
  * lookup, so translating a tab cannot break the filter.
  */
-const TABS = ['All', 'My clients', 'Starred'] as const;
+/**
+ * ⚠ **`Removed` is not a filter over `clients` like the other three** (review
+ * item 67). The board's array holds LIVE workspaces only — `GET /businesses`
+ * serves the active side by default and always has — so removed clients are a
+ * separate read (`?active=false`) rendered by their own lazy panel. That is why
+ * the tab short-circuits the card/table render below rather than narrowing it.
+ */
+const TABS = ['All', 'My clients', 'Starred', 'Removed'] as const;
 type Tab = (typeof TABS)[number];
 
 /** Descriptors, not text — a hook cannot be called at module scope. */
@@ -32,6 +42,7 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   All: { id: 'analytics.clientsView.tabAll', defaultMessage: 'All' },
   'My clients': { id: 'analytics.clientsView.tabMyClients', defaultMessage: 'My clients' },
   Starred: { id: 'analytics.clientsView.tabStarred', defaultMessage: 'Starred' },
+  Removed: { id: 'analytics.clientsView.tabRemoved', defaultMessage: 'Removed' },
 });
 
 /**
@@ -339,7 +350,16 @@ export function ClientsView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tab === 'Removed' ? (
+          /* Its own read and its own panel — see the TABS comment. Lazy, so the
+             board's opening download does not carry a screen most sessions
+             never open. */
+          <Suspense fallback={null}>
+            <RemovedClientsPanel />
+          </Suspense>
+        ) : (
+        <div className="px-4 md:px-10">
         {visible.length === 0 ? (
           <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
             {intl.formatMessage(m.emptyFiltered)}
@@ -374,6 +394,8 @@ export function ClientsView() {
             ]}
             footer={intl.formatMessage(m.tableFooter, { count: visible.length })}
           />
+        )}
+        </div>
         )}
       </div>
 

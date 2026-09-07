@@ -204,7 +204,7 @@ describe.skipIf(!enabled)('business.offboard end to end through the engine', () 
 
   test('the offboarded workspace leaves GET /businesses; its active sibling stays', async () => {
     const businesses = new BusinessesService(app);
-    const page = await businesses.listBusinesses(STAFF_A, { limit: 50 });
+    const page = await businesses.listBusinesses(STAFF_A, { limit: 50, active: true });
     const ids = page.data.map((b) => b.id);
     expect(ids).toContain(BIZ_LIVE);
     expect(ids).not.toContain(BIZ);

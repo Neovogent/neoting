@@ -49,6 +49,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
   'business.offboard': { id: 'proposals.kindLabel.businessOffboard', defaultMessage: 'Remove a client' },
+  'business.reactivate': { id: 'proposals.kindLabel.businessReactivate', defaultMessage: 'Restore a removed client' },
   'document.purge': { id: 'proposals.kindLabel.documentPurge', defaultMessage: 'Delete documents permanently' },
   'document.resolve-duplicate': {
     id: 'proposals.kindLabel.documentResolveDuplicate',
@@ -95,6 +96,18 @@ export const KIND_NOTE: Partial<Record<ProposalKind, MessageDescriptor>> = defin
     id: 'proposals.kindNote.documentPurge',
     defaultMessage:
       'Once approved, the documents and everything read from them are destroyed and cannot be restored. The audit record of who deleted what, and when, is kept.',
+  },
+  /**
+   * Offboard's mirror (review item 67), and it earns its sentence for the one
+   * thing a reader would otherwise assume: that documents come back with the
+   * client. They do not — `reactivate-business.ts` records why the executor
+   * cannot tell an offboard's trashing from a person's own deliberate one — so
+   * the card names the Trash as the way to bring them back.
+   */
+  'business.reactivate': {
+    id: 'proposals.kindNote.businessReactivate',
+    defaultMessage:
+      'Once approved, the client returns to the client list and every working surface. Documents already in Trash stay there — their Trash is reachable again with them, and restoring puts each one back in the state it left.',
   },
 });
 

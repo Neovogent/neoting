@@ -651,3 +651,48 @@ session, display words (`Uploaded by/Captured by {member} ({business})`,
 consumers read legacy `uploaded-by-delegated-session` rows as the client
 portal — the superset true of both. The CLIENT_PORTAL enum value remains open
 as a future first-class split, recorded for the owner rather than decided here.
+
+## Retention and deletion (7 Sep 2026 — review items 61 + 67, package L)
+
+Four changes, all owner-approved in session; the rulings are dated in
+`docs/Retention_and_Deletion_Policy.md` rather than here.
+
+**`BusinessOffboardPayload.documentScope`** — `keep` (default) / `trash` /
+`mark-for-erasure`, in `OffboardDocumentScope`. Removing a client used to say
+NOTHING about that client's documents, and the silence was the defect: they
+stayed live in the practice's queues with publish affordances. **No scope
+destroys a row**, and the enum's description says why in as many words — D12
+holds the books six years, D32 promises reading and exporting survive a lapse,
+D43 refuses to purge anything an export links to, so a fourth "delete
+everything" option would be a promise to break all three. ⚠ `mark-for-erasure`
+is a record of intent and **nothing acts on it on a schedule** (*erasure on
+request, no automatic date*); the description says "marked", never "scheduled",
+and so does every surface.
+
+**`business.reactivate`** — a new `ProposalKind` with
+`BusinessReactivatePayload`, offboard's exact mirror: soft, idempotent, no
+delete anywhere near it. Its description carries the one limit a consumer must
+not get wrong — **documents an offboard trashed stay in Trash**, because
+`deleted_at` records THAT a document was deleted, not which act did it, so a
+blanket restore would resurrect everything a person trashed deliberately.
+
+**`GET /businesses?active`** — boolean, default `true`. The removed-clients
+listing, and a parameter on the existing operation rather than a
+`/businesses/removed` path, for the reason `deleted` is one on `GET /documents`:
+a removed client is the same row with one column flipped, and a second endpoint
+would be a second opinion about what a client is. No "both" value, same
+reasoning — one page mixing live and removed has no honest heading.
+
+**`BusinessSummary.offboardedAt`** — nullable ISO-8601. The Removed panel counts
+its restore window from it; null (a workspace offboarded before the column
+existed) renders as a restore offer with no countdown rather than a back-dated
+guess.
+
+⚠ **`src/retention.ts` is a HAND-WRITTEN module in this package, and the only
+one besides `http-client.ts`.** `TRASH_RETENTION_DAYS` / `TRASH_RETENTION_POLICY_ID`
+are not in `openapi.yaml` and no endpoint returns them — nothing asks the server
+what its own policy is. They live here because the sweep that enforces the
+window is server-side and the copy that promises it is browser-side, and two
+constants that must be equal and cannot see each other are exactly the failure
+`common/documents/deleted-documents.ts` argues against one table over. The
+barrel's rule holds: no React, no MSW, shared by both sides.

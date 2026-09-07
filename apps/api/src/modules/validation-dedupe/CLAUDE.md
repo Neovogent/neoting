@@ -488,6 +488,49 @@ structural) and decides nothing about whether it may happen.
   kind exists yet; an offboarded client can also STILL ingest (`mayIngest`
   reads only the subscription) — a billing decision deliberately left open.
 
+  ⚠ **Both of those closing sentences are now out of date, 7 Sep 2026 (review
+  item 67, package L).** The tier moved to **1** on 6 Sep (item 66), and
+  `business.reactivate` **exists** — see below. What is still open is the
+  billing half: an offboarded client can STILL ingest, and a *restored*
+  client's Stripe subscription state (D48) is undefined. Neither executor
+  touches a billing column rather than guessing.
+
+  **It asks its scope now, and that was the bug.** `BusinessOffboardPayload`
+  gained `documentScope` — `keep` (default, the old behaviour) / `trash` /
+  `mark-for-erasure` — because saying nothing about the client's documents left
+  them live in the practice's queues with publish affordances under a CLIENT
+  column that rendered the raw cuid. All three scopes are REVERSIBLE and no
+  fourth is possible: D12 holds the books six years, D32 promises reading and
+  exporting survive a lapse, D43 refuses to purge anything an export links to.
+  `trash` reuses the existing `deleted_at` seam (a document already in Trash
+  keeps its own timestamp, so its retention window is not restarted);
+  `mark-for-erasure` stamps `businesses.erasure_requested_at` and **nothing
+  reads that column on a schedule** — owner ruling, *erasure on request, no
+  automatic date*, because any window shorter than D12 would delete a UK
+  practice's statutory records on a timer. The scope's effect rides the SAME
+  compare-and-swap as the flag, so a lost race stays a clean replay.
+  `businesses.offboarded_at` is stamped on every path, for the Removed clients
+  panel's restore window.
+
+- **`business.reactivate`** (7 Sep 2026, review item 67) —
+  `reactivate-business.ts`. Offboard's exact mirror and deliberately nothing
+  more: `is_active` back to true, both offboarding stamps to NULL, guarded on
+  `isActive: false`, idempotent, **tier 1** (the undo of a tier-1 act belongs
+  to the same signature — a standard user who could restore a client the super
+  admin removed would make that removal a suggestion with a delay on it).
+
+  ⚠ **It restores NO document, and the review card says so.**
+  `documents.deleted_at` records THAT a document was deleted, not which act
+  deleted it, so a blanket restore would resurrect everything a person had
+  trashed on purpose weeks earlier. The client's own Trash is where they come
+  back from, one at a time, each in the state it left. Its unit suite gives the
+  fake an exploding `document.updateMany` so reaching for one fails by name.
+
+  ⚠ The client's Trash is reachable again only once the CLIENT is — a removed
+  client's screens do not render — and every surface's copy states that
+  sequencing. The 7 Sep walkthrough found the earlier wording claiming
+  otherwise.
+
 - **`bank.confirm-match`** (METH S11) — a human confirms that a document is the
   evidence for a bank transaction. **Two rows move or neither does:** the
   `matches` row AND the transaction's `match_state`. Writing the match without

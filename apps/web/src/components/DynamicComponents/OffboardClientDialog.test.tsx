@@ -51,10 +51,15 @@ afterEach(() => {
   isOwner = true;
 });
 
-function renderDialog() {
+function renderDialog(documentCount = 3) {
   return render(
     <AppIntlProvider>
-      <OffboardClientDialog client={CLIENT} onQueued={onQueued} onCancel={onCancel} />
+      <OffboardClientDialog
+        client={CLIENT}
+        documentCount={documentCount}
+        onQueued={onQueued}
+        onCancel={onCancel}
+      />
     </AppIntlProvider>,
   );
 }
@@ -118,7 +123,7 @@ test('Confirm creates a business.offboard proposal carrying the businessId and t
   expect(vi.mocked(createProposal)).toHaveBeenCalledWith({
     kind: 'business.offboard',
     businessId: 'biz_sparkle',
-    payload: { businessId: 'biz_sparkle', reason: 'Client moved on' },
+    payload: { businessId: 'biz_sparkle', documentScope: 'keep', reason: 'Client moved on' },
   });
   // Queued is the ONLY claim the dialog makes — deciding is the queue's move.
   expect(onQueued).toHaveBeenCalledTimes(1);
@@ -131,7 +136,7 @@ test('an empty reason is an omitted key, never an assertion of ""', async () => 
   expect(vi.mocked(createProposal)).toHaveBeenCalledWith({
     kind: 'business.offboard',
     businessId: 'biz_sparkle',
-    payload: { businessId: 'biz_sparkle' },
+    payload: { businessId: 'biz_sparkle', documentScope: 'keep' },
   });
 });
 
@@ -152,4 +157,54 @@ test('a refusal is shown with its NT- code, and the dialog stays open', async ()
   // claims a queuing that did not happen.
   expect(screen.getByRole('dialog', { name: 'Remove Sparkle Cleaning Ltd?' })).toBeTruthy();
   expect(onQueued).not.toHaveBeenCalled();
+});
+
+/* ── The deletion scope (review item 67) ──────────────────────────────────── */
+
+test('the three scopes are offered, safest first, and none of them says "delete"', () => {
+  renderDialog(4);
+
+  expect(screen.getByRole('radio', { name: /Keep everything/ })).toBeTruthy();
+  expect(screen.getByRole('radio', { name: /Move their documents to Trash/ })).toBeTruthy();
+  expect(screen.getByRole('radio', { name: /Mark for erasure/ })).toBeTruthy();
+
+  // Every scope is reversible, so no label may promise destruction. The one
+  // "deleted" in the dialog is the existing retained-books sentence saying
+  // nothing IS deleted, which is the opposite claim.
+  const scopes = screen.getByRole('group').textContent ?? '';
+  expect(scopes).not.toMatch(/delete/i);
+  expect(scopes).not.toMatch(/permanent/i);
+});
+
+test('⚠ mark-for-erasure says MARKED, never scheduled — there is no automatic date', () => {
+  renderDialog();
+  const scopes = screen.getByRole('group').textContent ?? '';
+
+  expect(scopes).toContain('Nothing is erased and nothing is scheduled');
+  // The owner ruled "erasure on request, no automatic date" (7 Sep 2026): any
+  // window shorter than D12's six years would be this product deleting a UK
+  // practice's statutory records on a timer.
+  expect(scopes).not.toMatch(/erased (in|after) \d/i);
+});
+
+test('the blast radius is stated before anything is queued', () => {
+  renderDialog(12);
+  expect(document.body.textContent).toContain('This client has 12 documents.');
+  expect(document.body.textContent).toContain('12 documents move to Trash');
+  // ⚠ The sequencing, found by the 7 Sep walkthrough: a removed client's own
+  // screens do not render, so its Trash comes back with the client. The dialog
+  // must not imply the documents are one click away while the client is gone.
+  expect(document.body.textContent).toContain('Restore the client and each one is restorable from their Trash');
+});
+
+test('the chosen scope rides the proposal payload', async () => {
+  renderDialog(2);
+  fireEvent.click(screen.getByRole('radio', { name: /Move their documents to Trash/ }));
+  await confirmRemoval();
+
+  expect(vi.mocked(createProposal)).toHaveBeenCalledWith({
+    kind: 'business.offboard',
+    businessId: 'biz_sparkle',
+    payload: { businessId: 'biz_sparkle', documentScope: 'trash' },
+  });
 });

@@ -6,6 +6,7 @@ import { chaseSendExecutor } from './chase-send.js';
 import { confirmMatchExecutor } from './confirm-match.js';
 import { offboardBusinessExecutor } from './offboard-business.js';
 import { purgeDocumentExecutor } from './purge-document.js';
+import { reactivateBusinessExecutor } from './reactivate-business.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
@@ -120,6 +121,11 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // books/documents/audit retained (six-year clock, D12). One guarded UPDATE
     // on `businesses.is_active`; the executor's header carries the discipline.
     'business.offboard': offboardBusinessExecutor,
+    // business.reactivate — offboard's mirror (review item 67): bring a
+    // removed client back, soft and idempotent. Its arrival is what finally
+    // answers `assert-can.ts`'s standing note that offboarding was a flag
+    // nobody in the product could flip back.
+    'business.reactivate': reactivateBusinessExecutor,
     // document.purge — permanent deletion, the only irreversible thing that can
     // happen to a document, and therefore the only document deletion on this
     // spine. Moving one to Trash is an ordinary mutation because restoring it

@@ -463,6 +463,20 @@ schema's existing `[practiceId, isActive]` index; a tenancy clause it is not.
 neither does chat grounding — surveyed and reported with the offboard work,
 open product calls rather than oversights.
 
+**It takes an `active` parameter since 7 Sep 2026 (review item 67, package L),
+and `false` is the only way to a removed client from inside the product.**
+`ACTIVE_ONLY` became `ACTIVE_FILTER`, keyed on the parsed query, with the
+DEFAULT applied here rather than at the caller — the `deletedFilterFor` rule:
+*"the default listing serves live clients"* has to be a fact about the server,
+not about what a browser remembered to send. `businesses_tenant` has no
+`isActive` branch, which is precisely why asking for the removed side returns
+anything at all, and the same `[practiceId, isActive]` index carries both
+directions. `BusinessSummary` gained `offboardedAt` in the same change (the new
+nullable column), because the **Clients → Removed** panel counts its restore
+window from a moment; a workspace offboarded before the column existed carries
+null and renders as a restore offer with no countdown rather than a back-dated
+guess. `docs/Retention_and_Deletion_Policy.md` is the policy behind the window.
+
 **Widened on 28 Aug 2026 (G7 contract change, approved by Shakib), and the
 reason is worth keeping.** The endpoint carried a name and three counts, so
 `apps/web`'s Clients board FORKED: live mode rendered a reduced table because

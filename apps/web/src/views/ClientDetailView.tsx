@@ -11,6 +11,7 @@ import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common'
 import { API_ENABLED } from '../api/config';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
+import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { WorkflowCard, blankWorkflow } from '../components/DynamicComponents/WorkflowCard';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
@@ -51,11 +52,22 @@ const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements')
 // ~1.5 kB of the 250 kB budget. Synthetic keeps the seeded table below.
 const ClientChases = lazy(() => import('./ClientChases'));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
+/**
+ * ⚠ **Lazy since 7 Sep 2026, and the laziness PAID for review item 67's scope
+ * choice.** This was a static import, so the whole dialog rode on the opening
+ * download of the tightest route in the product — for a confirmation that can
+ * only render after somebody has opened Settings and pressed Remove. Splitting
+ * it out gave the route back more than the three scope options cost it.
+ */
+const OffboardClientDialog = lazy(() =>
+  import('../components/DynamicComponents/OffboardClientDialog').then((m) => ({ default: m.OffboardClientDialog })),
+);
+/** This client's Trash (review item 61). Its own chunk — see the file's header. */
+const ClientTrashPanel = lazy(() => import('./ClientTrashPanel'));
 import { currency } from '../lib/resolver';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
-import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
 import { receivedViaText } from '../lib/channelLabels';
 import { resendClientSetupLink } from '../api/setup-link';
@@ -425,6 +437,12 @@ const m = defineMessages({
 
   // ── Documents tab ───────────────────────────────────────────────────────
   documentsEmpty: { id: 'clients.clientDetailView.documentsEmpty', defaultMessage: 'No documents yet.' },
+  /* ── The client's own Trash (review item 61) ────────────────────────────
+     The register and its Trash are one surface, one sub-tab apart: a deleted
+     document is still a document, and the Documents tab is where this client's
+     documents live. See `ClientTrashPanel`'s header for why not Settings. */
+  subTabRegister: { id: 'clients.clientDetailView.subTabRegister', defaultMessage: 'Register' },
+  subTabTrash: { id: 'clients.clientDetailView.subTabTrash', defaultMessage: 'Trash' },
   uploadDocuments: { id: 'clients.clientDetailView.uploadDocuments', defaultMessage: 'Upload Documents' },
   bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
   download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
@@ -727,6 +745,8 @@ export function ClientDetailView() {
   const [inviting, setInviting] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
+  /** Documents tab: the register, or this client's Trash (review item 61). */
+  const [docsSubTab, setDocsSubTab] = useState<'register' | 'trash'>('register');
   /**
    * The Settings tab's danger zone — the ONE place a client can be removed
    * (deliberately not the Clients board: "the accountant firm needs to go to
@@ -1713,6 +1733,27 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Documents' && (
+            <div className="mb-5">
+              {/* The Trash's door, on the surface the deleting happens from
+                  (review item 61, item 35's same-surface rule). */}
+              <SubTabs
+                tabs={[
+                  { key: 'register', label: intl.formatMessage(m.subTabRegister), count: docs.length },
+                  { key: 'trash', label: intl.formatMessage(m.subTabTrash) },
+                ]}
+                active={docsSubTab}
+                onChange={(k: string) => setDocsSubTab(k === 'trash' ? 'trash' : 'register')}
+              />
+            </div>
+          )}
+
+          {tab === 'Documents' && docsSubTab === 'trash' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientTrashPanel client={{ id: client.id, name: client.name }} />
+            </Suspense>
+          )}
+
+          {tab === 'Documents' && docsSubTab === 'register' && (
             /* The register's own upload door (review item 62): the client hands
                paper or a personal-channel photo to the accountant, who enters it
                from HERE — the same intent → PUT → complete journey the Costs tab
@@ -2109,14 +2150,20 @@ export function ClientDetailView() {
       {/* Outside the AnimatePresence, like ConfirmStep: a confirmation has no
           exit animation to wait for, and its unmount must be immediate. */}
       {removing && (
+        <Suspense fallback={null}>
         <OffboardClientDialog
           client={{ id: client.id, name: client.name }}
+          // The blast radius, from the register already on screen behind it
+          // (review item 67). The server states the binding figure again at
+          // Read review; this is what the accountant sees before queuing.
+          documentCount={docs.length}
           onQueued={() => {
             setRemoving(false);
             setRemovalQueued(true);
           }}
           onCancel={() => setRemoving(false)}
         />
+        </Suspense>
       )}
     </div>
   );

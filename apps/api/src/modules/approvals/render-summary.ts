@@ -88,6 +88,7 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'rule.create': 'Create a rule',
   'document.revoke-link': 'Revoke document links',
   'business.offboard': 'Remove a client',
+  'business.reactivate': 'Restore a removed client',
   'document.purge': 'Delete documents permanently',
   'document.resolve-duplicate': 'Resolve a suspected duplicate',
 };
@@ -406,14 +407,56 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
       // honest about the act and the id; the surface that knows the name may
       // render it beside this. What the card must not leave unsaid is the D12
       // half: nothing is deleted.
+      //
+      // ⚠ The SCOPE line is the reason this card was reshaped on 7 Sep 2026
+      // (review item 67). Offboarding used to say nothing about the client's
+      // documents, and the silence was the defect — a reviewer approved a card
+      // that named no consequence and got one anyway. Every scope now states
+      // its own effect in the reviewer's words, and states what it is NOT:
+      // `mark-for-erasure` in particular says *marked*, never *scheduled*, and
+      // says that nothing acts on it on a date. The card is what a person
+      // echoes back; it may not be looser than the executor.
       const reason = typeof payload['reason'] === 'string' ? payload['reason'] : null;
+      const scope = typeof payload['documentScope'] === 'string' ? payload['documentScope'] : 'keep';
+      const scopeEffect =
+        scope === 'trash'
+          ? 'Moved to Trash — reversible; restore the client and each one is restorable from their Trash'
+          : scope === 'mark-for-erasure'
+            ? 'Kept, and the client is MARKED for erasure — a record of intent only, nothing is erased and nothing is scheduled'
+            : 'Left exactly where they are';
       return summary(`Offboard client workspace ${text(payload['businessId'])} — books retained`, [
         {
           heading: 'What this does',
           entries: [
             { label: 'Business', value: text(payload['businessId']) },
             { label: 'Deactivates the workspace', value: 'Yes — it leaves the client list and every working surface' },
+            { label: "This client's documents", value: scopeEffect },
             { label: 'Deletes books, documents or the audit trail', value: 'No — retained for the six-year requirement' },
+            ...(reason === null ? [] : [{ label: 'Reason, exactly as it will be recorded', value: reason }]),
+          ],
+        },
+      ]);
+    }
+    case 'business.reactivate': {
+      // Offboard's card, mirrored — payload-pure for the same reason, so the id
+      // and not the name. The one entry that must not be missing is the
+      // documents line: a reviewer restoring a client they removed with
+      // `documentScope: 'trash'` will otherwise assume the documents come back
+      // with them, and they do not. `reactivate-business.ts` records why the
+      // executor cannot tell an offboard's trashing from a person's own.
+      const reason = typeof payload['reason'] === 'string' ? payload['reason'] : null;
+      return summary(`Restore client workspace ${text(payload['businessId'])}`, [
+        {
+          heading: 'What this does',
+          entries: [
+            { label: 'Business', value: text(payload['businessId']) },
+            { label: 'Reactivates the workspace', value: 'Yes — it returns to the client list and every working surface' },
+            {
+              label: 'Documents in Trash',
+              value:
+                'NOT restored — this client\u2019s Trash is reachable again once they are, and restoring keeps each document in the state it left',
+            },
+            { label: 'Any request to erase this client\u2019s data', value: 'Withdrawn' },
             ...(reason === null ? [] : [{ label: 'Reason, exactly as it will be recorded', value: reason }]),
           ],
         },

@@ -197,6 +197,23 @@ test('listDocuments projects rows onto DocumentSummary, keeping pence an integer
   expect(row).not.toHaveProperty('s3Key');
 });
 
+/**
+ * The live-client arm every UN-SCOPED listing carries since review item 67.
+ *
+ * `business.offboard` used to leave a removed client's documents on every
+ * practice-wide board — in To Review, offering Publish, under a CLIENT column
+ * that rendered the raw cuid because the dictionary no longer held the id. The
+ * default listing serves live clients now, exactly as `GET /businesses` always
+ * has; naming a `businessId` still reaches a removed client's documents, which
+ * is what the client's own screens and its Trash do.
+ *
+ * ⚠ The `businessId: null` half is load-bearing rather than defensive: an
+ * UNROUTED document has no business at all, and Prisma's `is:` on an optional
+ * to-one matches only rows whose relation exists and passes — so the relation
+ * filter alone would have emptied the Unrouted queue.
+ */
+const LIVE_CLIENTS = { OR: [{ businessId: null }, { business: { is: { isActive: true } } }] };
+
 test('a REJECTED document is marked retryable; a RECEIVED one is not', async () => {
   const rejected = harness({ document: doc('doc_1', { state: 'REJECTED' } as Partial<DocumentRow>) });
   expect((await rejected.service.listDocuments(CTX, listQuery())).data[0]?.retryable).toBe(true);
@@ -218,6 +235,10 @@ test('filters are ANDed into the where clause, and absent ones add nothing', asy
     businessId: 'biz_9',
     state: { in: ['READY', 'FAILED'] },
   });
+  // ⚠ And NO live-client arm: a caller who names a business gets that business's
+  // documents whether the client is live or removed (review item 67). D12 keeps
+  // the books reachable by id, and the client's own screens reach them that way.
+  expect(calls.documentFindMany[0]?.where).not.toHaveProperty('OR');
 });
 
 test('a businessId filter is a FILTER, never a tenancy guard — no manual practice clause is added', async () => {
@@ -231,7 +252,9 @@ test('a businessId filter is a FILTER, never a tenancy guard — no manual pract
   // claim is about what must be ABSENT.
   const { calls, service } = harness();
   await service.listDocuments(CTX, listQuery());
-  expect(Object.keys(calls.documentFindMany[0]?.where ?? {})).toEqual(['deletedAt', 'state']);
+  expect(Object.keys(calls.documentFindMany[0]?.where ?? {})).toEqual(['OR', 'deletedAt', 'state']);
+  // And the one key that IS new is the live-client arm, not a practice clause.
+  expect(calls.documentFindMany[0]?.where).toMatchObject(LIVE_CLIENTS);
 });
 
 test('an omitted state filter excludes ARCHIVED; asking for ARCHIVED by name returns it', async () => {
@@ -240,11 +263,11 @@ test('an omitted state filter excludes ARCHIVED; asking for ARCHIVED by name ret
   // default exclusion every working queue grows forever.
   const bare = harness();
   await bare.service.listDocuments(CTX, listQuery());
-  expect(bare.calls.documentFindMany[0]?.where).toEqual({ deletedAt: null, state: { not: 'ARCHIVED' } });
+  expect(bare.calls.documentFindMany[0]?.where).toEqual({ ...LIVE_CLIENTS, deletedAt: null, state: { not: 'ARCHIVED' } });
 
   const explicit = harness();
   await explicit.service.listDocuments(CTX, listQuery({ state: ['ARCHIVED'] }));
-  expect(explicit.calls.documentFindMany[0]?.where).toEqual({ deletedAt: null, state: { in: ['ARCHIVED'] } });
+  expect(explicit.calls.documentFindMany[0]?.where).toEqual({ ...LIVE_CLIENTS, deletedAt: null, state: { in: ['ARCHIVED'] } });
 });
 
 test('the default listing excludes Trash, and ?deleted=true returns ONLY Trash', async () => {
@@ -262,6 +285,7 @@ test('the default listing excludes Trash, and ?deleted=true returns ONLY Trash',
   // Deletion is ORTHOGONAL to state: asking for Trash still applies the
   // contract's "every state except ARCHIVED" default, rather than replacing it.
   expect(trash.calls.documentFindMany[0]?.where).toEqual({
+    ...LIVE_CLIENTS,
     deletedAt: { not: null },
     state: { not: 'ARCHIVED' },
   });
@@ -343,7 +367,7 @@ test("page 1's own cursor is accepted by page 2 and seeks past the last row", as
   // seek, ANDed under the same filters rather than replacing them.
   expect(second.calls.documentFindMany[0]?.where).toEqual({
     AND: [
-      { deletedAt: null, state: { in: ['READY'] } },
+      { ...LIVE_CLIENTS, deletedAt: null, state: { in: ['READY'] } },
       {
         OR: [
           { receivedAt: { lt: NOW } }, // a Date, never the ISO string — Postgres would compare text
@@ -573,4 +597,23 @@ test('expiring counts vault items ALREADY past their date as well as those appro
   const horizonMs = (expiring.expiresAt?.lt as Date).getTime() - Date.now();
   expect(horizonMs).toBeGreaterThan(13.9 * 24 * 60 * 60 * 1000);
   expect(horizonMs).toBeLessThan(14.1 * 24 * 60 * 60 * 1000);
+});
+
+test('⚠ the un-scoped counts carry the SAME live-client arm the listing does', async () => {
+  // This endpoint exists so the header and the list beneath it cannot disagree
+  // ("a decorative number on a screen an accountant reconciles against is worse
+  // than no number"). Review item 67 took a removed client's documents out of
+  // the un-scoped listing; a header still counting them would put a figure on
+  // screen that no filter beneath it could reach.
+  const { calls, service } = harness();
+  await service.getDocumentCounts(CTX, { expiringWithinDays: 14 } as never);
+
+  for (const call of calls.counts.filter((c) => c.model === 'document')) {
+    expect(call.where).toMatchObject(LIVE_CLIENTS);
+  }
+  // The vault counts take the id-only shape: `vault_items.business_id` is
+  // required, so there is no unrouted arm to allow for.
+  for (const call of calls.counts.filter((c) => c.model === 'vaultItem')) {
+    expect(call.where).toMatchObject({ business: { is: { isActive: true } } });
+  }
 });
