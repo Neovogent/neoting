@@ -39,11 +39,21 @@
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# THE HOSTNAME, AND WHY IT IS NOT neoacc.neovogent.com BY DEFAULT.
+# THE HOSTNAME.
 #
-# docs/launch/PLAN.md's walkthrough says "sign up at neoacc.neovogent.com".
-# That name cannot be built by this Terraform, and the reason is DNS, not
-# preference. Measured 26 Aug 2026:
+# ✅ **neoacc.neovogent.com IS THE PRODUCT'S ONE PUBLIC NAME** (owner, 8 Sep
+# 2026), it is delegated, and it serves the app. `APP_ORIGIN` is set to it in
+# services.tf, so every chase link, setup link and sign-in link a CLIENT
+# receives is minted on it.
+#
+# `app.neoting.neovogent.com` REMAINS AN ALIAS and must: links already emailed
+# carry it, and a client cannot tell one of our hostnames from another. It is
+# the fallback the `web_aliases` comment below describes, not a second brand.
+# The API is a separate name and stays one: api.neoting.neovogent.com.
+#
+# Everything below is the record of HOW neoacc. became buildable, kept because
+# the same two-phase dance is what any future name outside the neoting. zone
+# will need. Measured 26 Aug 2026, before the delegation:
 #
 #   neovogent.com          NS -> peyton.ns.cloudflare.com, ali.ns.cloudflare.com
 #   neoting.neovogent.com  NS -> ns-{326,803,1428,2004}.awsdns-*  (Route 53)

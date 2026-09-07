@@ -261,7 +261,12 @@ locals {
     # The web app's public origin — chase.send composition signs portal links
     # as <APP_ORIGIN>/p/<token>. Stated rather than left to the code default so
     # the value survives the day the default constant moves.
-    { name = "APP_ORIGIN", value = "https://app.neoting.neovogent.com" },
+    # ⚠ THE ONE PUBLIC NAME (owner, 8 Sep 2026). Every chase link, setup link
+    # and sign-in link a CLIENT receives is built from this, and a client has no
+    # way to know which of our hostnames are ours. app.neoting.neovogent.com
+    # stays an alias on the distribution so links already sent keep resolving —
+    # it is simply not what new ones are minted on.
+    { name = "APP_ORIGIN", value = "https://neoacc.neovogent.com" },
     { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },
     { name = "BILLING", value = "stripe" },
@@ -314,6 +319,10 @@ locals {
     # (D48). `env.ts` refuses to boot on `STRIPE_TAX=rate` with this empty,
     # because the net price charged with no VAT added means absorbing the VAT.
     { name = "STRIPE_TAX_RATE_ID", value = "txr_1U9R0wGMdHp4NCWvqUjY3Htg" },
+    # Both, and in this order: neoacc. is where a client is returned to, and
+    # app. stays allowed so a Stripe session created before the switch still
+    # completes. An allowlist that drops a name a live session is carrying
+    # refuses the return AFTER the card has been charged.
     { name = "BILLING_RETURN_ORIGINS", value = "https://neoacc.neovogent.com,https://app.neoting.neovogent.com" },
 
     # ------------------------------------------------------------------------
