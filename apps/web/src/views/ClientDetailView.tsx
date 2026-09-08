@@ -76,7 +76,7 @@ import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../li
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../lib/channels';
 import { receivedViaText } from '../lib/channelLabels';
-import { resendClientSetupLink } from '../api/setup-link';
+import { resendClientSetupLink, updateClientContactEmail } from '../api/setup-link';
 import { type Task, useAssignees, useTaskWrites, useTasks } from '../api/tasks';
 import { UkDateField, ukLongDate } from '../components/DynamicComponents/UkDateField';
 import { errorLabel } from '../api/slices';
@@ -99,6 +99,20 @@ const m = defineMessages({
      documents live. See `ClientTrashPanel`'s header for why not Settings. */
   subTabRegister: { id: 'clients.clientDetailView.subTabRegister', defaultMessage: 'Register' },
   subTabTrash: { id: 'clients.clientDetailView.subTabTrash', defaultMessage: 'Trash' },
+  // The client's contact email, editable since 8 Sep 2026 — see
+  // `ContactEmailField` for why it could not be until now.
+  contactEmailHint: {
+    id: 'clients.clientDetailView.contactEmailHint',
+    defaultMessage: 'Every chase for this client goes here. Saving takes effect on the next one — nothing is sent now.',
+  },
+  contactEmailSaved: {
+    id: 'clients.clientDetailView.contactEmailSaved',
+    defaultMessage: 'Saved. Chases for this client will go to the new address.',
+  },
+  contactEmailFailed: {
+    id: 'clients.clientDetailView.contactEmailFailed',
+    defaultMessage: 'That could not be saved — the address is unchanged.',
+  },
   uploadDocuments: { id: 'clients.clientDetailView.uploadDocuments', defaultMessage: 'Upload Documents' },
   bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
   download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
@@ -2015,6 +2029,7 @@ export function ClientDetailView() {
               <ClientDetailsPanel
                 client={client}
                 email={contactEmail}
+                live={businessesLive}
                 pending={pendingChanges}
                 onPropose={proposeClientDetailChanges}
               />
@@ -2605,8 +2620,85 @@ function SetupLinkLivePanel({ clientId, email, sentAt }: { clientId: string; ema
  * business's facts, and a wrong mobile means the next chase reaches a stranger.
  * So the accountant fills the form and the business confirms.
  */
-function ClientDetailsPanel({ client, email, pending, onPropose }: {
+/**
+ * The client's contact email — the address every chase for them goes to.
+ *
+ * ⚠ **Read-only until 8 Sep 2026, because nothing could write it.** The panel
+ * said so in its own comment: intake was the only writer of `contacts.email`
+ * and no operation edited one afterwards, so an input here would have staged a
+ * change the next poll reverted. `PATCH /businesses/{id}/primary-contact`
+ * exists now, so the field does.
+ *
+ * Synthetic mode keeps the read-only box: there is no server to correct, and a
+ * box that accepted a value and forgot it is the thing the old comment refused
+ * to ship.
+ */
+function ContactEmailField({ clientId, email, live }: { clientId: string; email: string; live: boolean }) {
+  const intl = useIntl();
+  const { refetchBusinesses } = useAppContext();
+  const [draft, setDraft] = useState(email);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ kind: 'saved' | 'failed'; label?: string } | null>(null);
+
+  if (!live) {
+    return (
+      <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
+        {email || '—'}
+      </div>
+    );
+  }
+
+  const changed = draft.trim().toLowerCase() !== email.trim().toLowerCase() && draft.trim() !== '';
+
+  const save = async () => {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      await updateClientContactEmail(clientId, draft.trim());
+      await refetchBusinesses();
+      setOutcome({ kind: 'saved' });
+    } catch (error) {
+      setOutcome({ kind: 'failed', label: errorLabel(error) ?? intl.formatMessage(m.contactEmailFailed) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <input
+          type="email"
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setOutcome(null); }}
+          placeholder={intl.formatMessage(commonPlaceholders.email)}
+          className="flex-1 min-w-0 bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
+        />
+        <button
+          onClick={() => void save()}
+          disabled={!changed || busy}
+          className="px-4 py-2.5 rounded-xl text-[13px] font-bold text-brand-on bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+        >
+          {intl.formatMessage(commonActions.save)}
+        </button>
+      </div>
+      {outcome !== null && (
+        <p
+          role={outcome.kind === 'failed' ? 'alert' : 'status'}
+          className={`text-[12px] font-semibold ${outcome.kind === 'failed' ? 'text-red-400' : 'text-brand'}`}
+        >
+          {outcome.kind === 'failed' ? outcome.label : intl.formatMessage(m.contactEmailSaved)}
+        </p>
+      )}
+      <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.contactEmailHint)}</p>
+    </div>
+  );
+}
+
+function ClientDetailsPanel({ client, email, live, pending, onPropose }: {
   client: Client;
+  /** Server rows, not the seeded cast — the contact edit needs somewhere to write. */
+  live: boolean;
   /**
    * The client's email, already resolved by the view (live server value, or the
    * seeded portal account in synthetic mode). Empty renders as an em dash.
@@ -2729,9 +2821,16 @@ function ClientDetailsPanel({ client, email, pending, onPropose }: {
                 <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
                   {intl.formatMessage(commonLabels.email)}
                 </div>
-                <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
-                  {email || '—'}
-                </div>
+                {/* ⚠ EDITABLE SINCE 8 SEP 2026, and it writes STRAIGHT to the
+                    server — it is not part of `FIELDS`' propose-to-the-client
+                    flow above, because it is not a fact the client tells us: it
+                    is the address this practice sends to, and the practice is
+                    the one correcting it. `PATCH …/primary-contact` is
+                    ingest-class for that reason (Governance §10.6, intake's
+                    class), so there is no proposal to stage and nothing to
+                    approve — which is also why it saves on its own button
+                    rather than joining "send changes to the client". */}
+                <ContactEmailField clientId={client.id} email={email} live={live} />
               </div>
             )}
           </Fragment>

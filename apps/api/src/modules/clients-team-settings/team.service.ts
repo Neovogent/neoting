@@ -2,7 +2,11 @@ import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
 import type { BusinessMember, Invite } from '@neoting/contracts/model';
-import type { inviteBusinessMemberBody, listBusinessMembersQueryParams } from '@neoting/contracts/zod';
+import type {
+  inviteBusinessMemberBody,
+  listBusinessMembersQueryParams,
+  updateBusinessPrimaryContactBody,
+} from '@neoting/contracts/zod';
 import type { Prisma } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
@@ -11,6 +15,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { dateField, type Page, type PageRequest, pageQuery, toPage } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
+import { assertCan, resolveActor } from '../approvals/index.js';
 import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
 import { type MembershipRow, toBusinessMember, toInvite } from './projections.js';
 import { buildSetupLink, hashSetupToken, mintSetupToken, setupLinkExpiry } from './setup-link.js';
@@ -132,6 +137,75 @@ export class TeamService {
    * **The token is never returned.** It exists in the email and in
    * `invites.token_hash`, and nowhere else.
    */
+  /**
+   * Correct the client's registered contact — the ONE contact a chase goes to.
+   *
+   * ⚠ **Nothing could do this until 8 Sep 2026, and the gap was load-bearing.**
+   * `contacts.email` was written at intake and by no other path: the client
+   * Settings panel showed it read-only saying as much in its own source, and
+   * every other door — inviting a client's team member here, the client adding
+   * their own staff in the portal — creates a NEW contact marked
+   * `receivesChases: false` deliberately. So in a release whose entire chase
+   * lane delivers by email, the address it delivers to was fixed forever at
+   * intake. A typo, or a client who changed their email, ended the automation
+   * with no route back that did not involve re-creating the client.
+   *
+   * ⚠ **It edits the EXISTING primary contact and never promotes another.**
+   * `is_primary` is written at intake and by nothing else; a second writer of
+   * it would make "who does a chase go to" a question with two answers.
+   *
+   * Ingest-class, not a proposal (Governance §10.6, the same class as intake
+   * itself): it changes no figure, releases nothing, and reaches no client
+   * until the next chase — which is reviewed and approved on its own.
+   */
+  async updatePrimaryContact(
+    ctx: ScopeContext,
+    businessId: string,
+    request: z.infer<typeof updateBusinessPrimaryContactBody>,
+    idempotencyKey?: string,
+  ): Promise<void> {
+    const replay = await this.replayed<{ done: true }>(businessId, idempotencyKey, request);
+    if (replay !== null) return;
+
+    // Every field is optional and an omitted one is left alone — so a body that
+    // names none of them is a request with nothing in it, refused here rather
+    // than answered 204 as if something had happened.
+    const data: Prisma.ContactUncheckedUpdateInput = {};
+    if (request.email !== undefined) data.email = request.email.trim().toLowerCase();
+    if (request.firstName !== undefined) data.firstName = request.firstName;
+    if (request.lastName !== undefined) data.lastName = request.lastName;
+    if (request.mobileE164 !== undefined) data.mobileE164 = request.mobileE164;
+    if (Object.keys(data).length === 0) {
+      throw new AppException(
+        'NT-VAL-001',
+        HttpStatus.BAD_REQUEST,
+        'Validation failed',
+        'Name at least one detail to correct.',
+      );
+    }
+
+    await scopedDb(this.prisma, ctx, async (db) => {
+      // The same predicate every other client-profile act goes through, read
+      // from approvals' seam rather than re-derived (`assert-can.ts`).
+      assertCan(await resolveActor(db, ctx), 'business.profile.manage');
+
+      // ⚠ `updateMany`, not `update`: the primary contact is addressed by
+      // (business, is_primary) rather than by id, and `updateMany` returns a
+      // COUNT — which is how a client whose intake predates the primary flag,
+      // or one this scope cannot see, is told apart from a successful edit.
+      // RLS has already narrowed the set; zero rows means there is nothing here
+      // to correct, which is a 404 and not a silent success.
+      const { count } = await db.contact.updateMany({
+        where: { businessId, isPrimary: true },
+        data,
+      });
+      if (count === 0) throw notFound();
+    });
+
+    await this.remember(businessId, idempotencyKey, request, { done: true });
+    this.logger.log(`primary contact updated for business ${businessId}`);
+  }
+
   async inviteMember(
     ctx: ScopeContext,
     businessId: string,
