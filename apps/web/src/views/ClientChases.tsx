@@ -42,7 +42,7 @@ const m = defineMessages({
   missingIntro: {
     id: 'clients.clientChases.missingIntro',
     defaultMessage:
-      'Every bank line with no evidence and nothing suppressing it — the same set the statement analysis counts. Select lines to ask {client} for the paperwork; the message is composed at review and sends when it is approved.',
+      'Every bank line with no evidence and nothing suppressing it — the same set the statement analysis counts. Select lines to ask {client} for the paperwork; the message is composed server-side and sends straight away, recorded in Approvals with your name on it.',
   },
   missingEmpty: {
     id: 'clients.clientChases.missingEmpty',
