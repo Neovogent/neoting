@@ -1,14 +1,16 @@
-import { Fragment, lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft, ArrowRight, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
-  UserMinus, Upload, LucideIcon,
+  UserMinus, Upload, Trash2, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
+import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
 import { API_ENABLED } from '../api/config';
+import { applyToEach, softDeleteDocument } from '../api/document-lifecycle';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -101,6 +103,30 @@ const m = defineMessages({
   bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
   download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
   bulkRetryFailed: { id: 'clients.clientDetailView.bulkRetryFailed', defaultMessage: 'Retry failed' },
+  /**
+   * ⚠ **Item 12, 8 Sep 2026:** *"No option to delete the document, but a Trash
+   * tab is present — where is the delete or move-to-trash button?"* The Trash
+   * sub-tab has been here since item 61 and the register that fills it had no
+   * door: deleting was possible from Costs and from the practice-wide
+   * Documents screen, and not from the client's own document list. Same words,
+   * same reversible act, same `POST …/deletion` — a third copy of the sentence
+   * would have been a third thing free to drift, so this is `ClientInbox`'s
+   * copy, said again where the person is standing.
+   */
+  bulkTrash: { id: 'clients.clientDetailView.bulkTrash', defaultMessage: 'Move to Trash' },
+  trashTitle: {
+    id: 'clients.clientDetailView.trashTitle',
+    defaultMessage: 'Move {count, plural, one {this document} other {# documents}} to Trash?',
+  },
+  trashConsequence: {
+    id: 'clients.clientDetailView.trashConsequence',
+    defaultMessage:
+      'Nothing is lost — they go to this client’s Trash, on this tab, and restoring puts a document straight back. They are held there for {days} days; anything already exported is held indefinitely.',
+  },
+  trashFailed: {
+    id: 'clients.clientDetailView.trashFailed',
+    defaultMessage: 'That could not be moved to Trash — {error}',
+  },
   retryTitle: {
     id: 'clients.clientDetailView.retryTitle',
     defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
@@ -754,6 +780,22 @@ export function ClientDetailView() {
   // ?doc=<id> — a preview is a layer over wherever you already were, so it
   // gets a link without the path having to know about it.
   const [previewId, setPreviewId] = useQueryParam('doc');
+  /**
+   * The row a NOTIFICATION sent us to (item 9, 8 Sep 2026), marked for a
+   * moment so the accountant sees where in the register it landed.
+   *
+   * Read ONCE, from the address as it was on arrival — not from `previewId`,
+   * which changes every time a preview is opened by hand and would then
+   * highlight whatever was clicked last. Cleared after eight seconds, which is
+   * long enough to close the preview that opened on top of it and still find
+   * the row underneath.
+   */
+  const [highlightId, setHighlightId] = useState<string | null>(() => previewId);
+  useEffect(() => {
+    if (highlightId === null) return undefined;
+    const timer = window.setTimeout(() => setHighlightId(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [highlightId]);
   const preview = previewId ? documents.find((d) => d.id === previewId) ?? null : null;
   const setPreview = (doc: Document | null) => setPreviewId(doc ? doc.id : null);
   const [inviting, setInviting] = useState(false);
@@ -885,6 +927,36 @@ export function ClientDetailView() {
       { uploader: 'You (web upload)' },
     );
   };
+  /**
+   * Move the selected documents to this client's Trash (item 12, 8 Sep 2026).
+   *
+   * `ClientInbox.trashSelected`'s twin, one surface over: the same
+   * `softDeleteDocument` per id through `applyToEach`, the same reversible
+   * framing (tone brand, never red), the same partial-batch honesty — the rows
+   * already deleted stay deleted and the failure names where it stopped. The
+   * list refreshes off the server's own answer; nothing is hidden locally.
+   */
+  const trashSelected = async (sel: Document[]) => {
+    if (sel.length === 0) return;
+    const ok = await confirm({
+      tone: 'brand',
+      title: intl.formatMessage(m.trashTitle, { count: sel.length }),
+      detail: sel.map((d) => documentTitle(d).text).slice(0, 4).join(' · '),
+      consequence: intl.formatMessage(m.trashConsequence, { days: TRASH_RETENTION_DAYS }),
+      confirmLabel: intl.formatMessage(m.bulkTrash),
+    });
+    if (!ok) return;
+    const result = await applyToEach(sel.map((d) => d.id), softDeleteDocument);
+    if (result.failedId !== null) {
+      await confirm({
+        tone: 'red',
+        title: intl.formatMessage(m.bulkTrash),
+        detail: intl.formatMessage(m.trashFailed, { error: errorLabel(result.error) ?? '' }),
+        confirmLabel: intl.formatMessage(commonActions.close),
+      });
+    }
+  };
+
   const miss = missing.filter((m) => m.clientId === client.id);
   const clientApprovals = approvals.filter((a) => a.clientName === client.name);
   /** Live workflows this client's items are actually running through. */
@@ -1797,6 +1869,7 @@ export function ClientDetailView() {
               rows={docs}
               rowId={(d) => d.id}
               selectable
+              highlightRowId={highlightId}
               onRowClick={(d) => setPreview(d)}
               toolbar={
                 <>
@@ -1833,6 +1906,13 @@ export function ClientDetailView() {
                     if (ok) failed.forEach((d) => retryDocument(d.id));
                   },
                 },
+                // ⚠ **Item 12.** LIVE ROWS ONLY, the `ClientInbox` posture: on
+                // seed data there is no server to delete against, and hiding a
+                // row client-side would be a deletion this product never
+                // performed. The Trash sub-tab beside it reads the same server.
+                ...(documentsSource === 'api'
+                  ? [{ label: intl.formatMessage(m.bulkTrash), icon: Trash2, onClick: (sel: Document[]) => void trashSelected(sel) }]
+                  : []),
               ]}
               footer={intl.formatMessage(m.documentsFooter, { total: docs.length, published: s.published, rejected: s.rejected })}
             />

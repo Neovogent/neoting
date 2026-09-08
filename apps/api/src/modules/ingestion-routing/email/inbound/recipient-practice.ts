@@ -71,9 +71,18 @@ export function resolvePracticeFromRecipient(recipient: string | null): string |
  * no address to publish, and a screen must say nothing rather than print a
  * broken one. The practice id is shape-checked with the SAME pattern the parser
  * accepts, so this can never compose an address that would not parse back.
+ *
+ * ⚠ **An ABSENT from-address is one of those cases, not a crash** (8 Sep 2026).
+ * `GET /me` composes this from `env.EMAIL_FROM_ADDRESS`, and a composition root
+ * that leaves it unset — `auth-session.integration.test.ts` is one — reached
+ * `undefined.lastIndexOf` and turned the session endpoint into a 500. The one
+ * guard belongs here rather than at the call site: this function's whole
+ * contract is "an address, or null", and every caller is entitled to rely on
+ * it without checking the environment first.
  */
-export function documentIntakeAddress(practiceId: string, fromAddress: string): string | null {
+export function documentIntakeAddress(practiceId: string, fromAddress: string | undefined | null): string | null {
   if (!PRACTICE_TAG.test(practiceId)) return null;
+  if (typeof fromAddress !== 'string') return null;
   const at = fromAddress.lastIndexOf('@');
   if (at === -1) return null;
   const domain = fromAddress.slice(at + 1).trim();

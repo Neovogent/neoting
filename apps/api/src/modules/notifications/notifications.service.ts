@@ -7,6 +7,8 @@ import {
   type ComposeClientInviteInput,
   type ComposedEmail,
   composeClientInvite,
+  type ComposeClientRegisteredInput,
+  composeClientRegistered,
   type ComposeDocumentRequestInput,
   composeDocumentRequest,
   composeDuplicateSignupNotice,
@@ -106,6 +108,11 @@ export interface SendEmailVerificationInput extends ComposeEmailVerificationInpu
 }
 
 export interface SendPasswordResetInput extends ComposePasswordResetInput {
+  readonly to: string;
+}
+
+export interface SendClientRegisteredInput extends ComposeClientRegisteredInput {
+  /** The PRACTICE's address — its owner's, resolved by the caller. */
   readonly to: string;
 }
 
@@ -219,6 +226,21 @@ export class NotificationsService {
    */
   sendProposalDenied(input: SendProposalDeniedInput, context: SendContext = {}): Promise<SendOutcome> {
     return this.#deliver('proposal-denied', input.to, context, () => composeProposalDenied(input));
+  }
+
+  /**
+   * A client finished setting themselves up — told to the PRACTICE (item 2).
+   *
+   * ⚠ **The refusal is a VALUE and the caller must not treat it as a failure**,
+   * for `sendProposalDenied`'s reason taken one step further: the caller is the
+   * Stripe webhook, and a subscription that is live in our database and live at
+   * Stripe must not be reported back to Stripe as a failed delivery because our
+   * mail transport was busy. The `notifications` row is written in the same
+   * transaction as the subscription; this email is the second copy, not the
+   * record.
+   */
+  sendClientRegistered(input: SendClientRegisteredInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('client-registered', input.to, context, () => composeClientRegistered(input));
   }
 
   async #deliver(

@@ -549,7 +549,18 @@ test('a member who is not the super admin cannot release: NT-PRM-001, and THE EX
   expect(row?.approvedByUserId).toBeNull();
 });
 
-test('the same refusal for chase.send — the other irreversible outward act', async () => {
+test('NOT the same refusal for chase.send — an ordinary member may chase (item 3)', async () => {
+  // ⚠ The reverse of what this test asserted until 8 Sep 2026, and the reverse
+  // deliberately: the owner took `chase.send` out of the release tier —
+  // *"only publishing an entry will require approval by default"*. A published
+  // entry changes the books and cannot be recalled; asking a client for a
+  // document they already owe is the daily work of the person doing the
+  // bookkeeping.
+  //
+  // Everything ELSE about the path is unchanged and this test says so: the
+  // proposal is still minted, review is still opened and hashed, the hash is
+  // still echoed at Approve, and the executor still runs exactly once. Only
+  // whose signature it waits for moved.
   const chasePayload = { messages: [{ recipientE164: '+447700900001', body: 'Please send the receipt', transactionIds: ['t1'] }] };
   const { service, executed } = harness(
     [proposal('prop_c', { kind: 'chase.send', payload: chasePayload, payloadHash: canonicalHash(chasePayload) })],
@@ -557,8 +568,14 @@ test('the same refusal for chase.send — the other irreversible outward act', a
     { role: 'PRACTICE_STANDARD', isOwner: false },
   );
   const review = await service.review(CTX, 'prop_c', 'k1');
-  expect(await code(service.approve(CTX, 'prop_c', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).toBe('NT-PRM-001');
-  expect(executed).toEqual([]);
+  // This harness's chase executor deliberately throws "not yet implemented"
+  // (it exists to be RECORDED, not to send), so the assertion is on the gate:
+  // the answer is no longer `NT-PRM-001`, and the executor was ENTERED — which
+  // is exactly what a permission refusal used to prevent.
+  expect(await code(service.approve(CTX, 'prop_c', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).not.toBe(
+    'NT-PRM-001',
+  );
+  expect(executed).toEqual(['chase.send']);
 });
 
 test('the super admin releases: same proposal, same review, executes and audits', async () => {

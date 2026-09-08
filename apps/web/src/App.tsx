@@ -181,7 +181,7 @@ function PortalSkeleton() {
 }
 
 export default function App() {
-  const { messages, activeTab, setActiveTab, openClientId, openClient, portal, session, settings } = useAppContext();
+  const { messages, activeTab, setActiveTab, openClientId, openClient, portal, session, settings, logout } = useAppContext();
   const [launcherOpen, setLauncherOpen] = useState(false);
   // The one place the layout mode is read in JS rather than in CSS: on a phone
   // the rail is not a narrower rail, it is a different component. Everything
@@ -190,6 +190,26 @@ export default function App() {
   // Mounted once, here: it keeps `--vvh` honest when the iOS keyboard opens,
   // which is what every `h-vv` in the app is sized against.
   useVisualViewport();
+
+  /**
+   * **A session the app cannot read is not a session** (owner, 8 Sep 2026,
+   * item 6: *"if there is any problem with the session data, directly logout
+   * the user"*).
+   *
+   * `degraded` used to fall through to an EMPTY workspace shell wearing a
+   * "session: data could not be loaded" badge — the reasoning being that a
+   * login screen against a dead API is a wall nobody can pass. What it
+   * produced in practice was a signed-in-looking shell with no identity, no
+   * data and no way forward, which is a worse wall: it does not even say what
+   * to do. Logging out is the honest end — the cookie goes, the screen says
+   * sign in, and a retry is one submit away.
+   *
+   * Fires once per transition INTO degraded: the status does not change while
+   * the API stays down, so this cannot loop.
+   */
+  useEffect(() => {
+    if (session.status === 'degraded') void logout();
+  }, [session.status, logout]);
 
   // The theme is a class on <html> so it also covers the body background
   // behind the app shell.
@@ -313,11 +333,9 @@ export default function App() {
 
   // The login wall (METH Stage 6), and only here — the client-facing shells
   // above have their own credentials (an SMS link is not a login). In
-  // synthetic mode the session is 'off' and none of this exists; 'degraded'
-  // (API enabled but unreachable) falls THROUGH to the workspace — empty,
-  // never on seed data presented as real (launch M2) — because a login
-  // screen against a dead API is a wall nobody can pass. The context header
-  // wears the failure badge instead.
+  // synthetic mode the session is 'off' and none of this exists. 'degraded'
+  // (API enabled but unreachable, or /me off-contract) lands here too since
+  // 8 Sep 2026 — see the logout effect above.
   if (session.status === 'loading') {
     return (
       <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
@@ -326,7 +344,7 @@ export default function App() {
     );
   }
 
-  if (session.status === 'unauthenticated') {
+  if (session.status === 'unauthenticated' || session.status === 'degraded') {
     return (
       <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <Suspense fallback={<PortalSkeleton />}>

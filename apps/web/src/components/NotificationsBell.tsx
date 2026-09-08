@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { defineMessages, useIntl } from 'react-intl';
 import { Bell } from 'lucide-react';
-import { useAppContext } from '../context/AppContext';
+import { navigate, path } from '../lib/router';
 import { useEscape } from '../lib/useEscape';
 import { markAllNotificationsRead, useNotifications, type NotificationItem } from '../api/notifications';
 
@@ -38,6 +38,13 @@ const m = defineMessages({
     id: 'shell.notificationsBell.taskAssigned',
     defaultMessage: 'A task was assigned on {business}',
   },
+  // Written by the Stripe webhook when a client's subscription goes live —
+  // which is the LAST step of their own onboarding (D48 §24.5), so it is the
+  // honest moment to say they have finished (item 2, 8 Sep 2026).
+  clientRegistered: {
+    id: 'shell.notificationsBell.clientRegistered',
+    defaultMessage: '{business} finished setting up — their workspace is open',
+  },
   genericEvent: { id: 'shell.notificationsBell.genericEvent', defaultMessage: '{event} — {business}' },
   badgeOverflow: {
     id: 'shell.notificationsBell.badgeOverflow',
@@ -56,6 +63,8 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
       return intl.formatMessage(m.chaseClosed, { business: item.businessName });
     case 'task.assigned':
       return intl.formatMessage(m.taskAssigned, { business: item.businessName });
+    case 'client.registered':
+      return intl.formatMessage(m.clientRegistered, { business: item.businessName });
     default:
       return intl.formatMessage(m.genericEvent, { event: item.event, business: item.businessName });
   }
@@ -74,9 +83,31 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
  * `fixed inset-0` pointer backdrop, an absolutely positioned panel, and
  * `useEscape` for the keyboard dismissal.
  */
+/**
+ * Where a notification goes when it is clicked (item 9, 8 Sep 2026).
+ *
+ * > *"Clicking the notification is not redirecting to the specific page… it
+ * > should redirect to the client → document page and the document should be
+ * > temp highlighted."*
+ *
+ * It DID navigate — to the client's Overview, which for a document that just
+ * arrived is one tab and one scroll away from the thing the sentence was
+ * about, and indistinguishable from a click that did nothing.
+ *
+ * `NotificationItem` has carried `documentId` since the bell was built
+ * (`inbox.service.ts`: *"the bell needs only enough to navigate"*), so the
+ * address is exactly derivable: the client's **Documents** tab, with `?doc=`
+ * — which opens that document's preview AND marks its row for a few seconds
+ * (`ClientDetailView`'s `highlightId`). A row with no document still goes to
+ * the client, which is as specific as that fact gets.
+ */
+function addressFor(item: NotificationItem): string {
+  const client = path('clients', item.businessId);
+  return item.documentId === null ? client : `${client}/documents?doc=${encodeURIComponent(item.documentId)}`;
+}
+
 export function NotificationsBell() {
   const intl = useIntl();
-  const { openClient } = useAppContext();
   const [open, setOpen] = useState(false);
   useEscape(() => setOpen(false), open);
 
@@ -133,7 +164,7 @@ export function NotificationsBell() {
                     <button
                       onClick={() => {
                         setOpen(false);
-                        openClient(item.businessId);
+                        navigate(addressFor(item));
                       }}
                       className="w-full flex items-start gap-2 px-3 py-2 rounded-xl text-left hover:bg-white/5 transition-colors"
                     >

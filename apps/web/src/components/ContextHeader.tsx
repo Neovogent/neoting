@@ -7,6 +7,7 @@ import { useEscape } from '../lib/useEscape';
 import { Wordmark } from '../assets/Wordmark';
 import { API_ENABLED } from '../api/config';
 import { DataSourceBadge } from './DataSourceBadge';
+import { UploadIndicator } from './UploadIndicator';
 import { NotificationsBell } from './NotificationsBell';
 
 /**
@@ -69,6 +70,9 @@ export function ContextHeader() {
 
   const badges = (
     <span className="flex items-center gap-2 min-w-0">
+      {/* Item 11: a drop in flight, visible from wherever the person walked
+          away to. Renders nothing when nothing is uploading. */}
+      <UploadIndicator />
       {session.status === 'degraded' && (
         <DataSourceBadge
           slice={intl.formatMessage(m.sessionSlice)}
@@ -85,10 +89,37 @@ export function ContextHeader() {
 
   if (session.status !== 'authenticated') {
     // 'degraded': no identity to show, but the badges must still be visible.
+    //
+    // ⚠ AND THE SIGN-OUT. The user menu below is inside the authenticated
+    // branch, so this early return used to strip the only Log out control the
+    // app has — leaving the ONE state where a person most wants to sign out
+    // and start again as the one state with no way to. Reported from Safari,
+    // where the console workaround (`DELETE /v1/auth/sessions/current`) is
+    // behind a developer menu that is off by default.
+    //
+    // It works from here because the endpoint is deliberately tolerant: no
+    // cookie, or an expired one, still clears and still answers 204
+    // (`auth.controller.ts`). A broken /me is no reason it should not.
     return (
       <header className="shrink-0 flex items-center justify-between gap-2 px-10 h-11 border-b border-white/5 bg-card">
         <Wordmark title={intl.formatMessage(m.brand)} size={13} className="text-white shrink-0" />
         {badges}
+        {session.status === 'degraded' && (
+          <button
+            onClick={() => {
+              // Land on the public landing page rather than sitting in the
+              // same degraded shell: /me will not answer, so nothing in the
+              // SPA can transition to the login wall on its own. `logout`
+              // clears the local hint, so `/` stays put instead of bouncing
+              // back to /app.
+              void logout().finally(() => window.location.assign('/'));
+            }}
+            className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full text-[12.5px] font-semibold text-zinc-400 hover:bg-white/5 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+          >
+            <LogOut size={14} className="shrink-0" />
+            {intl.formatMessage(m.logout)}
+          </button>
+        )}
       </header>
     );
   }

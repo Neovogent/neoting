@@ -494,3 +494,70 @@ Since 5 Sep the ingest lane writes the `chase_suppressed` column with this
 predicate, so widening the list changes what is STORED and not merely what
 detection skips. Rows imported before the deploy keep the old verdict until the
 backfill re-derives them; it is idempotent and only ever flips false → true.
+
+
+
+## The chase email carries an HTML part (8 Sep 2026 — item 4)
+
+`email-chase-sender.ts` sent `message.body` as plain text and nothing else.
+It now also sends `renderChaseEmailHtml(...)`, and the rule that made the
+file's "reviewed bytes are the sent bytes" guarantee possible is unchanged:
+
+- **nothing is composed here.** The words are the bytes `composeChaseSms`
+  produced at proposal time, that Read review rendered and hashed, and that the
+  approver approved;
+- **the only change is whitespace** — the trailing portal URL moves onto its own
+  line, which is the shape `notifications/email-html.ts` already renders as a
+  button with the bare link beneath it;
+- **the text part is untouched**, so a client that strips HTML reads exactly
+  what it read before.
+
+`ChaseEmailTransport` grew `renderHtml`, handed in by `select-sms-sender.ts`
+for the same reason `parseAddress` is: a value import of the notifications seam
+from this module would close the runtime cycle the sender's header describes.
+
+⚠ The file header still says `composeDocumentRequest` is "deliberately not
+used". That is unchanged and still right — it RE-RENDERS from the items, and a
+re-rendering is not the thing the human approved.
+
+## Approving a chase is TIER 2 now (8 Sep 2026 — item 3)
+
+`RELEASE_KINDS['chase.send']` is `false`: the owner narrowed D44 to its second
+half — *"only publishing an entry will require approval by default"*. The chase
+still mints a proposal, still records Read review and its hash, still executes
+exactly once and still writes the audit row. What changed is whose signature it
+waits for. See `approvals/assert-can.ts`, which carries the reasoning.
+
+
+## 🚨 Every RECEIPT chase was unreviewable, and a statement request was not (8 Sep 2026)
+
+Found by running `chase-email.integration.test.ts`, which had been red.
+
+`compose-chase-send.ts` stamps **`transactionLabels`** — "FRESH DIRECT CD 4211 ·
+£217.50 · 14 Aug 2026", one per chased line — and `approvals/render-summary.ts`
+reads it, so the review card names what is being chased instead of printing raw
+cuids at the one person whose job is to check the message. Both landed on
+8 Sep. **The contract never learned about the field**, and the stored payload is
+re-parsed against the generated schema at `POST …/review` and again at execute
+(`proposal-body.ts` — "parse here, not there").
+
+So the whole receipt lane was: create → **`NT-PRP-006`, "the stored payload no
+longer parses against the contract"** → unreviewable, unapprovable, and
+inexplicable to the accountant who staged it.
+
+⚠ **A STATEMENT request has no transactions, stamps no labels, and worked** —
+which is exactly why the live walk that sent one saw nothing wrong. A green unit
+suite could not find it either: the unit tests build payloads by hand, and only
+the integration test drives the real composer through the real engine.
+
+Fixed by adding `transactionLabels` to `ChaseSendPayload.messages[]` (server-
+stamped, never caller-supplied, like `chaseId` and `recipientEmail`). The same
+pass raised `body`'s `maxLength` from 500 to 2000 for the near-miss beside it:
+the engine recomposes the body AFTER the boundary parse, a signed portal link
+is ~290 characters on its own, and three chased receipts plus an accountant's
+240-character wording went past 500 — the same `NT-PRP-006`, one shape along.
+
+**The lesson worth keeping: a field the engine stamps into a stored payload is a
+CONTRACT field.** The payload is parsed twice more after creation, so anything
+written between those parses has to be in the schema or the proposal dies
+quietly between staging and review.

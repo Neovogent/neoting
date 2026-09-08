@@ -14,6 +14,7 @@ import {
   toPrismaStatus,
 } from './stripe-event.js';
 import type { StripeEventReplayStore } from './stripe-event-replay-store.js';
+import type { NotificationsService } from '../notifications/index.js';
 
 /**
  * The only thing that moves a business's subscription state (D48).
@@ -83,12 +84,34 @@ const TenantMetadataSchema = z
   })
   .passthrough();
 
+/**
+ * The statuses that mean the client's own onboarding FINISHED (D48 §24.5:
+ * paying is the last step). The same pair `AppContext` reads to decide whether
+ * a client card still says "Awaiting client registration", so the badge and the
+ * practice's notification can never disagree about who has finished.
+ */
+const REGISTERED: ReadonlySet<string> = new Set(['ACTIVE', 'TRIALING']);
+
+/** How the webhook reaches the practice when a client finishes (item 2). */
+export interface ClientRegisteredNotifier {
+  readonly notifications: NotificationsService;
+  /** `APP_ORIGIN` — the host printed inside the link the accountant is sent. */
+  readonly appOrigin: string;
+}
+
 export class StripeWebhookService {
   private readonly logger = new Logger(StripeWebhookService.name);
 
   constructor(
     private readonly prisma: PrismaClient,
     private readonly replay: StripeEventReplayStore,
+    /**
+     * Absent in the unit tests and in any composition root that has no mail
+     * transport: the subscription still applies and the `notifications` row is
+     * still written. Only the email is skipped, which is the correct order of
+     * importance — the record is the database's, the email is a copy.
+     */
+    private readonly notifier?: ClientRegisteredNotifier,
   ) {}
 
   async handle(rawEvent: unknown): Promise<WebhookOutcome> {
@@ -153,6 +176,12 @@ export class StripeWebhookService {
         return 'stale' as const;
       }
 
+      // Item 2 (8 Sep 2026): the practice was never told when a client
+      // finished. Read BEFORE the write — afterwards there is nothing left to
+      // compare against, and "did this event finish the onboarding" is exactly
+      // the difference between the two.
+      const finishedNow = !REGISTERED.has(business.subscriptionStatus ?? '') && REGISTERED.has(status);
+
       await db.business.update({
         where: { id: business.id },
         data: {
@@ -167,10 +196,87 @@ export class StripeWebhookService {
         },
       });
       this.logger.log(`Business ${business.id} subscription → ${status} (${type})`);
-      return 'applied' as const;
+
+      if (finishedNow) {
+        // The bell's row, in the SAME transaction as the subscription — so a
+        // notification can never name a state that was rolled back. Same
+        // writer shape as the portal upload notifier and the ingest sink:
+        // practice-wide (no `recipientUserId`), because whoever is at the desk
+        // needs to see it.
+        await db.notification.create({
+          data: {
+            businessId: business.id,
+            event: 'client.registered',
+            payload: { status, source: 'stripe' },
+          },
+        });
+      }
+
+      return finishedNow ? ('registered' as const) : ('applied' as const);
     });
 
+    if (outcome === 'registered') {
+      // OUTSIDE the transaction, and failures are logged rather than thrown:
+      // an SMTP round trip may never hold a tenant transaction open, and a
+      // subscription that is live at Stripe and live here must not be reported
+      // back to Stripe as a failed delivery because our mail was busy.
+      await this.emailPractice(ctx, subscription.customer);
+      return 'applied';
+    }
+
     return outcome;
+  }
+
+  /**
+   * Tell the practice's owner that a client finished setting up (item 2).
+   *
+   * The address is the OWNER's — `memberships.is_owner` on a practice-level
+   * membership, the same person `assert-can.ts` calls the super admin. Not
+   * "every practice member": this is a business event about a client
+   * relationship, one copy of it is enough, and the bell already carries it to
+   * everybody at the firm.
+   */
+  private async emailPractice(ctx: ScopeContext, stripeCustomerId: string): Promise<void> {
+    const notifier = this.notifier;
+    if (notifier === undefined) return;
+
+    try {
+      const business = await scopedDb(this.prisma, ctx, (db) =>
+        db.business.findFirst({
+          where: { stripeCustomerId },
+          select: { id: true, name: true, practiceId: true },
+        }),
+      );
+      if (business === null || business.practiceId === null) return;
+
+      // `memberships`/`users` carry no RLS — they are the actor tables the
+      // policies themselves read (`resolve-system-actor.ts` states the same
+      // exemption and the reason for it).
+      const owner = await this.prisma.membership.findFirst({
+        where: { practiceId: business.practiceId, businessId: null, isOwner: true },
+        select: { user: { select: { email: true } } },
+      });
+      // `users.email` is NULLABLE — the SYSTEM actor has none — so this is a
+      // real branch, not a formality.
+      const to = owner?.user.email ?? null;
+      if (to === null || to === '') {
+        this.logger.warn(`Business ${business.id} registered, but its practice has no owner address to tell`);
+        return;
+      }
+
+      const outcome = await notifier.notifications.sendClientRegistered({
+        to,
+        businessName: business.name,
+        clientLink: `${notifier.appOrigin.replace(/\/$/, '')}/clients/${business.id}`,
+      });
+      if (!outcome.sent) {
+        this.logger.warn(`Client-registered email not sent for ${business.id}: ${outcome.reason}`);
+      }
+    } catch (error) {
+      // The subscription is applied and the notification row is written. This
+      // is the copy, and losing it must not fail the webhook.
+      this.logger.error(`Client-registered email failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**

@@ -2706,3 +2706,106 @@ resolved and both served the app, which is exactly why nothing surfaced it.
 
 Running total for the live pass: **14 defects found, 14 fixed and verified on
 the deployed product.**
+
+
+---
+
+### The third live pass — thirteen items (8 Sep 2026)
+
+Driven on the deployed product by the owner, sent as thirteen numbered items.
+All thirteen are addressed. Three of them were one defect, and it was the worst
+thing on the list.
+
+**Items 10 and 13 — every real bank statement was unreadable, and the reason
+was six characters.** Three uploads of the same PDF, two channels (accountant
+upload and chase link), one message: *"No transaction table was found."*
+Textract had read the document perfectly and `parseStatementGrid` refused it.
+The bank heads its columns `Money Out (GBP)` / `Money In (GBP)` / `Balance
+(GBP)`; the header regexes are anchored, so `money out` matched and `money out
+(gbp)` did not. The parser found a date column, no amount column of any kind,
+and gave up. **`headerText()` strips a currency qualifier before matching** —
+closed vocabulary, so `Amount (net)` stays unknown rather than guessed —
+and `parseStatementDate` now accepts `01 Aug 26`, the two-digit year that
+statement prints on every line. Regression test built from the failing document.
+D40 makes manual statement upload the ONLY bank input in ID, so until this the
+release's entire bank lane was inert on real files.
+
+**Item 3 — the chase left the release tier.** *"Only publishing an entry will
+require approval by default; a normal email chase is going under approval."*
+D44's sentence named two outward acts and `RELEASE_KINDS` priced them the same.
+The owner has separated them, and the distinction holds: a published entry
+changes the books and cannot be recalled; a chase asks a client for a document
+they already owe, and it is the most frequent act in the product. The spine is
+untouched — proposal, Read review, hash echo, exactly-once execution and the
+audit row all remain — and `LiveProposalFlow` now auto-opens the review for any
+tier-2 kind, so an accountant's chase never queues for someone who is not
+required.
+
+**Item 4 — the chase email, and the code that was asked for twice.** The email
+went out as ONE LINE of plain text with a 300-character signed URL run into the
+middle of the sentence: an SMS in an envelope, because that is literally what
+`email-chase-sender.ts` sent. It now carries the product's shell with the link
+as a button — and composes NOTHING: the words are the approved bytes and the
+only change is moving the trailing URL onto its own line. The shell gained a
+footer (branding only; a client stripping HTML must lose styling and never
+content). **All eleven templates are designed** — the ten in `email-copy.ts`
+plus the chase — and are listed in the report. The OTP on the chase landing is
+GONE: in ID the chase travels by email and the code went to the same inbox, so
+it was one factor asked for twice. `PortalSessionCreateRequest.otp` is optional;
+the link is an HMAC over the chase id, sent only to the registered contact, and
+opens a session scoped to that one chase's items. A supplied code is still
+verified, counted and locked exactly as before.
+
+**Item 2 — the practice was never told a client had finished.** The Stripe
+webhook now writes a `client.registered` notification in the same transaction
+as the subscription and emails the practice owner. It is a TRANSITION, not a
+heartbeat — renewals arrive as the same event type, and a monthly "your client
+finished setting up" is how a signal becomes noise.
+
+**The rest, in one line each.** **1** the client card says "Awaiting client
+registration" like the table already did · **5** *"you can keep the page open"*
+→ *"keep this page open until it finishes"* · **6** a session the app cannot
+read logs the user out instead of rendering an empty shell with a badge ·
+**7** the To-Review pill is bounded and truncates, with the reason on hover ·
+**8** a bank statement gets statement fields, not Supplier / Customer / Invoice
+number / Tax amount at "99% confident" beside em dashes · **9** a notification
+opens the client's Documents tab at that document, with the row marked for
+eight seconds · **11** an upload in flight shows in the header · **12** the
+client's document register can move documents to Trash, which it could not
+although the Trash tab was there.
+
+**Item 12's second question — does the AI count a trashed document?** No, and
+the condition is written once: `common/documents/deleted-documents.ts`'s
+`notDeleted()` is spread by the document lists and counts, chat grounding,
+chat display, coding suggestions, the export, dedupe, publish and the portal.
+⚠ One honest edge: chase detection keys on the bank line's `matchState`, not on
+documents, so trashing a document that had been CONFIRMED against a
+transaction does not reopen that chase. Arguably right — the accountant
+deleting a duplicate does not want the client chased again — but it is a
+behaviour nobody chose, so it is recorded here rather than assumed.
+
+**And the pass found a fourteenth thing nobody reported.** Running the chase
+lane's integration suite — red, and red before this branch touched anything —
+turned up that **every RECEIPT chase was unreviewable in production**.
+`compose-chase-send.ts` stamps `transactionLabels` into the stored payload so
+the review card can name the lines being chased instead of printing cuids;
+`packages/contracts` never learned the field; and the stored payload is
+re-parsed against the generated schema at review and again at execute. Create
+succeeded, `POST …/review` answered `NT-PRP-006` — *"the stored payload no
+longer parses against the contract"* — and the accountant was left with a
+proposal nobody could approve or explain. A STATEMENT request stamps no labels
+and worked, which is why the 8 Sep walk that sent one saw nothing wrong. Fixed
+by putting the field in the contract, with the body cap raised from 500 to 2000
+for the identical near-miss beside it (the engine recomposes the body after the
+boundary parse, and a signed portal link is ~290 characters on its own).
+
+**Item 3, the second half.** The tier flip alone would have left the accountant
+pressing Chase and reading *"queued — it sends when it is approved in
+Approvals"*, which is the sentence he objected to. The three surfaces where the
+selection IS the form — the client's Chases tab, the Bank screen's selection
+chase, and the statement-request dialog — now finish the act where it is
+performed (`sendChaseNow` / `sendStatementRequestNow`: create → review →
+approve, the three calls the server has always required). The record is
+unchanged and every sentence still names Approvals as where to find it. The
+composer card, where an accountant is writing wording they want to read back,
+still shows the draft and the review first.

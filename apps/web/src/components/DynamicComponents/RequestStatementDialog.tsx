@@ -3,21 +3,28 @@ import { CalendarDays, Loader2, Send, X } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
-import { requestStatementProposal } from '../../api/proposals';
+import { sendStatementRequestNow } from '../../api/proposals';
 import { Modal } from './Modal';
 import { ukLongDate, ukLongMonth, UkDateField, UkMonthField } from './UkDateField';
 
 /**
  * Ask a client for a period's bank statement — the accountant's side of the
- * engine (c) chase (Phase 5). The `OffboardClientDialog` posture, exactly:
- * confirming CREATES a `chase.send` proposal and stops. The engine composes
- * the message server-side (month, working portal link, the client's PRIMARY
- * contact), review shows it verbatim, and only the firm's super admin
- * releases it (D44) — so the dialog's copy says "queued", never "sent".
+ * engine (c) chase (Phase 5). The engine composes the message server-side
+ * (month, working portal link, the client's PRIMARY contact) and review shows
+ * it verbatim.
  *
- * Since review item 24 that sentence is ROLE-AWARE: a member reads who
- * releases, the super admin reads that it sends once THEY have read the
- * review. Neither claims a permission — the server is still the rule.
+ * ⚠ **Confirming SENDS it, since 8 Sep 2026 (item 3).** It used to create the
+ * proposal and stop, because `chase.send` was tier 1 and only the firm's super
+ * admin could release it — which is precisely the ceremony the owner removed:
+ * *"only publishing an entry will require approval by default; a normal email
+ * chase is going under approval [and should not]"*. `sendStatementRequestNow`
+ * drives the same three calls the server has always required — create, open
+ * the review, approve echoing its hash — so the proposal, the rendered review
+ * and the audit row all still exist. What is gone is the wait.
+ *
+ * The role-aware sentence from item 24 stays, reworded: neither branch claims
+ * a permission, because the server is still the rule and a member the server
+ * refuses meets `NT-PRM-001` here with its own words.
  */
 const m = defineMessages({
   // The delivery channel (review item 16). The owner ruled on 7 Sep 2026:
@@ -34,7 +41,7 @@ const m = defineMessages({
   detail: {
     id: 'bank.requestStatement.detail',
     defaultMessage:
-      'Confirming queues a request for {client}. The message is composed at review — the period, a secure upload link, and the client’s registered contact — and it sends only when your practice’s super admin approves it.',
+      'Confirming sends the request to {client}. The message is composed here — the period, a secure upload link, and the client’s registered contact — and it is recorded in Approvals with your name on it.',
   },
   /**
    * Item 24 — the same sentence for somebody who holds the release. It says
@@ -45,7 +52,7 @@ const m = defineMessages({
   detailYours: {
     id: 'bank.requestStatement.detailYours',
     defaultMessage:
-      'Confirming queues a request for {client}. The message is composed at review — the period, a secure upload link, and the client’s registered contact — and it sends once you have read that review and approved it in Approvals.',
+      'Confirming sends the request to {client}. The message is composed here — the period, a secure upload link, and the client’s registered contact — and it is recorded in Approvals with your name on it.',
   },
   monthLabel: { id: 'bank.requestStatement.monthLabel', defaultMessage: 'Which month?' },
   /* ── The period, review item 16, the owner's choice of 8 Sep 2026 ─────────
@@ -75,13 +82,17 @@ const m = defineMessages({
   monthChosen: { id: 'bank.requestStatement.monthChosen', defaultMessage: 'Asking for the {month} statement.' },
   confirm: { id: 'bank.requestStatement.confirm', defaultMessage: 'Queue the request' },
   cancel: { id: 'bank.requestStatement.cancel', defaultMessage: 'Cancel' },
+  // ⚠ "Sent", not "queued", since 8 Sep 2026 (item 3): the owner took the
+  // chase out of the release tier, so this act finishes where it is performed
+  // — create, review, approve, all three server-side behind this one press.
+  // The proposal and its audit row are still written; the WAIT is what went.
   queued: {
     id: 'bank.requestStatement.queued',
-    defaultMessage: 'Request queued — it sends when it is approved in Approvals.',
+    defaultMessage: 'Request sent — the client has been emailed their secure upload link.',
   },
   failed: {
     id: 'bank.requestStatement.failed',
-    defaultMessage: 'The request could not be queued. Nothing was sent — try again.',
+    defaultMessage: 'The request could not be sent. Nothing has gone to the client — try again.',
   },
 });
 
@@ -120,7 +131,7 @@ export default function RequestStatementDialog({
     setBusy(true);
     setFailed(false);
     try {
-      await requestStatementProposal(businessId, period);
+      await sendStatementRequestNow(businessId, period);
       setQueued(true);
     } catch {
       setFailed(true);

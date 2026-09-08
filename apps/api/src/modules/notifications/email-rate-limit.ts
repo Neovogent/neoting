@@ -78,6 +78,11 @@ const PER_ADDRESS_HOURLY: Readonly<Record<EmailKind, number>> = Object.freeze({
   // stranger cannot cause — the recipient is a colleague of the sender's own
   // practice, named by a proposal row, never an address anybody typed.
   'proposal-denied': 10,
+  // The practice hearing that one of its clients finished setting up. TEN,
+  // the document-request ceiling: the volume is a function of how many
+  // clients a firm onboards, every one of them is a fact the accountant asked
+  // to know, and the address is their own — a stranger cannot aim this.
+  'client-registered': 10,
   // A colleague invitation, held at the SIGNUP ceiling rather than the client
   // one. It is the only invitation an authenticated caller can point at an
   // address of their choosing with no existing relationship behind it — a

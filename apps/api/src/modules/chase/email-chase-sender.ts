@@ -122,9 +122,57 @@ export interface ChaseEmailTransport {
    * here: one implementation, one opinion about what an address is.
    */
   readonly parseAddress: (raw: string) => EmailAddress;
+  /**
+   * `renderEmailHtml`, handed in for the same reason `parseAddress` is: a VALUE
+   * import of the notifications seam from this module would close the runtime
+   * cycle the header describes. Types are erased; functions are not.
+   */
+  readonly renderHtml: (input: { subject: string; body: string; linkLabels?: Readonly<Record<string, string>> }) => string;
 }
 
 export type ChaseEmailTransportFactory = () => Promise<ChaseEmailTransport>;
+
+/** A URL at the end of the approved sentence — the portal link, always last. */
+const TRAILING_LINK = /https?:\/\/\S+$/;
+
+/** The button's words. Fixed, and the same words the sentence already uses. */
+const LINK_LABEL = 'Upload securely';
+
+/**
+ * The chase email's HTML part (item 4, 8 Sep 2026).
+ *
+ * > *"A bank statement request email should look like a bank statement asking
+ * > email — no professional email format like the OTP system, no HTML design,
+ * > no body text, no footer, no button."*
+ *
+ * He was describing this file exactly. Every other message the product sends
+ * goes out multipart with the designed shell (`email-html.ts`); the chase went
+ * out as ONE LINE of plain text with a 300-character signed URL run into the
+ * middle of the sentence — an SMS in an envelope, because that is literally
+ * what it was.
+ *
+ * ⚠ **This composes NOTHING, and that is what makes it legal here.** The words
+ * are `message.body` — the bytes `composeChaseSms` produced at proposal time,
+ * that Read review rendered, that `rendered_summary_hash` covers, that the
+ * super admin approved. The only change is WHITESPACE: the trailing URL moves
+ * onto its own line, which is the shape `email-html.ts` already turns into a
+ * button with the bare link beneath it for copy-paste. The text part is
+ * untouched and still authoritative, so a client that strips HTML reads the
+ * approved sentence exactly as before.
+ *
+ * A body with no trailing URL (an accountant's custom wording that ends
+ * differently) renders as an ordinary paragraph. Nothing is dropped either way
+ * — that is `renderEmailHtml`'s own guarantee.
+ */
+function renderChaseEmailHtml(transport: ChaseEmailTransport, body: string): string {
+  const link = TRAILING_LINK.exec(body.trim())?.[0] ?? null;
+  const reflowed = link === null ? body : `${body.trim().slice(0, -link.length).trimEnd()}\n${link}`;
+  return transport.renderHtml({
+    subject: CHASE_EMAIL_SUBJECT,
+    body: reflowed,
+    ...(link === null ? {} : { linkLabels: { [link]: LINK_LABEL } }),
+  });
+}
 
 export class EmailChaseSender implements SmsSender {
   private readonly logger = new Logger(EmailChaseSender.name);
@@ -199,6 +247,9 @@ export class EmailChaseSender implements SmsSender {
         subject: CHASE_EMAIL_SUBJECT,
         // ⚠ VERBATIM. The reviewed bytes, unmodified. See the file header.
         body: message.body,
+        // …and the SAME bytes, rendered (item 4, 8 Sep 2026). See
+        // `chaseEmailHtml` — no second composition, no second wording.
+        html: renderChaseEmailHtml(transport, message.body),
       };
       const result = await transport.sender.send(outbound);
 

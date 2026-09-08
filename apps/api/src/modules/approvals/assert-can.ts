@@ -179,9 +179,29 @@ export interface ProposalResource {
  * with the surface in front of it.
  */
 export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
-  // D44's two, and the reason the table existed at all: a text to somebody
-  // else's client, and the one act that lets a figure leave the product.
-  'chase.send': true,
+  // ⚠ **TIER 2 since 8 Sep 2026 — the owner narrowed D44 to its second half.**
+  //
+  // > *"Only publishing an entry requires approval by default; a normal email
+  // > chase is going under approval [and should not]."* (item 3, live pass 3)
+  //
+  // D44's sentence named two outward acts and this table priced them the same.
+  // The owner has now separated them, and the distinction he drew is the one
+  // that survives inspection: a published entry changes the books and cannot
+  // be recalled, while a chase asks a client for a document they already owe.
+  // Chasing is the daily work of the person doing the bookkeeping, and a rule
+  // that made every routine "please send your August statement" wait for the
+  // firm's principal made the principal the bottleneck on the product's most
+  // frequent act.
+  //
+  // ⚠ **What tier 2 does NOT change**, and the reason this is a tier flip
+  // rather than a new send endpoint: the chase still mints a proposal, still
+  // records Read review with its hash, still echoes that hash at Approve, is
+  // still executed exactly once, and still writes the audit row. Governance
+  // §10's spine is untouched — what moved is WHOSE signature the record has to
+  // carry, which is exactly what this table legislates and all it legislates.
+  'chase.send': false,
+  // The one act that lets a figure leave the product, and the only one D44's
+  // release authority still guards.
   'publish.batch': true,
   // ⚠ **TIER 1 since 6 Sep 2026 (item 66, matrix gate ⚖5) — the LITERAL
   // reading, taken deliberately.** The owner was offered a field split
@@ -330,7 +350,7 @@ export function requiresReleaseAuthority(kind: ProposalKind): boolean {
  * {@link requiresReleaseAuthority} first.
  */
 function approvalAction(kind: ProposalKind): 'publish.release' | 'proposal.approve' {
-  return kind === 'publish.batch' || kind === 'chase.send' ? 'publish.release' : 'proposal.approve';
+  return kind === 'publish.batch' ? 'publish.release' : 'proposal.approve';
 }
 
 /**

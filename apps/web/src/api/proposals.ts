@@ -83,7 +83,10 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
  * the one offering an action it knew would fail.
  */
 export const NEEDS_RELEASE_AUTHORITY: Readonly<Record<ProposalKind, boolean>> = {
-  'chase.send': true,
+  // ⚠ FALSE since 8 Sep 2026 — the owner took the chase out of the release
+  // tier (item 3). Mirrors `RELEASE_KINDS['chase.send']`, which carries the
+  // reasoning; the two must move together.
+  'chase.send': false,
   'publish.batch': true,
   'document.update-coding': true,
   'bank.remove-statement': true,
@@ -362,6 +365,42 @@ export async function requestChaseProposal(businessId: string, transactionIds: r
     businessId,
     payload: { messages: [{ transactionIds: [...transactionIds], body: 'Composed at review.' }] },
   } as CreateActionProposalRequest);
+}
+
+/**
+ * **Stage a chase and finish it, in the one order the server permits** (item 3,
+ * 8 Sep 2026).
+ *
+ * > *"Only publishing an entry will require approval by default; a normal
+ * > email chase is going under approval [and should not]."*
+ *
+ * `chase.send` is TIER 2 since that ruling (`NEEDS_RELEASE_AUTHORITY`), so the
+ * person who staged it is the person who may approve it — and leaving it in a
+ * queue for themselves is the ceremony the owner asked us to remove. This is
+ * `updateCodingProposal`'s shape exactly: create → open the review → approve
+ * echoing the review's own hash, three calls behind one click.
+ *
+ * ⚠ **Nothing about the constitutional path is skipped.** The proposal is
+ * minted, `POST …/review` is what produces the hash (so Read review really was
+ * opened, server-side, which is what Governance §10 requires), the hash is
+ * echoed rather than recomputed here, and the audit row is written. What is
+ * gone is the WAIT, not the record.
+ *
+ * ⚠ **The refusals still land at CREATION** — an id that is matched,
+ * suppressed or unreachable, a client with no contact — so a caller meets
+ * every one of them with the server's own sentence, before anything is sent.
+ */
+export async function sendChaseNow(businessId: string, transactionIds: readonly string[]): Promise<void> {
+  const created = await requestChaseProposal(businessId, transactionIds);
+  const review = await openReview(created.id);
+  await approveReviewed(created.id, review.renderedSummaryHash);
+}
+
+/** The statement-request twin of {@link sendChaseNow}. Same three calls, same reasoning. */
+export async function sendStatementRequestNow(businessId: string, period: string): Promise<void> {
+  const created = await requestStatementProposal(businessId, period);
+  const review = await openReview(created.id);
+  await approveReviewed(created.id, review.renderedSummaryHash);
 }
 
 export async function requestStatementProposal(businessId: string, period: string): Promise<ActionProposal> {

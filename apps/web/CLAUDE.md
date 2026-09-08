@@ -2961,3 +2961,97 @@ routes.** Neither is wrong — the quantity moves with what else is on `main` an
 with gzip's own boundaries. Measure your own paired A/B and quote the Δ, never a
 remembered absolute. That is this file's own standing rule, and it keeps cutting
 both ways.
+
+
+
+## The third live pass (8 Sep 2026 — items 1, 5, 6, 7, 8, 9, 11, 12)
+
+Eight web-side items from driving the deployed product. Six are the shape the
+last pass named — **a screen stating what nobody had read, or offering nothing
+where something was owed** — and two are the reverse: a control that was
+present and did the wrong thing.
+
+- **A client who has not finished registering says so on the CARD (item 1).**
+  The table has printed "Awaiting client registration" where the sector goes
+  since 28 Aug; the cards view printed the industry and nothing else, so the
+  board's default layout was the one surface that could not tell a live client
+  from one who had never subscribed. Same claim, same derivation
+  (`awaitingRegistration`, which is the subscription being ACTIVE/TRIALING),
+  now an amber `Pill` in the place the table uses.
+- **A degraded session logs the user out (item 6).** `'degraded'` used to fall
+  through to an EMPTY workspace shell wearing a *"session: data could not be
+  loaded"* badge, on the reasoning that a login screen against a dead API is a
+  wall nobody can pass. What it produced was a signed-in-looking shell with no
+  identity, no data and no way forward — a worse wall, because it does not say
+  what to do. `App.tsx` now calls `logout()` on the transition into degraded
+  and renders `LoginView`. It fires once per transition, so a dead API cannot
+  loop it.
+- **The To-Review pill is bounded (item 7).** `doc.statusNote` is a SENTENCE —
+  the statement extractor's gap reasons run past 120 characters — and unbounded
+  it grew the pill past the card and squeezed the `min-w-0` title block to
+  nothing. `max-w` + `truncate` + the full text as a `title`, which is the trade
+  the file's own title and meta lines already make.
+- **A STATEMENT is not interrogated for a supplier (item 8).** The extractor had
+  classified it correctly; this screen rendered one flat table of INVOICE fields
+  for every type, so a bank statement was asked for a tax amount it does not
+  carry and an "Invoice number" that was its statement number — each wearing
+  "99% confident" beside an em dash. `STATEMENT_PRESENTATION` in
+  `api/document-detail.ts` is the statement's own rows, and both tables feed
+  `PRESENTATION_BY_LABEL` so a renamed row stays editable.
+- **A notification goes to the DOCUMENT (item 9).** The bell did navigate — to
+  the client's Overview, which for a document that just arrived is a tab and a
+  scroll away from the thing the sentence was about, and indistinguishable from
+  a click that did nothing. `NotificationItem` has carried `documentId` since
+  the bell was built, so the address is derivable: `/clients/{id}/documents?doc=`
+  — which opens the preview AND marks the row. `DataTable` gained
+  `highlightRowId`; `ClientDetailView` reads the `doc` param ONCE on arrival
+  (not from `previewId`, which changes on every hand-opened preview) and clears
+  it after eight seconds.
+- **An upload in flight is visible (item 11).** The journey is presign → PUT the
+  whole file → complete, which on a phone photo is seconds of nothing, and the
+  drop zone looked inert. `api/uploads.ts` keeps a tiny subscribable counter and
+  `components/UploadIndicator.tsx` reads it through `useSyncExternalStore` in
+  the ContextHeader — a store rather than a prop because `runWorkspaceDrop` is
+  shared by four surfaces and a prop would be missing from the fifth.
+- **The register can move a document to Trash (item 12).** The Trash sub-tab has
+  been there since item 61 and the register that fills it had no door: deleting
+  was possible from Costs and from the practice-wide Documents screen, and not
+  from the client's own document list. Same `softDeleteDocument`, same
+  reversible framing, live rows only.
+- **"You can keep the page open" became "keep this page open until it finishes"
+  (item 5)** on the portal's sending step. It is an instruction, not a
+  permission.
+
+⚠ **The chase portal no longer asks for a code (item 4).** `/p/<token>` opens
+itself: `OtpStep` is replaced by `OpeningStep`, which calls `journey.verify()`
+once on mount (a ref, because StrictMode mounts twice) and shows either
+"opening" or the fault with a retry. `usePortalJourney` lost `requestCode` /
+`codeRequested` and `verify` takes no argument. Eight `portal.chasePortal.otp*`
+ids retired; `otpAudit` stays, reworded. The reasoning is the server's — see
+`apps/api/src/modules/portal/CLAUDE.md`.
+
+
+### A chase SENDS where it is staged (8 Sep 2026 — item 3, the web half)
+
+The tier flip alone would have left the accountant pressing Chase and reading
+*"queued — it sends when it is approved in Approvals"*, which is the sentence
+the owner objected to. Three surfaces now finish the act where it is performed:
+`ClientChases`'s row and bulk buttons, `BankView`'s selection chase, and
+`RequestStatementDialog`.
+
+`api/proposals.ts` gained **`sendChaseNow`** and **`sendStatementRequestNow`** —
+`updateCodingProposal`'s shape exactly: create → `POST …/review` → approve
+echoing the review's own hash, three calls behind one click.
+
+⚠ **Nothing constitutional is skipped, and the distinction matters.** The
+proposal is minted, the review is genuinely opened SERVER-SIDE (which is what
+produces the hash, and what Governance §10 requires), the hash is echoed rather
+than recomputed, and the audit row is written. What is gone is the WAIT. The
+copy moved with the behaviour — "sent", never "queued" — and every sentence
+still names Approvals as where the record lives.
+
+⚠ **The composer surfaces are unchanged and still show the draft first**
+(`LiveChaseComposerCard` through `LiveProposalFlow`, which now auto-opens the
+review for any tier-2 kind). That is the path for a chase whose wording the
+accountant wants to see; these three are the ones where the selection IS the
+form and a queue was pure ceremony.

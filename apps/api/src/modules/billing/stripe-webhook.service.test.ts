@@ -19,10 +19,12 @@ interface Calls {
   businessFindMany: Array<{ where?: unknown }>;
   update: Array<{ where?: unknown; data?: Record<string, unknown> }>;
   guc: Array<unknown>;
+  /** The practice's bell row when a client finishes setting up (item 2). */
+  notifications: Array<{ data?: Record<string, unknown> }>;
 }
 
 function harness(options: { rows?: Row[]; systemActor?: string | null } = {}) {
-  const calls: Calls = { membershipFindFirst: [], businessFindMany: [], update: [], guc: [] };
+  const calls: Calls = { membershipFindFirst: [], businessFindMany: [], update: [], guc: [], notifications: [] };
   const rows = options.rows ?? [{ id: 'biz_1', subscriptionStatus: null, subscriptionCurrentPeriodEnd: null }];
 
   const tx = {
@@ -38,6 +40,12 @@ function harness(options: { rows?: Row[]; systemActor?: string | null } = {}) {
       update: async (args: { where?: unknown; data?: Record<string, unknown> }) => {
         calls.update.push(args);
         return rows[0];
+      },
+    },
+    notification: {
+      create: async (args: { data?: Record<string, unknown> }) => {
+        calls.notifications.push(args);
+        return { id: 'ntf_1' };
       },
     },
   };
@@ -83,6 +91,32 @@ test('a subscription event writes status, plan and the renewal date', async () =
     plan: 'price_neo',
     subscriptionCurrentPeriodEnd: new Date(PERIOD_END_S * 1000),
   });
+});
+
+test('a client REACHING a live subscription tells the practice — once (item 2)', async () => {
+  // The bell row the accountant never got. Written in the SAME transaction as
+  // the subscription, so it can never name a state that was rolled back.
+  const { calls, service } = harness();
+  expect(await service.handle(subscriptionEvent())).toBe('applied');
+  expect(calls.notifications).toHaveLength(1);
+  expect(calls.notifications[0]?.data).toMatchObject({ businessId: 'biz_1', event: 'client.registered' });
+});
+
+test('a subscription that was ALREADY live notifies nothing — this is a transition, not a heartbeat', async () => {
+  // Renewals, card updates and plan changes all arrive as
+  // `customer.subscription.updated`. Telling the practice their client
+  // "finished setting up" once a month is how a signal becomes noise.
+  const { calls, service } = harness({
+    rows: [{ id: 'biz_1', subscriptionStatus: 'ACTIVE', subscriptionCurrentPeriodEnd: null }],
+  });
+  expect(await service.handle(subscriptionEvent())).toBe('applied');
+  expect(calls.notifications).toEqual([]);
+});
+
+test('a subscription that goes PAST_DUE is not a registration', async () => {
+  const { calls, service } = harness();
+  expect(await service.handle(subscriptionEvent({ status: 'past_due' }))).toBe('applied');
+  expect(calls.notifications).toEqual([]);
 });
 
 test('THE TENANT IS RESOLVED BY STRIPE CUSTOMER ID, inside a scope, never from metadata directly', async () => {

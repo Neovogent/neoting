@@ -86,7 +86,14 @@ export type EmailKind =
   // it is the only message this product sends that tells somebody their work
   // was refused — and the ceilings are per-kind, so a busy day of denials must
   // not exhaust the budget an invitation needs.
-  | 'proposal-denied';
+  | 'proposal-denied'
+  // A client finished setting themselves up, told to the PRACTICE (item 2,
+  // 8 Sep 2026). Its own kind for the standing two reasons: it is the only
+  // message in this list whose recipient is the accountant rather than a
+  // client or a candidate colleague, and the ceilings are per-kind — a firm
+  // onboarding six clients in an afternoon must not spend an invitation
+  // budget to hear about it.
+  | 'client-registered';
 
 /** One message, fully composed. The sender adds the envelope and nothing else. */
 export interface OutboundEmail {

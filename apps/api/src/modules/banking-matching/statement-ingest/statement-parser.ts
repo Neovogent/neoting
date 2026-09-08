@@ -100,6 +100,32 @@ export type ParseResult = { ok: true; statement: ParsedStatement } | { ok: false
 
 /* ── Header detection ─────────────────────────────────────────────────────── */
 
+/**
+ * A header cell's words, with the CURRENCY QUALIFIER taken off.
+ *
+ * ⚠ This is the fix for the defect that made every real bank statement
+ * unreadable (items 10 and 13, 8 Sep 2026). Kestrel Business Bank — like
+ * Barclays, Starling and every other UK bank that states its unit — heads its
+ * columns `Money Out (GBP)`, `Money In (GBP)`, `Balance (GBP)`. The regexes
+ * below are ANCHORED, so `money out` matched and `money out (gbp)` did not:
+ * `findMapping` found a date column, no amount column of any kind, and gave up
+ * on row after row until it reported `noHeaderRow` — *"No transaction table
+ * was found"* — on a document whose transaction table was perfectly legible.
+ * Three uploads of the same statement, two channels, one message.
+ *
+ * The vocabulary stays CLOSED, the house rule for this file: only a known
+ * currency code or symbol is removed, in parentheses or bare. `Amount (net)`
+ * is left exactly as it was, because "net" is not a currency and a header this
+ * file does not understand must stay unmatched rather than be guessed at.
+ */
+function headerText(cell: string): string {
+  return cell
+    .replace(/[([]\s*(?:gbp|usd|eur|aud|cad|nzd|chf|jpy|[£$€])\s*[)\]]/gi, ' ')
+    .replace(/[£$€]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const DATE_HEADERS = /^(date|transaction date|posting date|booked|value date|date posted)$/i;
 const DESC_HEADERS = /^(description|details|narrative|reference|transaction|payee|merchant|particulars)$/i;
 const AMOUNT_HEADERS = /^(amount|value|transaction amount|amount \(gbp\)|amt)$/i;
@@ -121,7 +147,10 @@ const BALANCE_HEADERS = /^(balance|running balance|balance \(gbp\)|closing balan
 function findMapping(grid: Grid): ColumnMapping | null {
   const limit = Math.min(grid.length, 25);
   for (let r = 0; r < limit; r += 1) {
-    const cells = (grid[r] ?? []).map((c) => c.trim());
+    // `headerText`, not a bare trim: a column headed `Money Out (GBP)` is the
+    // paid-out column, and reading it as an unknown header is what made every
+    // real statement report "no transaction table".
+    const cells = (grid[r] ?? []).map((c) => headerText(c));
     const find = (re: RegExp): number | null => {
       const i = cells.findIndex((c) => re.test(c));
       return i === -1 ? null : i;
@@ -244,12 +273,20 @@ export function parseStatementDate(raw: string): string | null {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   }
 
-  // `5 Apr 2026` / `05 April 2026`
-  const named = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/.exec(value);
+  // `5 Apr 2026` / `05 April 2026` / `01 Aug 26`.
+  //
+  // ⚠ The two-digit year was added 8 Sep 2026 with the header fix above, and
+  // for the same reason: `01 Aug 26` is what the statement in front of us
+  // prints on every single line, and without it every row would have been
+  // skipped for having no date even once the columns were found. Same century
+  // rule as the numeric form directly above — a statement is not dated 1926.
+  const named = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{2}|\d{4})$/.exec(value);
   if (named) {
     const month = MONTHS.indexOf((named[2] ?? '').slice(0, 3).toLowerCase()) + 1;
     if (month === 0) return null;
-    return `${named[3]}-${String(month).padStart(2, '0')}-${String(Number.parseInt(named[1] ?? '', 10)).padStart(2, '0')}`;
+    const yearRaw = Number.parseInt(named[3] ?? '', 10);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    return `${year}-${String(month).padStart(2, '0')}-${String(Number.parseInt(named[1] ?? '', 10)).padStart(2, '0')}`;
   }
   return null;
 }

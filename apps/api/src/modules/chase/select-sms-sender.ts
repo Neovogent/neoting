@@ -82,13 +82,14 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
       // sends a chase constructs no SES client and opens no Redis connection.
       // `EmailChaseSender` memoises the result after the first send.
       return new EmailChaseSender(async () => {
-        const { parseEmailAddress, selectEmailRateLimiter, selectEmailSender } = await import(
+        const { parseEmailAddress, renderEmailHtml, selectEmailRateLimiter, selectEmailSender } = await import(
           '../notifications/index.js'
         );
         return {
           sender: selectEmailSender(env),
           limiter: selectEmailRateLimiter(env),
           parseAddress: parseEmailAddress,
+          renderHtml: renderEmailHtml,
         };
       });
     case 'demo':

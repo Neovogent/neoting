@@ -57,10 +57,19 @@ export interface PortalSessionConfig {
 }
 
 export interface CreatePortalSessionInput {
-  /** The token from the SMS link. Stateless — HMAC over the chase id and expiry (`chase/portal-link.ts`). */
+  /** The token from the emailed link. Stateless — HMAC over the chase id and expiry (`chase/portal-link.ts`). */
   readonly linkToken: string;
-  /** Six digits, already shape-checked by the generated Zod schema at the controller. */
-  readonly otp: string;
+  /**
+   * Six digits, already shape-checked by the generated Zod schema at the
+   * controller — and **optional since 8 Sep 2026** (owner's ruling; the
+   * contract carries the full reasoning on `PortalSessionCreateRequest.otp`).
+   *
+   * Short version: ID delivers the chase by EMAIL and the code went to the
+   * same inbox, so it was one factor asked for twice. Absent, the signed link
+   * alone opens the session. Present, it is verified exactly as before —
+   * counter, lock and single-use minting all still apply.
+   */
+  readonly otp?: string | undefined;
 }
 
 export interface IssuedPortalSession {
@@ -136,9 +145,17 @@ export class PortalSessionService {
     // lock costs the server one read rather than a verification.
     if (isOtpLocked(attemptState, nowMs)) throw verificationFailed();
 
-    if (!this.verifyOtp(input.otp, attemptState, nowMs)) {
-      await this.recordFailedAttempt(resolved, linkTokenHash, attemptState, nowMs);
-      throw verificationFailed();
+    // ⚠ **No code supplied is not a failed code.** The link verified, it names
+    // a live chase, and it was sent to that chase's registered contact — which
+    // is the whole of what the second factor was adding once both travelled by
+    // email. A supplied code is still compared, and still counted against the
+    // lock when it is wrong: a caller holding one loses nothing, and a guesser
+    // gains nothing by supplying one.
+    if (input.otp !== undefined && input.otp !== '') {
+      if (!this.verifyOtp(input.otp, attemptState, nowMs)) {
+        await this.recordFailedAttempt(resolved, linkTokenHash, attemptState, nowMs);
+        throw verificationFailed();
+      }
     }
 
     const expiresAt = new Date(nowMs + PORTAL_SESSION_TTL_MS);

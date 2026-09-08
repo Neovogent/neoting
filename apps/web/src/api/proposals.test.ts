@@ -163,12 +163,12 @@ describe('who may approve which kind', () => {
     // enabled, primary-styled Approve on his own correction, pressed it, and
     // got NT-PRM-001 back.
     expect(NEEDS_RELEASE_AUTHORITY['publish.batch']).toBe(true);
-    expect(NEEDS_RELEASE_AUTHORITY['chase.send']).toBe(true);
     expect(NEEDS_RELEASE_AUTHORITY['document.update-coding']).toBe(true);
     expect(NEEDS_RELEASE_AUTHORITY['document.purge']).toBe(true);
 
     // Tier 2 is any member's, so gating on the session alone would withhold
     // Approve from people the server would have admitted.
+    expect(NEEDS_RELEASE_AUTHORITY['chase.send']).toBe(false); // 8 Sep 2026, item 3
     expect(NEEDS_RELEASE_AUTHORITY['document.route']).toBe(false);
     expect(NEEDS_RELEASE_AUTHORITY['bank.confirm-match']).toBe(false);
     expect(NEEDS_RELEASE_AUTHORITY['document.resolve-duplicate']).toBe(false);

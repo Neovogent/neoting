@@ -28,6 +28,7 @@ export {
   NotificationsService,
   type SendBusinessPeopleInviteInput,
   type SendClientInviteInput,
+  type SendClientRegisteredInput,
   type SendContext,
   type SendDocumentRequestInput,
   type SendDuplicateSignupNoticeInput,
@@ -80,6 +81,11 @@ export {
   RedisEmailRateLimiter,
 } from './email-rate-limit.js';
 
+// The RENDERER, exported 8 Sep 2026 (item 4) for the chase lane — which holds
+// bytes a human already approved and must render them without composing a
+// second time. It takes a body and returns HTML; it never writes words.
+export { renderEmailHtml, type EmailHtmlInput } from './email-html.js';
+
 // Composition. Pure, and exported so a Read-review surface can show the exact
 // text that will send WITHOUT sending it — the same guarantee `composeChaseSms`
 // gives the SMS lane.
@@ -89,6 +95,8 @@ export {
   type ComposeClientInviteInput,
   type ComposedEmail,
   composeClientInvite,
+  type ComposeClientRegisteredInput,
+  composeClientRegistered,
   type ComposeDocumentRequestInput,
   composeDocumentRequest,
   composeDuplicateSignupNotice,

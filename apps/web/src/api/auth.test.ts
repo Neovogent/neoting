@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { NtProblemError } from '@neoting/contracts';
 
 import { actsForWholePractice, login, logout, toSessionState } from './auth';
+import { hasSignedInBefore } from '../lib/signed-in-hint';
 import type { SessionState } from './auth';
 
 /**
@@ -148,6 +149,22 @@ test('a refused login surfaces the problem, code intact', async () => {
 test('logout resolves even when the API is unreachable', async () => {
   vi.stubGlobal('fetch', () => Promise.reject(new Error('Failed to fetch')));
   await expect(logout()).resolves.toBeUndefined();
+});
+
+/**
+ * The sign-out a 'degraded' session depends on. `useSession` writes the hint
+ * only on 'authenticated' and 'unauthenticated', so when /me cannot answer at
+ * all the refetch never clears it — and the next visit to `/` would bounce
+ * back to a workspace with no session. An unreachable API is the case that
+ * matters, because it is the one that produced the state in the first place.
+ */
+test('logout clears the signed-in hint even when the API is unreachable', async () => {
+  window.localStorage.setItem('nt.signed-in', '1');
+  vi.stubGlobal('fetch', () => Promise.reject(new Error('Failed to fetch')));
+
+  await logout();
+
+  expect(hasSignedInBefore()).toBe(false);
 });
 
 /**
