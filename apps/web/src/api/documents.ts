@@ -133,6 +133,10 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     clientName: clientNameFor(row.businessId),
     supplier: party,
     date: fromIsoDate(row.documentDate ?? row.receivedAt),
+    // A date nobody has read is not today. See `Document.dateKnown` — the
+    // fallback to `receivedAt` above stays, because every consumer needs SOME
+    // orderable date, but the boards must not print it as the document's own.
+    dateKnown: row.documentDate !== null && row.documentDate !== undefined,
     total: fromPence(row.totalPence),
     // Nothing read is not zero. See `Document.totalKnown`.
     totalKnown: row.totalPence !== null && row.totalPence !== undefined,

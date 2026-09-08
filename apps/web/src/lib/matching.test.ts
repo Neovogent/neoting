@@ -12,6 +12,7 @@ import {
   isUnexplained,
   matchCandidates,
   normaliseMerchant,
+  offersCandidates,
   parseDate,
   sameMerchant,
   shortLabel,
@@ -158,6 +159,25 @@ describe('assessTransaction', () => {
     expect(verdict.best?.document.id).toBe('d1');
     expect(verdict.best?.kind).toBe('exact');
     expect(verdict.reason).toContain('2 days after');
+  });
+
+  it('offers the human a single clear winner, not only a tie', () => {
+    // ⚠ The live defect of 8 Sep 2026. Every screen asked `kind === 'confused'`,
+    // so a lone exact match — `'confident'` — fell through to the red "No
+    // document" pill and lost its Match button, because nothing calls
+    // `autoMatches` on the API path to link it. Both kinds carry candidates and
+    // both need a person, so both must reach the screens.
+    const confident = assessTransaction(intl, find('t2'), seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const confused = assessTransaction(intl, find('t4'), seedDocuments, DEFAULT_MATCH_SETTINGS);
+
+    expect(confident.kind).toBe('confident');
+    expect(offersCandidates(confident)).toBe(true);
+    expect(offersCandidates(confused)).toBe(true);
+  });
+
+  it('offers nothing when the matcher found nothing, and nothing for an absent verdict', () => {
+    expect(offersCandidates({ kind: 'none', candidates: [], reason: '' })).toBe(false);
+    expect(offersCandidates(undefined)).toBe(false);
   });
 
   it('hands over a refund it cannot pin down rather than guessing', () => {

@@ -35,7 +35,7 @@ import { errorLabel, sliceStatus } from '../api/slices';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { channelLabels, receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
-import { DocumentTitle, documentTitle } from '../lib/documentTitle';
+import { DocumentDate, DocumentTitle, documentTitle } from '../lib/documentTitle';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocStatus, Document, VaultDocument } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -817,7 +817,7 @@ export function DocumentsView() {
     // and honest channel words, never the raw slug (item 21).
     { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => documentTitle(d).text, render: (d) => <DocumentTitle doc={d} /> },
     ...(groupByClient ? [] : [{ key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d: Document) => d.clientName }]),
-    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date, render: (d) => <DocumentDate doc={d} /> },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
     { key: 'uploader', label: intl.formatMessage(m.columnUploader), sortValue: (d) => d.uploader },
@@ -931,7 +931,7 @@ export function DocumentsView() {
       sortValue: (d: Document) => d.clientName,
       render: (d) => (d.clientName ? <span>{d.clientName}</span> : <Pill tone="amber">{intl.formatMessage(m.unassignedClient)}</Pill>),
     },
-    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date, render: (d) => <DocumentDate doc={d} /> },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     {
       key: 'status',

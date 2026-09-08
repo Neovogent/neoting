@@ -14,7 +14,7 @@ import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, useQueryParam, useSegment } from '../lib/router';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
-import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
+import { DocumentDate, DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
@@ -690,7 +690,7 @@ export function ClientInbox({ client, kind, onPreview }: {
     render: (d) => <Pill>{receivedViaText(intl, d)}</Pill>,
   };
 
-  const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date };
+  const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date, render: (d) => <DocumentDate doc={d} /> };
 
   /**
    * A duplicate flag has to be visible wherever the document is, not only on

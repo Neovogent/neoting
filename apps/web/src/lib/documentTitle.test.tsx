@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { documentTitle, documentTitleClass, documentTotal } from './documentTitle';
+import { documentDate, documentTitle, documentTitleClass, documentTotal } from './documentTitle';
 
 test('an extracted party is the title, and is not a fallback', () => {
   const t = documentTitle({ supplier: 'Bidfood (UK) Ltd', displayTitle: 'Bidfood (UK) Ltd' });
@@ -37,4 +37,20 @@ test('a genuine zero still prints as money', () => {
 
 test('a synthetic row, which always carries a real number, is unaffected', () => {
   expect(documentTotal({ total: 217.5, totalKnown: undefined, currency: 'GBP' })).toBe('£217.50');
+});
+
+test('a date nobody has read is a dash, never today', () => {
+  // 8 Sep 2026, found live: a document still in Processing printed TODAY in the
+  // DATE column, because `toLocalDocument` falls back to `receivedAt` so every
+  // list has something to sort by. Beside dates read off paper, an arrival date
+  // is a fact about our server presented as a fact about the document.
+  expect(documentDate({ date: '08 Sep 2026', dateKnown: false })).toBeNull();
+});
+
+test('a date the server did send is printed as it came', () => {
+  expect(documentDate({ date: '03 Aug 2026', dateKnown: true })).toBe('03 Aug 2026');
+});
+
+test('a synthetic row, which always carries a real date, is unaffected', () => {
+  expect(documentDate({ date: '20 Aug 2026', dateKnown: undefined })).toBe('20 Aug 2026');
 });

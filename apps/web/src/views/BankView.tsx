@@ -19,7 +19,7 @@ import { sendWorkspaceUploads } from '../api/uploads';
 import { StatementModal, downloadBank } from '../components/DynamicComponents/StatementModal';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
-import { assessTransaction, isMatched, isUnexplained, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
+import { assessTransaction, isMatched, isUnexplained, offersCandidates, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
 import { summariseRemoval } from '../lib/statementRemoval';
 // Lazy, like the filter panel and the statement dialog below it: this is a
 // modal that opens on a click, and eagerly it put itself plus the
@@ -510,7 +510,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       // 'needs-you' is the only filter that wears a COUNT, so it is the only
       // one on the counting predicate — it has to select exactly the set
       // `needsYouCount` below counts, or the pill lies about its own list.
-      if (evidenceFilter === 'needs-you' && (!isUnexplained(t) || verdicts.get(t.id)?.kind !== 'confused')) return false;
+      if (evidenceFilter === 'needs-you' && (!isUnexplained(t) || !offersCandidates(verdicts.get(t.id)))) return false;
       // 'unmatched'/'matched' stay on `isMatched` deliberately: these are a
       // lens on the matcher's question — "does this line have its evidence" —
       // and they carry no number. A SUGGESTED or EXCLUDED line still belongs in
@@ -649,7 +649,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // `!isMatched` row by construction, so `verdicts` — which is keyed on the
   // matcher's question and stays there — always has an entry to look up.
   const needsYouCount = useMemo(
-    () => clientScopedTxns.filter((t) => isUnexplained(t) && verdicts.get(t.id)?.kind === 'confused').length,
+    () => clientScopedTxns.filter((t) => isUnexplained(t) && offersCandidates(verdicts.get(t.id))).length,
     [clientScopedTxns, verdicts],
   );
 
@@ -692,7 +692,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           );
         }
         const v = verdictFor(t);
-        if (v.kind === 'confused') {
+        // `offersCandidates`, not `kind === 'confused'`: a single exact match is
+        // `'confident'`, and nothing links it on the live path, so asking only
+        // about ties painted the matcher's best answers red as "No document".
+        if (offersCandidates(v)) {
           return <Pill tone="amber">{intl.formatMessage(m.needsYouPill, { count: v.candidates.length })}</Pill>;
         }
         // Missing evidence is a RED flag regardless of direction (review item
@@ -764,13 +767,14 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           );
         }
 
-        // Match is offered only where the matcher is genuinely torn. With no
-        // candidate at all there is nothing to choose between, so the only
-        // honest routes are cash coding or chasing the client.
+        // Match is offered wherever the matcher has a candidate — a tie OR a
+        // single clear winner, since nothing links a winner on the live path.
+        // With no candidate at all there is nothing to choose between, so the
+        // only honest routes are cash coding or chasing the client.
         const v = verdictFor(t);
         return (
           <span className="flex items-center gap-2 justify-end">
-            {v.kind === 'confused' && (
+            {offersCandidates(v) && (
               <button
                 onClick={(e) => { e.stopPropagation(); setMatchFor(t); }}
                 className="px-3 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"

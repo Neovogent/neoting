@@ -68,7 +68,7 @@ const OffboardClientDialog = lazy(() =>
 /** This client's Trash (review item 61). Its own chunk — see the file's header. */
 const ClientTrashPanel = lazy(() => import('./ClientTrashPanel'));
 import { currency } from '../lib/resolver';
-import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
+import { DocumentDate, DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -998,7 +998,7 @@ export function ClientDetailView() {
     // never the literal "Unknown" (item 43). Channel: honest words, never the
     // raw slug (item 21).
     { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => documentTitle(d).text, render: (d) => <DocumentTitle doc={d} /> },
-    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date, render: (d) => <DocumentDate doc={d} /> },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
     { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <DocumentTotal doc={d} /> },

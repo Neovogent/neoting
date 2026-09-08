@@ -8,7 +8,7 @@ import { holdsReleaseAuthority } from '../api/auth';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { useAppContext } from '../context/AppContext';
 import { commonLabels } from '../i18n/common';
-import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
+import { DocumentDate, DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import type { Document } from '../lib/types';
 
 /** Permanent delete's Review → Approve card — the same one the Documents screen uses. */
@@ -155,7 +155,7 @@ export function ClientTrashPanel({ client }: { client: { id: string; name: strin
       sortValue: (d) => documentTitle(d).text,
       render: (d) => <DocumentTitle doc={d} />,
     },
-    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date, render: (d) => <DocumentDate doc={d} /> },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     {
       key: 'total',

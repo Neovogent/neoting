@@ -413,6 +413,30 @@ export interface AutoMatch {
 }
 
 /**
+ * Whether the matcher has a candidate to put in front of a human.
+ *
+ * ⚠ **`'confident'` belongs here, and leaving it out was a live defect (8 Sep
+ * 2026).** `assessTransaction`'s own comment says a clear winner "is linked
+ * without asking" — but that is only true of the SYNTHETIC cast, where
+ * `buildInitialPipeline` runs `autoMatches`. Nothing calls `autoMatches` on the
+ * API path, and the server leaves every row `UNMATCHED`, so on live data a
+ * confident verdict has no route to a match at all.
+ *
+ * Every screen asked `kind === 'confused'`, so the single exact candidate — the
+ * common case, and the matcher's *best* answer — fell through to the red "No
+ * document" pill, was counted in "£… without evidence", was hidden from the
+ * "Needs you" filter, and lost the Match button that would have settled it. A
+ * walk of staging found three exact amount-and-date pairs reported as having no
+ * document while their invoices sat in the same inbox.
+ *
+ * One predicate rather than four comparisons, so a fifth screen cannot ask the
+ * question a different way and drift back.
+ */
+export function offersCandidates(verdict: MatchVerdict | undefined): boolean {
+  return verdict !== undefined && (verdict.kind === 'confused' || verdict.kind === 'confident');
+}
+
+/**
  * Whether a line already has its evidence — the one place the two match
  * signals are reconciled (METH Stage 11).
  *

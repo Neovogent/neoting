@@ -260,6 +260,19 @@ export interface Document {
    * real number, needs no change.
    */
   totalKnown?: boolean | undefined;
+  /**
+   * False when the server sent no `documentDate` — nobody has read a date off
+   * the page yet.
+   *
+   * ⚠ 8 Sep 2026, found live, and the same mistake as `totalKnown` one column
+   * over: the mapper falls back to `receivedAt`, so a document still being
+   * extracted printed **today's** date in the DATE column, indistinguishable
+   * from a date actually read off the paper. An accountant scanning the board
+   * for "what is in August" was shown a September date that is a fact about our
+   * server, not about the document. Absent by default, like `totalKnown`, so a
+   * synthetic row needs no change.
+   */
+  dateKnown?: boolean | undefined;
   category: string;
   status: DocStatus;
   statusNote?: string | undefined;
