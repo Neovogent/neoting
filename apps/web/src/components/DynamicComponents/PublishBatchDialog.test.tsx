@@ -231,6 +231,12 @@ test('Approve is absent until Read review returns, and then echoes the review ha
   expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
   expect(approveReviewed).not.toHaveBeenCalled();
 
+  // ⚠ `publish.batch` is TIER 1, so the authority has to arrive before the
+  // press or the button is correctly refused (8 Sep 2026 — a standard user was
+  // shown an enabled Approve that always 403'd). Flipped here rather than at
+  // the top so the two assertions above keep their meaning: with `isOwner`
+  // true from the start the fast path would have opened the review already.
+  isOwner = true;
   fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
   const approve = await screen.findByRole('button', { name: /^Approve/ });
   // The server's own rendered review is what is on screen, not a local summary.

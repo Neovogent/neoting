@@ -40,6 +40,7 @@ import {
 } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
+import { categoryLabels } from './category-labels.js';
 
 type ListQuery = z.infer<typeof listDocumentsQueryParams>;
 type EventsQuery = z.infer<typeof listDocumentEventsQueryParams>;
@@ -142,7 +143,11 @@ export class DocumentsService {
     );
 
     const page = toPage(rows, request);
-    return { data: page.data.map(toDocumentSummary), pageInfo: page.pageInfo };
+    // The chart crosses as DATA, the `analysis-account-chart.ts` rule — and it
+    // is resolved ONCE for the page rather than per row, because it is one
+    // process-wide map rather than a query.
+    const labels = categoryLabels();
+    return { data: page.data.map((row) => toDocumentSummary(row, labels)), pageInfo: page.pageInfo };
   }
 
   /**
@@ -260,7 +265,7 @@ export class DocumentsService {
 
     const accepted = row.extractions[0];
     return {
-      ...toDocumentResponse(row),
+      ...toDocumentResponse(row, categoryLabels()),
       acceptedExtraction: accepted === undefined ? null : toExtraction(accepted),
     };
   }

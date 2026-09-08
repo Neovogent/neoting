@@ -185,7 +185,16 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
               // A statement request (engine (c)) asks for a month, not lines.
               period !== null
                 ? { label: 'Requesting bank statement for', value: period }
-                : { label: 'Chasing transactions', value: stringArray(msg['transactionIds']).join(', ') },
+                : {
+                    label: 'Chasing transactions',
+                    // ⚠ Labels, never ids. `compose-chase-send.ts` stamps
+                    // `transactionLabels` — "FRESH DIRECT CD 4211 · £217.50 ·
+                    // 14 Aug 2026" — for exactly this line, because this row
+                    // used to print raw cuids at the one person whose job is to
+                    // check what is being sent. Older payloads carry only the
+                    // ids, so they still render rather than going blank.
+                    value: (labels(msg['transactionLabels']) ?? stringArray(msg['transactionIds'])).join(', '),
+                  },
             ],
           };
         }),
@@ -235,7 +244,13 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         // document too, but an id that produced NO rows — refused, or a payload
         // written before the entry preview existed — would otherwise vanish
         // from the card entirely.
-        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+        // ⚠ Named where the preview knows a name, numbered where it does not.
+        // This list used to read "Document 1 — doc_ab2fae7141eae9d056b9e7dc",
+        // which tells the one person whose job is to check the release nothing
+        // about what they are releasing. The id stays as the VALUE because it
+        // is what an auditor matches against the exported file. Found live,
+        // 8 Sep 2026.
+        { heading: 'Documents', entries: documentEntries(ids, payload['entryPreview']) },
       ],
       );
     }
@@ -249,7 +264,13 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           heading: 'Reason, exactly as it will be recorded',
           entries: [{ label: 'Reason', value: text(payload['reason']) }],
         },
-        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+        // ⚠ Named where the preview knows a name, numbered where it does not.
+        // This list used to read "Document 1 — doc_ab2fae7141eae9d056b9e7dc",
+        // which tells the one person whose job is to check the release nothing
+        // about what they are releasing. The id stays as the VALUE because it
+        // is what an auditor matches against the exported file. Found live,
+        // 8 Sep 2026.
+        { heading: 'Documents', entries: documentEntries(ids, payload['entryPreview']) },
       ]);
     }
     case 'document.purge': {
@@ -289,7 +310,13 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         ...(typeof reason === 'string' && reason.length > 0
           ? [{ heading: 'Reason, exactly as it will be recorded', entries: [{ label: 'Reason', value: text(reason) }] }]
           : []),
-        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+        // ⚠ Named where the preview knows a name, numbered where it does not.
+        // This list used to read "Document 1 — doc_ab2fae7141eae9d056b9e7dc",
+        // which tells the one person whose job is to check the release nothing
+        // about what they are releasing. The id stays as the VALUE because it
+        // is what an auditor matches against the exported file. Found live,
+        // 8 Sep 2026.
+        { heading: 'Documents', entries: documentEntries(ids, payload['entryPreview']) },
       ]);
     }
     case 'document.resolve-duplicate': {
@@ -389,7 +416,13 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
             ...(fromStage == null ? [] : [{ label: 'Requested from stage', value: text(fromStage) }]),
           ],
         },
-        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+        // ⚠ Named where the preview knows a name, numbered where it does not.
+        // This list used to read "Document 1 — doc_ab2fae7141eae9d056b9e7dc",
+        // which tells the one person whose job is to check the release nothing
+        // about what they are releasing. The id stays as the VALUE because it
+        // is what an auditor matches against the exported file. Found live,
+        // 8 Sep 2026.
+        { heading: 'Documents', entries: documentEntries(ids, payload['entryPreview']) },
       ]);
     }
     case 'rule.create': {
@@ -783,6 +816,46 @@ function text(value: unknown): string {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/**
+ * The release's documents, named where the preview knows a name.
+ *
+ * The counterparty is the first cell of the first row in every export target
+ * this release has — the same fact `entryPreviewSections` puts in each entry's
+ * own heading — so this reuses it rather than inventing a second answer.
+ *
+ * Falls back to `Document {n}` for any id the preview does not cover: a
+ * mixed-currency batch renders no preview at all, and the kinds that carry only
+ * `documentIds` have never had one. A list that silently dropped those rows
+ * would be worse than one that numbers them.
+ */
+function documentEntries(ids: readonly string[], entryPreview: unknown): { label: string; value: string }[] {
+  const named = new Map<string, string>();
+  if (isObject(entryPreview)) {
+    const documents = Array.isArray(entryPreview['documents']) ? entryPreview['documents'] : [];
+    for (const document of documents) {
+      if (!isObject(document)) continue;
+      const id = typeof document['documentId'] === 'string' ? document['documentId'] : null;
+      const rows = Array.isArray(document['rows']) ? document['rows'] : [];
+      const counterparty = stringArray(rows[0] ?? [])[0];
+      if (id !== null && counterparty !== undefined && counterparty !== '') named.set(id, counterparty);
+    }
+  }
+  return ids.map((id, i) => ({ label: named.get(id) ?? `Document ${i + 1}`, value: id }));
+}
+
+/**
+ * A non-empty list of human labels, or `null` so the caller can fall back.
+ *
+ * Distinct from `stringArray` on purpose: that answers `[]` for an absent key,
+ * which a caller cannot tell from "the proposal really chases nothing". A
+ * payload written before `transactionLabels` existed must fall through to its
+ * ids rather than rendering an empty row.
+ */
+function labels(value: unknown): string[] | null {
+  const found = stringArray(value);
+  return found.length > 0 ? found : null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

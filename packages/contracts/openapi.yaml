@@ -6649,6 +6649,20 @@ components:
               properties:
                 id: { type: string }
                 name: { type: string }
+                documentEmail:
+                  type: string
+                  description: |
+                    Where this practice's clients forward paperwork —
+                    `doc+<practiceId>@<inbound domain>`, composed server-side
+                    from the address the API actually sends from, so it cannot
+                    drift from the SES identity that receives it.
+
+                    ⚠ **The practice tag is what makes the mail routable.** The
+                    single platform address is `doc@` (SoT §4 Stage 1.2); a bare
+                    `doc@` reaches SES and then has no tenancy anchor, so it is
+                    quarantined unprocessed. Optional so an older server simply
+                    omits it and the screen says nothing rather than inventing
+                    an address nobody reads.
             - type: 'null'
         role:
           $ref: '#/components/schemas/WorkspaceRole'
@@ -6720,6 +6734,27 @@ components:
           x-nt-money: true
         reference: { type: [string, 'null'] }
         categoryCode: { type: [string, 'null'] }
+        categoryLabel:
+          type: [string, 'null']
+          description: |
+            `categoryCode` as a person reads it — the ledger-prefixed account
+            name, e.g. `Expenses: Repairs and maintenance` for
+            `REPAIRS_AND_MAINTENANCE`. The same string the export file's
+            `Analysis account` column carries.
+
+            ⚠ **It is here because the browser must not invent it.** The name is
+            data, not a transformation of the code — the ledger prefix appears
+            nowhere inside the code, so no client-side helper could produce it.
+            Before this field the boards printed the raw enum while the publish
+            review card and the exported file, both composed server-side,
+            printed the name: one document wore two vocabularies depending on
+            which screen you were on (found on the live walk, 8 Sep 2026).
+
+            Null when the document has no coding, or when the code names no
+            account the server knows — `category_code` is free text and an
+            accountant's explicit rule may legitimately name one. An unknown
+            code is then surfaced AS ITSELF, never matched to the nearest name:
+            a near miss is a wrong nominal in somebody's books.
         description: { type: [string, 'null'] }
         projectRef: { type: [string, 'null'] }
         parentDocumentId:

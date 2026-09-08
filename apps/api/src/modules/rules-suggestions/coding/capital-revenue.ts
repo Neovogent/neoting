@@ -1,4 +1,4 @@
-import type { ChartAccount } from '../chart-of-accounts/account.js';
+import type { ChartAccount, Ledger } from '../chart-of-accounts/account.js';
 import type { CodingAdvisory, CodingEscalationReason } from './escalation.js';
 
 /**
@@ -99,6 +99,72 @@ export type CodingBasis = (typeof CODING_BASES)[number];
 
 /** What the number does next — the §24.4.6 tier-1 distinction, per line. */
 export type LineTreatment = 'CAPITAL' | 'REVENUE';
+
+/**
+ * The capital/revenue verdict a basis ALREADY CONTAINS, or `null` for the bases
+ * that settle nothing.
+ *
+ * ⚠ **This exists because a card contradicted itself in front of an accountant**
+ * (found on the live walk, 8 Sep 2026): a document coded to a `Fixed assets`
+ * account, wearing *"hardware below this practice's capitalisation threshold"*
+ * as its reason. Below the threshold is precisely the finding that makes
+ * something NOT capital — so the sentence and the coding beside it could not
+ * both be true, and the accountant had no way to tell which half to believe.
+ *
+ * A basis is not decoration. Several of them are a whole accounting argument
+ * compressed to one token: `HARDWARE_PER_UNIT_BELOW_THRESHOLD` says *expense
+ * it*, `PERPETUAL_LICENCE_CAPITALISED` says *capitalise it*. Where a basis
+ * carries that verdict it must agree with the account the answer names, and
+ * `parseModelCodingSuggestion` is where a model answer that disagrees is
+ * refused — the `SUPPLIER_MEMORY` enforcement, one line of reasoning over.
+ *
+ * `null` is the honest entry for a basis that genuinely leaves the question
+ * open, and there are two kinds: the escalations (`SOFTWARE_TERM_NOT_STATED`,
+ * `HARDWARE_PER_UNIT_UNSETTLED`, `PROFESSIONAL_SERVICES_SPLIT_REQUIRED` — the
+ * whole point of each is that the question is NOT settled) and the weak signals
+ * (a keyword hit, a supplier name, the client's own history, the trade read),
+ * which can land on either side and say nothing about which.
+ *
+ * ⚠ Keep it in step with the `code(...)` calls further down this file — every
+ * non-null entry here is a pairing the deterministic rung already makes, and
+ * `capital-revenue.test.ts` asserts the two agree rather than trusting that
+ * they do.
+ */
+export const BASIS_TREATMENT: Readonly<Record<CodingBasis, LineTreatment | null>> = {
+  TRAINING_NEVER_CAPITAL: 'REVENUE',
+  SERVICE_CONTRACT_EXPENSED: 'REVENUE',
+  SUBSCRIPTION_TERM_UNDER_TWO_YEARS: 'REVENUE',
+  PERPETUAL_LICENCE_CAPITALISED: 'CAPITAL',
+  PERPETUAL_LICENCE_BELOW_THRESHOLD: 'REVENUE',
+  SOFTWARE_TERM_NOT_STATED: null,
+  INSTALLATION_INTO_ASSET: 'CAPITAL',
+  INSTALLATION_WITH_NO_ASSET_EXPENSED: 'REVENUE',
+  CLOUD_CONFIGURATION_EXPENSED: 'REVENUE',
+  PROFESSIONAL_SERVICES_SPLIT_REQUIRED: null,
+  HARDWARE_PER_UNIT_AT_OR_ABOVE_THRESHOLD: 'CAPITAL',
+  HARDWARE_PER_UNIT_BELOW_THRESHOLD: 'REVENUE',
+  HARDWARE_PER_UNIT_UNSETTLED: null,
+  KEYWORD_MATCH_ON_CHART: null,
+  SUPPLIER_NAME_FALLBACK: null,
+  SUPPLIER_MEMORY: null,
+  INDUSTRY_CONTEXT_REASONING: null,
+  FOREIGN_TAX_LINE: null,
+  NOTHING_MATCHED: null,
+  OFF_CHART_CODE_REFUSED: null,
+};
+
+/**
+ * The verdict an ACCOUNT carries, which is a fact about this product's own
+ * chart rather than a claim anybody made about a document.
+ *
+ * `Fixed assets` is the whole of capital: an account on that ledger IS a
+ * capitalised thing, and one on any other ledger is not. That is what makes it
+ * the side of the comparison to trust when a model's basis or its stated
+ * treatment disagrees with it.
+ */
+export function treatmentOfLedger(ledger: Ledger): LineTreatment {
+  return ledger === 'Fixed assets' ? 'CAPITAL' : 'REVENUE';
+}
 
 /**
  * A practice's capitalisation policy.

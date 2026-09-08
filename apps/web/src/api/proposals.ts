@@ -62,6 +62,48 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
 });
 
 /**
+ * Which kinds only the firm's super admin may approve — tier 1 in
+ * `docs/Access_and_Approval_Matrix.md` Part 2.
+ *
+ * ⚠ **A MIRROR of `RELEASE_KINDS` in `approvals/assert-can.ts`, and the two
+ * must move together** — the `lib/correctionChecks.ts` arrangement, for the
+ * same reason: the server is the rule and this is only what the screen says
+ * before the click. Total over `ProposalKind`, so a new kind fails to compile
+ * here and somebody has to answer "does the firm's principal sign for this?"
+ * rather than defaulting into the permissive half.
+ *
+ * ⚠ It gates PRESENTATION and nothing else. `POST …/approval` refuses with
+ * `NT-PRM-001` regardless, and a `/me` thirty seconds stale is exactly how that
+ * refusal still arrives — which every surface here already handles.
+ *
+ * Why it exists: on 8 Sep 2026 a `PRACTICE_STANDARD` colleague was shown a
+ * fully enabled, primary-styled **Approve** on his own correction, pressed it,
+ * and got a 403. The publish dialog has been role-aware since item 24; the
+ * queue card was not, so the one surface whose entire job is deciding was also
+ * the one offering an action it knew would fail.
+ */
+export const NEEDS_RELEASE_AUTHORITY: Readonly<Record<ProposalKind, boolean>> = {
+  'chase.send': true,
+  'publish.batch': true,
+  'document.update-coding': true,
+  'bank.remove-statement': true,
+  'rule.create': true,
+  'business.offboard': true,
+  'business.reactivate': true,
+  'document.purge': true,
+  'policy.activate': true,
+  'document.route': false,
+  'document.archive': false,
+  'document.move-business': false,
+  'document.reprocess': false,
+  'document.reject': false,
+  'document.split': false,
+  'bank.confirm-match': false,
+  'document.revoke-link': false,
+  'document.resolve-duplicate': false,
+};
+
+/**
  * A per-kind sentence for the queue card, where the kind label alone would
  * undersell what approving does. Partial on purpose: most kinds are fully
  * described by their server-rendered review, and a second sentence here would

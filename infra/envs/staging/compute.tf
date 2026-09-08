@@ -176,6 +176,23 @@ resource "aws_iam_role_policy" "app_runtime" {
         Resource = ["arn:aws:s3:::${local.bucket_names["receipts"]}/inbound/*"]
       },
       {
+        # The poller quarantines what it cannot take — an oversize raw MIME —
+        # by copying it out of the poll window and deleting the original
+        # (`s3-email-source.ts`). Without a write here that copy is
+        # `AccessDenied`, the object stays in the bounded listing forever, and
+        # everything that sorts after it starves.
+        #
+        # ⚠ This is a WRITE to the receipts bucket and therefore narrow on
+        # purpose. `unroutable/` only: the Sid above withholds PutObject from
+        # `inbound/` precisely so nothing in the app can forge an inbound
+        # message, and that stays true — the poller may move mail out of the
+        # intake path, never into it.
+        Sid      = "QuarantineUnroutableMail"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = ["arn:aws:s3:::${local.bucket_names["receipts"]}/unroutable/*"]
+      },
+      {
         # A listing with no prefix is denied outright: `s3:prefix` must be
         # present and must sit inside a namespace we recognise. That is what
         # stops "list the whole bucket" being one SDK default away.

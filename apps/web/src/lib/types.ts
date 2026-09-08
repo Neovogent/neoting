@@ -512,6 +512,20 @@ export interface Statement {
   period: string;
   openingBalance: number;
   closingBalance: number;
+  /**
+   * False when the server sent no balances — the statement carries no running
+   * balance column, so there is nothing to open or close with.
+   *
+   * ⚠ 8 Sep 2026, found live, and the third occurrence of this shape after
+   * `totalKnown` and `dateKnown`: a file whose own D41 verdict was **"Cannot be
+   * checked — this statement carries no running balance"** was listed with
+   * **£0.00 → £0.00** beside it. Both columns are NULL in the database;
+   * `(pence ?? 0) / 100` made them zero and `currency(0)` made them look like
+   * two facts about the money, on the very row whose point is that no such
+   * fact exists. Absent by default so the synthetic cast, which always carries
+   * real balances, needs no change.
+   */
+  balancesKnown?: boolean | undefined;
   rows: number;
   status: 'processing' | 'extracted' | 'failed';
   uploadedAt: string;

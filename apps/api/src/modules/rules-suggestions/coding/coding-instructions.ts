@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { type BusinessTypeProfile, profileForModel } from '../../clients-team-settings/index.js';
 import { wrapUntrusted } from '../../../common/untrusted-content.js';
 import { type AiCodingSuggestion, BASIS_SENTENCES, type CodingEvidence, SECOND_CHOICE_CONFIDENCE, type SuggestionChart } from './ai-suggestion.js';
-import { type CapitalisationPolicy, CODING_BASES, type CodingBasis, PLATFORM_DEFAULT_CAPITALISATION_POLICY } from './capital-revenue.js';
+import {
+  BASIS_TREATMENT,
+  type CapitalisationPolicy,
+  CODING_BASES,
+  type CodingBasis,
+  PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+  treatmentOfLedger,
+} from './capital-revenue.js';
 import { ADVISORY_NOTES, CODING_ADVISORIES, type CodingAdvisory, CODING_ESCALATION_REASONS, ESCALATION_PROMPTS } from './escalation.js';
 
 /**
@@ -475,7 +482,38 @@ export function parseModelCodingSuggestion(raw: unknown, chart: SuggestionChart)
   // present the strongest signal the product has — a person's own repeated
   // decision — where there is none. The prompt says so; this is the enforcement,
   // because `input_schema` instructs and does not enforce.
-  const basis: CodingBasis = value.basis === 'SUPPLIER_MEMORY' ? 'INDUSTRY_CONTEXT_REASONING' : value.basis;
+  const claimed: CodingBasis = value.basis === 'SUPPLIER_MEMORY' ? 'INDUSTRY_CONTEXT_REASONING' : value.basis;
+
+  // ⚠ **The account decides capital or revenue, and a basis that disagrees with
+  // it is refused** — the fourth refusal, and the one that stops a card
+  // contradicting itself.
+  //
+  // Found live, 8 Sep 2026: a document coded to a `Fixed assets` account with
+  // *"hardware below this practice's capitalisation threshold"* printed
+  // underneath as the reason it was coded that way. Below the threshold is
+  // exactly the finding that makes something not capital, so the sentence and
+  // the coding could not both be true — and an accountant reading the card had
+  // no way to tell which half had gone wrong.
+  //
+  // The ACCOUNT is the side to trust: `Fixed assets` is this product's own
+  // chart saying what the account IS, where the basis and the treatment are
+  // both claims made about one document. So the treatment is taken from the
+  // ledger rather than from `value.treatment` (which defaulted to `REVENUE`
+  // whenever a model simply omitted it, quietly labelling capitalised kit as an
+  // expense), and a basis carrying the opposite verdict is downgraded to
+  // `INDUSTRY_CONTEXT_REASONING` — the neutral one, and the same move
+  // `SUPPLIER_MEMORY` gets one line up, for the same reason: the card may not
+  // print an authority the answer does not support.
+  //
+  // The SUGGESTION still stands. The code may well be right; what is refused is
+  // the sentence claiming a rule decided it. `BASIS_TREATMENT` is null for every
+  // basis that genuinely leaves the question open, so a keyword match, a
+  // supplier-name fallback or a trade read is never second-guessed here.
+  const account = chart.accounts.find((candidate) => candidate.code === value.categoryCode) ?? null;
+  const treatment = account === null ? (value.treatment ?? 'REVENUE') : treatmentOfLedger(account.ledger);
+  const basisTreatment = BASIS_TREATMENT[claimed];
+  const basis: CodingBasis =
+    basisTreatment !== null && basisTreatment !== treatment ? 'INDUSTRY_CONTEXT_REASONING' : claimed;
   const reasoning = sanitiseReasoning(value.reasoning);
 
   return {
@@ -488,7 +526,7 @@ export function parseModelCodingSuggestion(raw: unknown, chart: SuggestionChart)
     // the very first live answer.
     analysisAccount: label === value.categoryCode ? null : label,
     confidence: Math.min(MODEL_MAX_CONFIDENCE, value.confidence),
-    treatment: value.treatment ?? 'REVENUE',
+    treatment,
     secondChoice:
       secondOnChart === null
         ? null

@@ -1278,7 +1278,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                   { key: 'rows', label: intl.formatMessage(m.columnRows), align: 'right', sortValue: (s) => s.rows, render: (s) => <span className="tabular-nums text-zinc-400">{s.rows || '—'}</span> },
                   {
                     key: 'balances', label: intl.formatMessage(m.columnBalances), align: 'right',
-                    render: (s: Statement) => s.status === 'extracted'
+                    render: (s: Statement) => s.status === 'extracted' && s.balancesKnown !== false
                       ? <span className="tabular-nums text-zinc-400">{currency(s.openingBalance)} → <span className="text-white font-bold">{currency(s.closingBalance)}</span></span>
                       : <span className="text-zinc-600">—</span>,
                   },

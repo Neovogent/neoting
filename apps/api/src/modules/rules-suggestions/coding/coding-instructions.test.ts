@@ -296,6 +296,76 @@ describe('the model’s own sentence is bounded — the one free-text field on t
     );
     expect(answer.basis).toBe('INDUSTRY_CONTEXT_REASONING');
   });
+
+  test('⚠ a basis that contradicts the account it codes to is refused (found live, 8 Sep 2026)', () => {
+    // The card said "hardware BELOW this practice's capitalisation threshold"
+    // over a document coded to a FIXED ASSETS account. Below the threshold is
+    // the finding that makes something not capital, so the sentence and the
+    // coding could not both be true and the accountant could not tell which
+    // half had gone wrong.
+    const answer = parseModelCodingSuggestion(
+      {
+        categoryCode: 'FA_COMPUTER_EQUIPMENT',
+        escalationReason: null,
+        basis: 'HARDWARE_PER_UNIT_BELOW_THRESHOLD',
+        confidence: 0.9,
+      },
+      CHART,
+    );
+
+    // The suggestion stands — the code may well be right. What is refused is
+    // the claim that a rule saying "expense it" decided to capitalise it.
+    expect(answer.outcome).toBe('SUGGEST');
+    expect(answer.basis).toBe('INDUSTRY_CONTEXT_REASONING');
+    if (answer.outcome === 'SUGGEST') expect(answer.note).not.toContain('below');
+  });
+
+  test('the account decides capital or revenue, not the model’s claim about it', () => {
+    // `treatment` used to default to REVENUE whenever a model omitted it, which
+    // quietly labelled capitalised kit an expense on the card.
+    const capital = parseModelCodingSuggestion(
+      { categoryCode: 'FA_COMPUTER_EQUIPMENT', escalationReason: null, basis: 'KEYWORD_MATCH_ON_CHART', confidence: 0.7 },
+      CHART,
+    );
+    expect(capital.outcome === 'SUGGEST' && capital.treatment).toBe('CAPITAL');
+
+    // And the other way: a model insisting on CAPITAL over an Expenses account
+    // does not get to relabel the account.
+    const revenue = parseModelCodingSuggestion(
+      {
+        categoryCode: 'SOFTWARE_AND_SUBSCRIPTIONS',
+        escalationReason: null,
+        basis: 'KEYWORD_MATCH_ON_CHART',
+        treatment: 'CAPITAL',
+        confidence: 0.7,
+      },
+      CHART,
+    );
+    expect(revenue.outcome === 'SUGGEST' && revenue.treatment).toBe('REVENUE');
+  });
+
+  test('a basis that settles nothing is never second-guessed', () => {
+    // `BASIS_TREATMENT` is null for the escalations and the weak signals, so a
+    // keyword hit over a fixed-asset account keeps its own name.
+    const answer = parseModelCodingSuggestion(
+      { categoryCode: 'FA_COMPUTER_EQUIPMENT', escalationReason: null, basis: 'SUPPLIER_NAME_FALLBACK', confidence: 0.4 },
+      CHART,
+    );
+    expect(answer.basis).toBe('SUPPLIER_NAME_FALLBACK');
+  });
+
+  test('a basis that AGREES with the account keeps its name', () => {
+    const answer = parseModelCodingSuggestion(
+      {
+        categoryCode: 'FA_COMPUTER_EQUIPMENT',
+        escalationReason: null,
+        basis: 'HARDWARE_PER_UNIT_AT_OR_ABOVE_THRESHOLD',
+        confidence: 0.8,
+      },
+      CHART,
+    );
+    expect(answer.basis).toBe('HARDWARE_PER_UNIT_AT_OR_ABOVE_THRESHOLD');
+  });
 });
 
 describe('the tool schema instructs the same closed sets', () => {

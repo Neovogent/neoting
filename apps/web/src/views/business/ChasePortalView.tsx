@@ -79,7 +79,7 @@ const m = defineMessages({
   },
   itemsExpiry: {
     id: 'portal.chasePortal.itemsExpiry',
-    defaultMessage: 'This page closes itself on {date}. Ask for a new link any time.',
+    defaultMessage: 'This page signs you out at {time} on {date}. The link keeps working — ask for a new code any time.',
   },
 
   captureTitle: { id: 'portal.chasePortal.captureTitle', defaultMessage: 'Send the paperwork' },
@@ -187,6 +187,31 @@ const m = defineMessages({
  * the client actually sent and says who reads it. The gap is recorded in
  * `apps/web/CLAUDE.md` and in `packages/contracts/CLAUDE.md`'s own pass-3 list.
  */
+/**
+ * `PortalView.expiresAt` → the two parts the sign-out sentence needs.
+ *
+ * ⚠ It is the SESSION's expiry — its own field comment in `api/portal.ts` says
+ * so — and this line used to render `expiresAt.slice(0, 10)` under the words
+ * *"This page closes itself on {date}"*. Truncating to a date threw away the
+ * only part that made it meaningful and left a client reading that their LINK
+ * died today, hours after we emailed it: found live on 8 Sep 2026, where the
+ * token was good for a week and the page announced the day it was sent. The
+ * time is what makes it legible as a sign-out clock rather than a link
+ * lifetime, and the sentence now says which of the two it is.
+ *
+ * Europe/London, not UTC: this is a wall-clock time a person compares against
+ * the clock on their own phone.
+ */
+export function sessionExpiryParts(iso: string): { time: string; date: string } {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return { time: iso, date: iso };
+  const opts = { timeZone: 'Europe/London' } as const;
+  return {
+    time: new Intl.DateTimeFormat('en-GB', { ...opts, hour: '2-digit', minute: '2-digit' }).format(at),
+    date: new Intl.DateTimeFormat('en-GB', { ...opts, day: 'numeric', month: 'long', year: 'numeric' }).format(at),
+  };
+}
+
 export function ChasePortalView() {
   const { portalLinkToken, exitBusinessPortal } = useAppContext();
   const intl = useIntl();
@@ -440,7 +465,7 @@ function ItemList({
       </div>
 
       <p className="text-[12px] text-zinc-600 leading-relaxed">
-        {intl.formatMessage(m.itemsExpiry, { date: view.expiresAt.slice(0, 10) })}
+        {intl.formatMessage(m.itemsExpiry, sessionExpiryParts(view.expiresAt))}
         {live ? '' : ` · ${intl.formatMessage(m.syntheticNote)}`}
       </p>
     </>

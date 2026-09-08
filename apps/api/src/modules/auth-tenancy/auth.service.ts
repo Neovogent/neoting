@@ -9,6 +9,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { Env } from '../../config/env.js';
 import { type CredentialRow, findCredentialRow, verifyCredentials } from './credentials.js';
+import { documentIntakeAddress } from '../ingestion-routing/index.js';
 import { normaliseEmail } from './practice-signup.service.js';
 import { SESSION_TTL_MS, signSessionToken } from './session-cookie.js';
 import { pickActingMembership } from './session-scope.js';
@@ -216,10 +217,24 @@ export class AuthService {
         throw unauthenticated('this session no longer maps to an active workspace user');
       }
 
-      const practice =
+      const practiceRow =
         ctx.practiceId === undefined
           ? null
           : await db.practice.findUnique({ where: { id: ctx.practiceId }, select: { id: true, name: true } });
+
+      // The address this practice's clients forward paperwork to — composed
+      // from the domain the API SENDS from, because that is the domain whose MX
+      // points at SES inbound. A screen that published a different one would be
+      // handing out an address nothing receives.
+      //
+      // OMITTED, never nulled, when it cannot be composed: the contract types
+      // it optional, so absence means "we hold no address to show you" and the
+      // Settings screen prints nothing rather than a broken one. Under
+      // `exactOptionalPropertyTypes` those are two different things.
+      const documentEmail =
+        practiceRow === null ? null : documentIntakeAddress(practiceRow.id, this.env.EMAIL_FROM_ADDRESS);
+      const practice =
+        practiceRow === null ? null : { ...practiceRow, ...(documentEmail === null ? {} : { documentEmail }) };
 
       const businesses = await db.business.findMany({
         select: { id: true, name: true },

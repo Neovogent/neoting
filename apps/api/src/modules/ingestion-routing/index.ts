@@ -54,5 +54,9 @@ export { PrismaDuplicateDetector } from './queue/duplicate-detector.js';
  */
 export { documentIdFor } from './queue/document-sink.js';
 export { uploadIntentKey } from './storage/document-store.js';
+// The document intake address, so `GET /v1/me` can publish the one a practice's
+// clients actually forward to. The composer lives beside the parser that reads
+// it back — one file owns the `doc+<practice>@` format in both directions.
+export { documentIntakeAddress } from './email/inbound/recipient-practice.js';
 export { isAllowedMime, maxBytesForChannel } from './web-upload/upload-policy.js';
 export { signUploadToken, type UploadClaims } from './web-upload/upload-token.js';

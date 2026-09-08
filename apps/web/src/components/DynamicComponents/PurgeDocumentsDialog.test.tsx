@@ -44,13 +44,18 @@ vi.mock('../../api/proposals', async (importOriginal) => ({
   approveReviewed: (id: string, hash: string) => approveReviewed(id, hash),
 }));
 
+// ⚠ Read by the mock on EVERY render, so a case can change authority midway.
+// `document.purge` is tier 1, so who is signed in now decides both whether the
+// review auto-opens AND whether Approve is pressable at all.
+let isOwner = false;
+
 vi.mock('../../context/AppContext', () => ({
   useAppContext: () => ({
-    // ⚠ `isOwner: false` deliberately: the super-admin fast path (item 26 /
+    // ⚠ Starts FALSE deliberately: the super-admin fast path (item 26 /
     // matrix ⚖6) auto-opens the review, which would make this file's
     // "Approve is absent until Read review returns" case vacuous. The fast
     // path has its own case in `PublishBatchDialog.test.tsx`.
-    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner: false } },
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner } },
     clientNameFor: (id: string) => (id === 'biz_nexora' ? 'Nexora Solutions LLC' : id),
     setActiveTab: vi.fn(),
     logAudit: vi.fn(),
@@ -125,6 +130,11 @@ test('⚠ Approve is absent until Read review returns, and then echoes the revie
   expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
   expect(approveReviewed).not.toHaveBeenCalled();
 
+  // ⚠ `document.purge` is TIER 1, so the authority has to arrive before the
+  // press or the button is correctly refused (8 Sep 2026 — a standard user was
+  // being shown an enabled Approve that always 403'd). Flipped here rather than
+  // at the top so the staging assertions above keep their meaning.
+  isOwner = true;
   fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
   const approve = await screen.findByRole('button', { name: /^Approve/ });
   // The server's own rendered review is what is on screen, not a local summary.
@@ -133,6 +143,7 @@ test('⚠ Approve is absent until Read review returns, and then echoes the revie
   fireEvent.click(approve);
   expect(approveReviewed).toHaveBeenCalledWith('prop_purge_1', review.renderedSummaryHash);
 });
+
 
 /* ── 2. the request ─────────────────────────────────────────────────────── */
 
