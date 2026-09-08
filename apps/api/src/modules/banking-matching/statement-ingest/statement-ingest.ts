@@ -221,13 +221,24 @@ export async function ingestStatement(
   const report = assessCompleteness(parsed.statement);
 
   // Whose statement is this? (review item 14 — 1,491 rows of another business's
-  // NatWest statement imported silently). A mismatch FLAGS and the import
-  // proceeds (D46); removal is `bank.remove-statement`'s approved path. FIRST
-  // in the findings list, because "wrong client" outranks every line-level
-  // finding a human would otherwise read first.
+  // NatWest statement imported silently.)
+  //
+  // ⚠ **A mismatch REFUSES the whole import since 8 Sep 2026** — the owner's
+  // ruling, reversing the flag-and-proceed this shipped with. `account-holder.ts`
+  // carries the reasoning: a receipt filed under the wrong client is one
+  // document a human notices, and a statement is ninety-two bank lines that
+  // become the client's reconciliation surface, unexplained totals and chase
+  // queue the moment they land. Nothing is written — no statement row, no
+  // transactions — and the document carries the reason, which names the
+  // trading-name route through.
+  //
+  // ⚠ It is deliberately BEFORE `accountFor`, the statement row and the line
+  // insert: a refusal that had already created an account or a statement would
+  // be a half-import wearing a refusal.
   const holderFinding = accountHolderFinding(input.accountHolder, input.businessNames ?? []);
   if (holderFinding !== null) {
-    logger.warn(`statement-ingest: ${input.documentId} — ${holderFinding.detail}`);
+    logger.warn(`statement-ingest: refused ${input.documentId} — ${holderFinding.detail}`);
+    return { status: 'refused', reason: holderFinding.detail };
   }
   const importFindings = (extra: CompletenessFinding[]): CompletenessFinding[] => [
     ...(holderFinding === null ? [] : [holderFinding]),
