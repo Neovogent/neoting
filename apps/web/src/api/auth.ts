@@ -118,8 +118,15 @@ export async function login(request: SessionCreateRequest): Promise<void> {
  * Log out. Tolerant of failure by design: if the API is unreachable the cookie
  * cannot be cleared server-side, but the caller invalidates the session query
  * either way and the next /me answer decides what is true.
+ *
+ * The hint is cleared HERE, not left to the refetch. `useSession` only writes
+ * it on the two decided states, so a sign-out from 'degraded' — the state
+ * where /me cannot answer at all — would otherwise leave `nt.signed-in` set
+ * and bounce the next visit to `/` straight back at a workspace it has no
+ * session for. A deliberate sign-out is evidence enough on its own.
  */
 export async function logout(): Promise<void> {
+  setSignedInHint(false);
   try {
     await deleteCurrentSession();
   } catch {

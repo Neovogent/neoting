@@ -548,7 +548,14 @@ function ClientCard({
             {client.name}
           </h3>
         </button>
-        <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{client.industry}</p>
+        {/* Same claim the table makes in the same place (row 232): a client
+            whose subscription is not live has not finished registering, and the
+            board must say so rather than print a sector as if all were well. */}
+        {client.awaitingRegistration ? (
+          <div className="mb-6"><Pill tone="amber">{intl.formatMessage(m.awaitingRegistration)}</Pill></div>
+        ) : (
+          <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{client.industry}</p>
+        )}
 
         <div className="mb-6">
           <div className="flex justify-between items-end mb-2">

@@ -5,7 +5,7 @@ import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal, CreateActionProposalRequest } from '@neoting/contracts/model';
 import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
-import { createProposal } from '../../api/proposals';
+import { createProposal, NEEDS_RELEASE_AUTHORITY } from '../../api/proposals';
 import { LiveProposalCard } from './LiveProposalCard';
 
 const m = defineMessages({
@@ -125,7 +125,13 @@ export function LiveProposalFlow({
       <LiveProposalCard
         proposal={proposal}
         clientName={clientName}
-        autoOpenReview={canRelease}
+        // ⚠ `canRelease` is not the only person who may approve. A TIER-2
+        // kind is any member's to approve (`NEEDS_RELEASE_AUTHORITY`), so the
+        // review opens for whoever staged it — that is the fast path the
+        // matrix calls ⚖6, applied to the tier that never needed the
+        // principal at all. Since 8 Sep 2026 `chase.send` is one of them
+        // (item 3), so an accountant's chase no longer waits in a queue.
+        autoOpenReview={canRelease || !NEEDS_RELEASE_AUTHORITY[proposal.kind]}
         {...(onExecuted ? { onSettled: onExecuted } : {})}
       />
     );

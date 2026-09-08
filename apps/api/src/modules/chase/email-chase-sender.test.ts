@@ -6,6 +6,7 @@ import {
   DemoEmailSender,
   InMemoryEmailRateLimiter,
   parseEmailAddress,
+  renderEmailHtml,
 } from '../notifications/index.js';
 import {
   CHASE_EMAIL_CHANNEL,
@@ -63,6 +64,10 @@ function transport(over: Partial<ChaseEmailTransport> = {}): ChaseEmailTransport
     sender: email,
     limiter: new InMemoryEmailRateLimiter(),
     parseAddress: parseEmailAddress,
+    // The real renderer, not a stub: the point of the HTML part is that it is
+    // the approved words in the product's shell, and a stub would prove
+    // nothing about either half (item 4).
+    renderHtml: renderEmailHtml,
     email,
     ...over,
   };
@@ -115,6 +120,49 @@ test('the email body is the payload body BYTE-FOR-BYTE — nothing is recomposed
   expect(outbox?.body.length).toBe(body.length);
   expect(outbox?.to).toBe('sam@cleaning.test');
   expect(outbox?.kind).toBe('document-request');
+});
+
+test('the HTML part is the SAME WORDS in the shell, with the link as a button (item 4)', async () => {
+  const body = composeChaseSms({
+    businessName: 'Wright Cleaning',
+    portalLink: 'https://portal.test/p/tok',
+    items: [
+      { transactionId: 't_currys', amountPence: -129_900, bookedAt: new Date('2026-08-09T12:00:00.000Z'), supplierLabel: 'Currys' },
+    ],
+  });
+
+  const t = transport();
+  const { db } = harness({ ch_1: CONTACT });
+  await sender(t).send(db, [message({ body })]);
+
+  const [outbox] = t.email.readOutbox();
+  const html = outbox?.html ?? '';
+
+  // The shell — this is what "no HTML design, no footer, no button" meant.
+  expect(html).toContain('<!doctype html>');
+  expect(html).toContain('Accounting'); // the wordmark, and the footer's
+  // The link is a BUTTON with the bare URL beneath it for copy-paste, which is
+  // only reachable because the sender moved it onto its own line.
+  expect(html).toContain('Upload securely');
+  expect(html).toContain('https://portal.test/p/tok');
+
+  // ⚠ THE TEXT PART IS STILL THE APPROVED BYTES. The HTML is a rendering of
+  // them, never a second composition — so the reviewed-bytes guarantee holds
+  // for a client that strips HTML and for one that does not.
+  expect(outbox?.body).toBe(body);
+  // And the words in the HTML are the words in the body: the sentence before
+  // the link survives the reflow verbatim.
+  expect(html).toContain('Wright Cleaning Accounts');
+});
+
+test('a body with NO trailing link still renders — nothing is dropped', async () => {
+  const t = transport();
+  const { db } = harness({ ch_1: CONTACT });
+  await sender(t).send(db, [message({ body: 'Wright Cleaning Accounts: please call us about August.' })]);
+
+  const [outbox] = t.email.readOutbox();
+  expect(outbox?.html ?? '').toContain('please call us about August.');
+  expect(outbox?.body).toBe('Wright Cleaning Accounts: please call us about August.');
 });
 
 test('the subject interpolates nothing — no client name, no supplier, no money', async () => {

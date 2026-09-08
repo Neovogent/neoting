@@ -8641,6 +8641,33 @@ components:
               recipientE164:
                 type: string
                 pattern: '^\+[1-9][0-9]{6,14}$'
+              transactionLabels:
+                type: array
+                maxItems: 200
+                items: { type: string, maxLength: 200 }
+                description: |
+                  One human label per chased line — `FRESH DIRECT CD 4211 ·
+                  £217.50 · 14 Aug 2026` — stamped server-side at creation so
+                  Read review can name what is being chased instead of printing
+                  raw cuids at the one person whose job is to check the message.
+
+                  ⚠ **Added 8 Sep 2026, and its absence was a LIVE DEFECT, not
+                  a documentation gap.** `compose-chase-send.ts` has stamped
+                  this field and `render-summary.ts` has read it since 8 Sep;
+                  the schema did not know it, and the stored payload is
+                  re-parsed against this schema at review and at execution. So
+                  every RECEIPT chase — the product's most common act — was
+                  created successfully and then refused at `POST …/review`
+                  with `NT-PRP-006`: unreviewable, unapprovable, and
+                  inexplicable to the accountant who staged it. A STATEMENT
+                  request has no transactions, stamps no labels and was
+                  unaffected, which is why the live walk that sent one saw
+                  nothing wrong.
+
+                  Server-stamped, never caller-supplied — the engine
+                  recomposes the whole message and overwrites it, exactly as
+                  it does `chaseId` and `recipientEmail`. Omitted when the
+                  chase names no transactions.
               accountantMessage:
                 type: [string, 'null']
                 minLength: 1
@@ -8656,8 +8683,30 @@ components:
               body:
                 type: string
                 minLength: 1
-                maxLength: 500
-                description: The exact SMS, portal link included. Shown verbatim at review; sent verbatim on approval.
+                maxLength: 2000
+                description: |
+                  The exact message, portal link included. Shown verbatim at
+                  review; sent verbatim on approval.
+
+                  ⚠ **2000, raised from 500 on 8 Sep 2026, and the old cap was
+                  a live defect rather than a preference.** The engine
+                  RECOMPOSES this field at creation — greeting, the chased
+                  items and a SIGNED portal link, which is ~290 characters on
+                  its own — and it does so *after* the boundary parse. So a
+                  chase naming three receipts, or one carrying an accountant's
+                  240-character wording, was created successfully and then
+                  refused at `POST …/review` with `NT-PRP-006` *"the stored
+                  payload no longer parses against the contract"*: unreviewable,
+                  unapprovable, and unexplainable to the person who staged it.
+                  `chase-email.integration.test.ts` had been red on exactly
+                  that shape.
+
+                  500 was an SMS-shaped number chosen before the body carried a
+                  signed link. It is still bounded — this is a field a proposal
+                  stores and a review renders — but the bound is now above
+                  anything the composer can produce, and the SMS lane's own
+                  summarisation (`CHASE_SUMMARISE_THRESHOLD`) is what keeps a
+                  real message short.
               transactionIds:
                 type: array
                 minItems: 1
@@ -9121,18 +9170,36 @@ components:
 
     PortalSessionCreateRequest:
       type: object
-      required: [linkToken, otp]
+      required: [linkToken]
       properties:
         linkToken:
           type: string
-          description: From the SMS link. Stateless — HMAC over the chase id and expiry.
+          description: From the emailed link. Stateless — HMAC over the chase id and expiry.
         otp:
           type: string
           pattern: '^[0-9]{6}$'
           description: |
-            Six digits. Demo builds verify against a fixed code
-            (`OTP_MODE=demo`); real verification replaces the verifier, not
-            this shape.
+            Six digits, and **optional since 8 Sep 2026** (owner's ruling on
+            the live pass: *"remove the OTP sent to email while the user is
+            landing the site to submit a document requested by the
+            accountant"*).
+
+            The reasoning, stated so nobody re-adds it by reflex: in Initial
+            Delivery a chase travels by EMAIL, and the code was emailed to the
+            same address as the link. Two secrets in one inbox is one factor
+            asked for twice — it added friction for the client and no security
+            for the practice, and a client standing at a filing cabinet with a
+            receipt is exactly who it turned away.
+
+            What still protects the session is unchanged and is not a
+            formality: the link is an HMAC over the chase id with its own
+            expiry, it is sent only to the chase's registered recipient
+            contact (D45), and the session it opens can see and touch **only
+            the items that one chase asked for**.
+
+            Supplied, it is still verified exactly as before — the attempt
+            counter, the lock and the single-use minted code all still apply —
+            so a caller that has a code loses nothing.
 
     PortalSession:
       type: object

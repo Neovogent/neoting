@@ -129,6 +129,16 @@ interface DataTableProps<T> {
   footer?: ReactNode;
   onRowClick?: (row: T) => void;
   /**
+   * One row to mark as "this is the one you came here for" (item 9, 8 Sep
+   * 2026) — the row a notification, a deep link or a search result pointed at.
+   *
+   * A steady ring rather than a flash that fades on a timer: the person may be
+   * reading the preview that opened on top of it, and a highlight that has
+   * already expired by the time they close it has told them nothing. It
+   * clears when the address that set it does.
+   */
+  highlightRowId?: string | null;
+  /**
    * Also render the bulk actions above the rows. Worth it on a long working
    * table, where scrolling to the bottom to act on a selection made at the
    * top is the whole friction.
@@ -160,6 +170,7 @@ export function DataTable<T>({
   emptyMessage,
   footer,
   onRowClick,
+  highlightRowId = null,
   actionsOnTop = false,
   toolbar,
   className = 'max-w-3xl',
@@ -388,7 +399,9 @@ export function DataTable<T>({
                   })}
               className={`flex gap-3 p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
                 activate ? 'cursor-pointer' : ''
-              } ${isSel ? 'bg-brand/[0.07]' : ''}`}
+              } ${isSel ? 'bg-brand/[0.07]' : ''} ${
+                id === highlightRowId ? 'bg-brand/[0.12] ring-1 ring-inset ring-brand/40' : ''
+              }`}
             >
               {selectable && (
                 <div className="pt-0.5 shrink-0">
@@ -487,7 +500,9 @@ export function DataTable<T>({
                   }
                   className={`border-b border-white/5 last:border-0 transition-colors ${
                     selectable || onRowClick ? 'cursor-pointer' : ''
-                  } ${isSel ? 'bg-brand/[0.07]' : 'hover:bg-white/[0.02]'}`}
+                  } ${isSel ? 'bg-brand/[0.07]' : 'hover:bg-white/[0.02]'} ${
+                    id === highlightRowId ? 'bg-brand/[0.12] ring-1 ring-inset ring-brand/40' : ''
+                  }`}
                 >
                   {selectable && (
                     <td className="px-5 py-3.5">

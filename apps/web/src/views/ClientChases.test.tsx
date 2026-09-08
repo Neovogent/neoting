@@ -22,12 +22,12 @@ import type { LiveChase } from '../api/chases';
 const mocks = vi.hoisted(() => ({
   context: { value: {} as Record<string, unknown> },
   chases: { value: { chases: [] as LiveChase[], isLoading: false, error: null as unknown } },
-  requestChaseProposal: vi.fn(),
+  sendChaseNow: vi.fn(),
 }));
 
 vi.mock('../context/AppContext', () => ({ useAppContext: () => mocks.context.value }));
 vi.mock('../api/chases', () => ({ useChases: () => mocks.chases.value }));
-vi.mock('../api/proposals', () => ({ requestChaseProposal: mocks.requestChaseProposal }));
+vi.mock('../api/proposals', () => ({ sendChaseNow: mocks.sendChaseNow }));
 
 const row = (id: string, over: Partial<BankTransaction> = {}): BankTransaction => ({
   id,
@@ -83,7 +83,7 @@ function renderTab(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.chases.value = { chases: [], isLoading: false, error: null };
-  mocks.requestChaseProposal.mockResolvedValue({ id: 'prp_1' });
+  mocks.sendChaseNow.mockResolvedValue(undefined);
 });
 
 // ⚠ DataTable renders BOTH its table and card branches in the DOM (container
@@ -113,17 +113,22 @@ test('a line inside an OPEN chase is marked "chased, awaiting reply" and loses t
   expect(within(openRow).getByRole('button', { name: 'Chase' })).toBeTruthy();
 });
 
-test('the chase affordance stages the REAL chase.send for the row, and reports queued', async () => {
+test('the chase affordance SENDS the real chase.send for the row (item 3)', async () => {
+  // ⚠ It reported "queued" until 8 Sep 2026, because `chase.send` was tier 1
+  // and the message waited in Approvals for the firm's super admin. The owner
+  // took it out of that tier, so the act finishes here — `sendChaseNow` still
+  // drives create → review → approve, which is the record; what went is the
+  // wait.
   renderTab();
 
   fireEvent.click(screen.getAllByRole('button', { name: 'Chase' })[0]!);
-  await waitFor(() => expect(mocks.requestChaseProposal).toHaveBeenCalledTimes(1));
-  expect(mocks.requestChaseProposal).toHaveBeenCalledWith('biz_zeplow', ['unexplained']);
-  expect((await screen.findByRole('status')).textContent).toMatch(/composed at review/);
+  await waitFor(() => expect(mocks.sendChaseNow).toHaveBeenCalledTimes(1));
+  expect(mocks.sendChaseNow).toHaveBeenCalledWith('biz_zeplow', ['unexplained']);
+  expect((await screen.findByRole('status')).textContent).toMatch(/Chase sent/);
 });
 
 test('a refused staging is an alert, not silence', async () => {
-  mocks.requestChaseProposal.mockRejectedValueOnce(new Error('boom'));
+  mocks.sendChaseNow.mockRejectedValueOnce(new Error('boom'));
   renderTab();
 
   fireEvent.click(screen.getAllByRole('button', { name: 'Chase' })[0]!);

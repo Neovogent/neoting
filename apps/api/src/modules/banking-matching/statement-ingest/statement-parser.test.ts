@@ -323,6 +323,43 @@ describe('a PDF statement', () => {
     expect(assessCompleteness(result.statement).assurance).toBe('complete');
   });
 
+  test('a bank that states its CURRENCY in the header still parses', () => {
+    // ⚠ The regression test for items 10 and 13 (8 Sep 2026). This is the
+    // real shape from the statement that failed three times in a row —
+    // `Money Out (GBP)`, `Money In (GBP)`, `Balance (GBP)`, and a two-digit
+    // year on every line. Before the fix, `findMapping` matched the date
+    // column, matched NO amount column, and the accountant read "No
+    // transaction table was found" on a document whose table was perfect.
+    const result = parseStatementGrid([
+      ['Kestrel Business Bank'],
+      ['Account Name: MERIDIAN SOFTWARE SOLUTIONS LTD'],
+      ['Statement Period: 01 Aug 2026 - 31 Aug 2026'],
+      [],
+      ['Date', 'Description', 'Type', 'Money Out (GBP)', 'Money In (GBP)', 'Balance (GBP)'],
+      ['01 Aug 26', 'WORKSPACE GROUP PLC - OFFICE RENT', 'SO', '3,200.00', '', '407,923.85'],
+      ['02 Aug 26', 'STRIPE PAYOUTS LTD - PAYOUT', 'FPI', '', '1,862.96', '409,786.81'],
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.statement.rows).toHaveLength(2);
+    expect(result.statement.rows[0]?.bookedOn).toBe('2026-08-01');
+    expect(result.statement.rows[0]?.amountPence).toBe(-320_000);
+    expect(result.statement.rows[1]?.amountPence).toBe(186_296);
+    expect(result.statement.rows[1]?.balanceAfterPence).toBe(40_978_681);
+  });
+
+  test('the currency strip is a CLOSED vocabulary — "Amount (net)" is still unknown', () => {
+    // The other direction of the same fix: a qualifier that is not a currency
+    // must not be stripped, or this file starts guessing at headers it does
+    // not understand.
+    const result = parseStatementGrid([
+      ['Date', 'Description', 'Amount (net)'],
+      ['01/08/2026', 'ANYTHING', '10.00'],
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
   test('a grid with no header row is a refusal, never an empty statement', () => {
     // Textract answering with a table that is not a statement — a summary box,
     // an address block — must not read as "this month had no transactions".

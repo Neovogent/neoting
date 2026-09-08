@@ -87,17 +87,20 @@ test("the tier table is total over ProposalKind, and tier 1 is exactly the matri
   // policy act with no per-item proposal, and a workflow does not merely code
   // documents — it decides whether anything stops for a signature at all. Its
   // DISARM direction is why it is one kind rather than two tiers.
+  // ⚠ EIGHT since 8 Sep 2026: the owner took `chase.send` out (item 3). A
+  // chase still mints a proposal and still records review → approve → audit;
+  // what it no longer does is wait for the firm's principal.
   expect(tier1).toEqual([
     'bank.remove-statement',
     'business.offboard',
     'business.reactivate',
-    'chase.send',
     'document.purge',
     'document.update-coding',
     'policy.activate',
     'publish.batch',
     'rule.create',
   ]);
+  expect(requiresReleaseAuthority('chase.send')).toBe(false);
 });
 
 test('document.purge is TIER 1 since item 66 — and the executor refusal still binds the super admin', () => {
@@ -155,9 +158,9 @@ test("a tier-1 refusal that is not one of D44's two names the act the person pre
   expect(coding.publicDetail).toContain('queued');
   expect(coding.publicDetail).not.toContain('export');
 
-  // D44's two keep Governance §11.2's own literal and its sentences.
+  // The one act D44's release authority still guards keeps Governance §11.2's
+  // own literal and its sentence.
   expect(thrown('publish.batch').publicDetail).toContain('release documents for export');
-  expect(thrown('chase.send').publicDetail).toContain('message to a client');
 
   // Every tier-1 kind has a sentence of its own — no generic fallback in use.
   for (const kind of Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k))) {
@@ -186,13 +189,15 @@ test('a refused release is 403 NT-PRM-001, names the authority, and echoes no pr
   expect(problem?.publicDetail).not.toContain('biz_1');
 });
 
-test('the detail speaks the language of the act — a chase says message, a batch says export', () => {
-  const chase = refusal(() => assertCan(actor({ role: null }), 'publish.release', { ...RESOURCE, kind: 'chase.send' }));
-  expect(chase?.publicDetail).toContain('message to a client');
+test('the detail speaks the language of the act — a batch says export, a correction says coding', () => {
   const publish = refusal(() => assertCan(actor({ role: null }), 'publish.release', RESOURCE));
   expect(publish?.publicDetail).toContain('release documents for export');
+  const coding = refusal(() =>
+    assertCan(actor({ role: null }), 'proposal.approve', { ...RESOURCE, kind: 'document.update-coding' }),
+  );
+  expect(coding?.publicDetail).toContain('figures or coding');
   // Both are the same code, so a client branches on NT-PRM-001 and reads the detail.
-  expect(chase?.code).toBe(publish?.code);
+  expect(coding?.code).toBe(publish?.code);
 });
 
 test('the super admin passes without throwing', () => {

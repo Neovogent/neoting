@@ -1199,11 +1199,18 @@ function StatusPill({ doc }: { doc: Document }) {
     // API To-Review rows carry no note (the contract reserves failureMessage
     // for REJECTED/FAILED) — formatting {note} with undefined is a
     // console.error from react-intl and a garbled pill (METH S14 sweep).
+    // ⚠ The note is a SENTENCE, not a label (the statement extractor's gap
+    // reasons run to 120 characters). Unbounded it grew the pill past the card
+    // and squeezed the title block — which is `min-w-0` — to nothing. Bounded
+    // and truncated, with the whole reason one hover away: the same trade the
+    // title and meta lines above already make.
     return (
-      <Pill tone="amber">
-        {doc.statusNote
-          ? intl.formatMessage(statusMessages.review, { note: doc.statusNote })
-          : intl.formatMessage(statusMessages.reviewPlain)}
+      <Pill tone="amber" {...(doc.statusNote ? { title: doc.statusNote } : {})}>
+        <span className="block max-w-[12rem] md:max-w-[22rem] truncate">
+          {doc.statusNote
+            ? intl.formatMessage(statusMessages.review, { note: doc.statusNote })
+            : intl.formatMessage(statusMessages.reviewPlain)}
+        </span>
       </Pill>
     );
   }

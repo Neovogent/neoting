@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NtProblemError } from '@neoting/contracts';
 import { API_ENABLED } from '../../api/config';
-import { fetchPortalView, openPortalSession, requestPortalCode, sendPortalUpload } from '../../api/portal';
+import { fetchPortalView, openPortalSession, sendPortalUpload } from '../../api/portal';
 import type { PortalItem, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
@@ -58,15 +58,12 @@ export interface PortalJourney {
   fault: PortalFault | null;
   clearFault: () => void;
   /**
-   * Ask for the six-digit code. Live it is emailed to the chase's REGISTERED
-   * recipient (a `202` whatever happened — the mail is the only answer);
-   * synthetic mode needs no code, so this resolves without a network. Returns
-   * whether the request was ACCEPTED, never whether a code exists.
-   */
-  requestCode: () => Promise<boolean>;
-  /** True once a code was requested this visit — what flips the copy to "check your email". */
-  codeRequested: boolean;
-  verify: (otp: string) => Promise<boolean>;
+    * Open the session. Takes NO code since 8 Sep 2026 (item 4) — the emailed
+    * link is the credential, and the server verifies it exactly as it always
+    * did. The name is unchanged because what it does is unchanged: it turns a
+    * link into a session or reports why it could not.
+    */
+  verify: () => Promise<boolean>;
   upload: (page: CapturedPage, transactionId: string | null) => Promise<UploadOutcome>;
 }
 
@@ -110,30 +107,15 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
 
   const clearFault = useCallback(() => setFault(null), []);
 
-  const [codeRequested, setCodeRequested] = useState(false);
-  const requestCode = useCallback(async (): Promise<boolean> => {
-    if (!linkToken) return false;
-    if (!API_ENABLED) {
-      // Synthetic mode's verifier is the fixed demo code — nothing to send.
-      setCodeRequested(true);
-      return true;
-    }
-    setBusy(true);
-    setFault(null);
-    try {
-      await requestPortalCode(linkToken);
-      if (alive.current) setCodeRequested(true);
-      return true;
-    } catch (error) {
-      if (alive.current) setFault(faultFrom(error));
-      return false;
-    } finally {
-      if (alive.current) setBusy(false);
-    }
-  }, [linkToken]);
+  // ⚠ `requestCode` LIVED HERE and is gone (item 4, 8 Sep 2026). It asked the
+  // server to email a six-digit code to the chase's registered contact — the
+  // same inbox the link itself arrived in. The link is the credential now, so
+  // there is nothing to request. `POST /portal/sign-in-codes` is untouched and
+  // still serves the BUSINESS portal, whose session is a whole workspace
+  // rather than one chase's items.
 
   const verify = useCallback(
-    async (otp: string): Promise<boolean> => {
+    async (): Promise<boolean> => {
       if (!linkToken) return false;
       setBusy(true);
       setFault(null);
@@ -144,7 +126,7 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
           setView(seeded);
           return true;
         }
-        const session = await openPortalSession(linkToken, otp);
+        const session = await openPortalSession(linkToken);
         const opened = await fetchPortalView(session.token);
         if (!alive.current) return false;
         setToken(session.token);
@@ -222,7 +204,7 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
     [synthetic, token],
   );
 
-  return { live: API_ENABLED, view, busy, fault, clearFault, requestCode, codeRequested, verify, upload };
+  return { live: API_ENABLED, view, busy, fault, clearFault, verify, upload };
 }
 
 /* ── the seed-data implementation ─────────────────────────────────────────── */

@@ -1,11 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, FileText, Loader2, ShieldCheck, Smartphone, Upload,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { MessageDescriptor } from 'react-intl';
-import { OTP_LENGTH } from '../../api/portal';
 import type { PortalItem, PortalStatementRequest, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
@@ -30,29 +29,22 @@ const m = defineMessages({
   linkPlaceholder: { id: 'portal.chasePortal.linkPlaceholder', defaultMessage: 'Paste the whole link or just its code' },
   linkAction: { id: 'portal.chasePortal.linkAction', defaultMessage: 'Continue' },
 
-  otpTitle: { id: 'portal.chasePortal.otpTitle', defaultMessage: 'Enter your code' },
-  otpDetail: {
-    id: 'portal.chasePortal.otpDetail',
-    defaultMessage: 'We have emailed you six digits. The link and the code together open this page — nothing else does.',
+  // ── The step that opens the session (item 4, 8 Sep 2026). The eight
+  // `otpRequest*` / `otpLabel` / `otpPlaceholder` / `otpAction` / `otpDetail`
+  // ids retired with the code entry; `otpAudit` stays, reworded, because the
+  // sentence about the session being logged is still true and is the one thing
+  // a client should know about what opening this page records.
+  openingTitle: { id: 'portal.chasePortal.openingTitle', defaultMessage: 'Opening your uploads' },
+  openingDetail: {
+    id: 'portal.chasePortal.openingDetail',
+    defaultMessage: 'Checking your link — this takes a moment.',
   },
-  otpRequestDetail: {
-    id: 'portal.chasePortal.otpRequestDetail',
-    defaultMessage:
-      'Press the button and a six-digit code goes to the email address your accountant has on file. The link and the code together open this page — nothing else does.',
-  },
-  otpRequestAction: { id: 'portal.chasePortal.otpRequestAction', defaultMessage: 'Email me my code' },
-  otpRequestedNote: {
-    id: 'portal.chasePortal.otpRequestedNote',
-    defaultMessage: 'If this link is live, a code is on its way to the registered email. It lasts ten minutes.',
-  },
-  otpRequestAgain: { id: 'portal.chasePortal.otpRequestAgain', defaultMessage: 'Send a fresh code' },
-  otpLabel: { id: 'portal.chasePortal.otpLabel', defaultMessage: 'One-time code' },
-  otpPlaceholder: { id: 'portal.chasePortal.otpPlaceholder', defaultMessage: '000000' },
-  otpAction: { id: 'portal.chasePortal.otpAction', defaultMessage: 'Open my documents' },
+  openingFailedTitle: { id: 'portal.chasePortal.openingFailedTitle', defaultMessage: 'That link did not open' },
+  openingRetry: { id: 'portal.chasePortal.openingRetry', defaultMessage: 'Try again' },
   otpAudit: {
     id: 'portal.chasePortal.otpAudit',
     defaultMessage:
-      'The code is checked on our servers, and the session is logged — who the link was sent to and who used it are recorded separately.',
+      'Your link is checked on our servers, and the session is logged — who the link was sent to and who used it are recorded separately.',
   },
 
   itemsTitle: { id: 'portal.chasePortal.itemsTitle', defaultMessage: 'What we need from you' },
@@ -107,7 +99,7 @@ const m = defineMessages({
   uploadingTitle: { id: 'portal.chasePortal.uploadingTitle', defaultMessage: 'Sending' },
   uploadingDetail: {
     id: 'portal.chasePortal.uploadingDetail',
-    defaultMessage: 'Sending the file, then reading it. This takes a few seconds — you can keep the page open.',
+    defaultMessage: 'Sending the file, then reading it. This takes a few seconds — keep this page open until it finishes.',
   },
 
   matchedTitle: { id: 'portal.chasePortal.matchedTitle', defaultMessage: 'That is the one' },
@@ -238,7 +230,7 @@ export function ChasePortalView() {
   if (!portalLinkToken) return <LinkEntry onExit={exitBusinessPortal} />;
 
   if (!journey.view) {
-    return <OtpStep journey={journey} onExit={exitBusinessPortal} />;
+    return <OpeningStep journey={journey} onExit={exitBusinessPortal} />;
   }
 
   if (journey.busy && page) return <Sending />;
@@ -312,9 +304,26 @@ function LinkEntry({ onExit }: { onExit: () => void }) {
   );
 }
 
-/* ── ② the code ───────────────────────────────────────────────────────────── */
+/* ── ② opening the session ────────────────────────────────────────────────── */
 
-function OtpStep({
+/**
+ * The step that used to ask for six digits (item 4, 8 Sep 2026).
+ *
+ * > *"If a user lands from the email to submit a document, the system asks
+ * > again for an email OTP — bad UX. Remove it."*
+ *
+ * He is right, and the security argument agrees with him: in this release the
+ * chase travels by EMAIL, and the code was emailed to the same address as the
+ * link. Two secrets in one inbox is one factor asked for twice. What protects
+ * the session is what always did the work — the link is an HMAC over the chase
+ * id with its own expiry, it is sent only to the chase's registered contact
+ * (D45), and the session it opens can touch nothing but the items that one
+ * chase asked for.
+ *
+ * So the client lands and the page opens itself. What is left here is the two
+ * honest states that remain: opening, and could-not-open with a way to retry.
+ */
+function OpeningStep({
   journey,
   onExit,
 }: {
@@ -322,53 +331,36 @@ function OtpStep({
   onExit: () => void;
 }) {
   const intl = useIntl();
-  const [code, setCode] = useState('');
-
-  // Live, the code exists only once the client asks for one (the chase lane
-  // mints per-request codes); synthetic mode's verifier is the fixed demo code
-  // and keeps the original copy. The request never says whether the link is
-  // real — the 202 is uniform — so neither does any sentence here.
-  const needsRequest = journey.live && !journey.codeRequested;
+  // Runs ONCE per mounted link. A ref rather than a dependency-free effect
+  // because StrictMode mounts twice in development, and a second `verify` would
+  // open a second session for the same link.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    void journey.verify();
+  }, [journey]);
 
   return (
-    <Shell title={intl.formatMessage(m.otpTitle)}>
-      <p className="text-[14px] text-zinc-400 leading-relaxed">
-        {intl.formatMessage(needsRequest ? m.otpRequestDetail : journey.live ? m.otpRequestedNote : m.otpDetail)}
-      </p>
-      {journey.live && (
-        <button
-          onClick={() => void journey.requestCode()}
-          disabled={journey.busy}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-raised hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors border border-white/10"
-        >
-          {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
-          {intl.formatMessage(needsRequest ? m.otpRequestAction : m.otpRequestAgain)}
-        </button>
+    <Shell title={intl.formatMessage(journey.fault ? m.openingFailedTitle : m.openingTitle)}>
+      {journey.fault ? (
+        <>
+          <Fault fault={journey.fault} />
+          <button
+            onClick={() => void journey.verify()}
+            disabled={journey.busy}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-cta"
+          >
+            {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
+            {intl.formatMessage(m.openingRetry)}
+          </button>
+        </>
+      ) : (
+        <p className="flex items-center gap-3 text-[14px] text-zinc-400 leading-relaxed">
+          <Loader2 size={16} className="animate-spin shrink-0 text-brand" />
+          {intl.formatMessage(m.openingDetail)}
+        </p>
       )}
-      <div>
-        <label htmlFor="portal-otp" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-          {intl.formatMessage(m.otpLabel)}
-        </label>
-        <input
-          id="portal-otp"
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH))}
-          onKeyDown={(e) => e.key === 'Enter' && code.length === OTP_LENGTH && void journey.verify(code)}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder={intl.formatMessage(m.otpPlaceholder)}
-          className="w-full bg-ground border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-brand transition-colors tabular-nums"
-        />
-      </div>
-      <Fault fault={journey.fault} />
-      <button
-        onClick={() => void journey.verify(code)}
-        disabled={code.length !== OTP_LENGTH || journey.busy}
-        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-cta"
-      >
-        {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
-        {intl.formatMessage(m.otpAction)}
-      </button>
       <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.otpAudit)}</p>
       <ExitButton onClick={onExit} />
     </Shell>

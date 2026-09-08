@@ -289,7 +289,7 @@ extends. Five kinds change.
 
 | Kind | Today | Part 2 | Why it is the principal's signature |
 |---|---|---|---|
-| `chase.send` | 1 | **1** | D44. A message to somebody else's client. Once sent, sent. |
+| `chase.send` | 1 | ⚑ **2** | ⚠ **Demoted 8 Sep 2026, by the owner** (live pass 3, item 3): *"only publishing an entry will require approval by default; a normal email chase is going under approval [and should not]"*. D44's sentence named two outward acts; the owner has separated them. A published entry changes the books and cannot be recalled; a chase asks a client for a document they already owe, and it is the most frequent act in the product. It still mints a proposal, still records Read review and its hash, still executes exactly once, still writes the audit row — only the signature it waits for changed. |
 | `publish.batch` | 1 | **1** | D44. Under D42 the export is the only egress, so this is the act that lets a figure leave the product. |
 | `document.update-coding` — **accounting-meaning fields** | 2 | ⚑ **1** | Mubashir's *"any filed update like the category"*. Item 22 is the case law: a team member typed £9,000 of tax onto a £994 invoice and it reached the export because nobody with authority ever looked. Which fields — gate ⚖5. |
 | `bank.remove-statement` | 2 | ⚑ **1** | Removing a statement removes every transaction it imported — the reconciliation surface a whole period's matching stands on. The executor's refusals (confirmed matches, open chases, unprovable provenance) stay; they are a different guarantee, not a substitute for a signature. |

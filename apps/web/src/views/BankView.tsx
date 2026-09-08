@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
-import { requestChaseProposal, requestRemoveStatementsProposal } from '../api/proposals';
+import { requestRemoveStatementsProposal, sendChaseNow } from '../api/proposals';
 import { errorLabel } from '../api/slices';
 import { useStatements } from '../api/statements';
 import { useAppContext } from '../context/AppContext';
@@ -146,16 +146,18 @@ const m = defineMessages({
     defaultMessage: 'No transactions — upload a bank statement to bring them in.',
   },
   chaseBulkAction: { id: 'bank.bankView.chaseBulkAction', defaultMessage: 'Chase for evidence' },
-  // The LIVE selection chase (5 Sep 2026, review item 15). "Queued", never
-  // "sent" — the message is composed at review and released from Approvals.
+  // The LIVE selection chase (5 Sep 2026, review item 15). "Sent" since 8 Sep
+  // 2026 (item 3): `chase.send` left the release tier, so this act finishes
+  // where it is performed. The proposal, the rendered review and the audit row
+  // are all still written — the sentence names where to find them.
   chaseQueued: {
     id: 'bank.bankView.chaseQueued',
     defaultMessage:
-      'Chase queued for {count, plural, one {# transaction} other {# transactions}} — the message is composed at review and sends when it is approved in Approvals.',
+      'Chase sent for {count, plural, one {# transaction} other {# transactions}} — the client has been emailed their secure upload link. It is recorded in Approvals with your name on it.',
   },
   chaseQueueFailed: {
     id: 'bank.bankView.chaseQueueFailed',
-    defaultMessage: 'The chase could not be queued. Nothing was sent — try again.',
+    defaultMessage: 'The chase could not be sent. Nothing has gone to the client — try again.',
   },
   chaseNothingUnexplained: {
     id: 'bank.bankView.chaseNothingUnexplained',
@@ -439,9 +441,13 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   /**
    * The LIVE chase path off row selection (5 Sep 2026, review item 15): the
    * selected unexplained lines become one `chase.send` proposal per business,
-   * composed server-side and released from Approvals (D44). This is the
-   * RequestStatementDialog posture — "queued", never "sent" — inlined because
-   * the selection IS the form.
+   * composed server-side.
+   *
+   * ⚠ **It SENDS since 8 Sep 2026 (item 3)** — `chase.send` left the release
+   * tier, so the person who staged it is the person who approves it and
+   * leaving it in a queue for themselves was ceremony. `sendChaseNow` drives
+   * create → review → approve, the three calls the server has always required,
+   * so the record is unchanged and only the wait is gone.
    */
   const [chaseOutcome, setChaseOutcome] = useState<
     { kind: 'queued'; count: number } | { kind: 'failed'; label: string } | null
@@ -461,7 +467,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     setChaseOutcome(null);
     try {
       for (const [businessId, ids] of byBusiness) {
-        await requestChaseProposal(businessId, ids);
+        await sendChaseNow(businessId, ids);
       }
       setChaseOutcome({ kind: 'queued', count: chaseable.length });
     } catch (error) {

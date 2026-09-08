@@ -120,11 +120,20 @@ const portalSessionShape = z
  * link, wrong code — comes back as one `401 NT-OTP-001`, deliberately: telling
  * them apart would tell a guesser which links exist.
  */
-export async function openPortalSession(linkToken: string, otp: string): Promise<PortalSession> {
-  // The outbound boundary, parsed by the contract's own schema: the six-digit
-  // pattern is checked here rather than trusted from a caller's input handler.
-  const request = createPortalSessionBody.parse({ linkToken, otp });
-  return portalSessionShape.parse(await responseBody(createPortalSession(request)));
+export async function openPortalSession(linkToken: string, otp?: string): Promise<PortalSession> {
+  // The outbound boundary, parsed by the contract's own schema. `otp` is
+  // OPTIONAL since 8 Sep 2026 (item 4): the chase travels by email and the
+  // code went to the same inbox, so the link alone opens the session — see
+  // `PortalSessionCreateRequest.otp` for the whole argument. When one IS
+  // supplied the six-digit pattern is still checked here rather than trusted
+  // from a caller's input handler.
+  // The parsed value's optional keys are `string | undefined`, which
+  // `exactOptionalPropertyTypes` rightly refuses to hand to a model whose
+  // absent keys must be ABSENT — the same dance `requestPortalCode` does below.
+  createPortalSessionBody.parse(otp === undefined ? { linkToken } : { linkToken, otp });
+  return portalSessionShape.parse(
+    await responseBody(createPortalSession(otp === undefined ? { linkToken } : { linkToken, otp })),
+  );
 }
 
 /**

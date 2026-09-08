@@ -516,6 +516,46 @@ export function composeProposalDenied(input: ComposeProposalDeniedInput): Compos
   return { subject, body, html: renderEmailHtml({ subject, body }) };
 }
 
+// ── 7 · A client finished setting themselves up ──────────────────────────
+
+export interface ComposeClientRegisteredInput {
+  /** The client business that finished. */
+  readonly businessName: string;
+  /** The workspace address for that client — `{APP_ORIGIN}/clients/{id}`. */
+  readonly clientLink: string;
+}
+
+/**
+ * Sent to the PRACTICE when a client completes their own setup (item 2,
+ * 8 Sep 2026 — *"registered as client, no notification received via email or
+ * portal notification system for the accounting firm"*).
+ *
+ * ⚠ **The trigger is the subscription going live, not a form being
+ * submitted.** D48 makes paying the LAST step of the client's journey
+ * (§24.5), which is exactly why the client board reads the same fact to decide
+ * whether to print "Awaiting client registration". One signal, two surfaces —
+ * so this email and that badge can never disagree about who has finished.
+ *
+ * It carries no money, no plan and no card detail: the accountant is not the
+ * payer, Stripe owns that record, and a figure here would be a second place to
+ * read it from. What it carries is the one thing the practice acts on — this
+ * client can be worked now.
+ */
+export function composeClientRegistered(input: ComposeClientRegisteredInput): ComposedEmail {
+  const subject = `${input.businessName} has finished setting up`;
+  const body = lines(
+      `${input.businessName} has completed their setup and their subscription is live. Their workspace is open and they can send documents now.`,
+      '',
+      'Open the client:',
+      input.clientLink,
+      '',
+      `You are receiving this because ${input.businessName} is a client on your ${SENDER_DISPLAY_NAME} practice.`,
+      '',
+      SENDER_DISPLAY_NAME,
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.clientLink]: 'Open the client' } }) };
+}
+
 /**
  * Join body lines with `\n`, ending with one.
  *

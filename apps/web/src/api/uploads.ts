@@ -82,6 +82,50 @@ export async function sendWorkspaceUpload(
   return { documentId: document.id, state: document.state };
 }
 
+/* ── the drop's visible progress (item 11) ────────────────────────────────── */
+
+/**
+ * **A workspace upload had no visible sign at all** (item 11, 8 Sep 2026 —
+ * *"no visible loading UI while uploading a document, poor UX"*).
+ *
+ * The journey is presign → PUT the whole file → complete, which on a phone
+ * photo or a 30-page statement is seconds of nothing: the drop zone looked
+ * inert, and the honest reading of an inert screen is that the click missed.
+ * Success stayed silent by design (the document appears in the list), but
+ * silence DURING the work is a different thing from silence after it.
+ *
+ * A module-level store rather than a prop threaded through five call sites,
+ * for the reason the transport is a module in the first place: `runWorkspaceDrop`
+ * is a plain function shared by the Costs tab, the client register, the
+ * practice Documents screen and the chat — a progress prop would have to be
+ * passed by all four and would be missing from the fifth. `useSyncExternalStore`
+ * subscribes the one indicator in the shell; no dependency, no context, no
+ * provider to forget to mount.
+ */
+export interface UploadProgress {
+  /** How many files this drop holds. Zero when nothing is in flight. */
+  readonly total: number;
+  /** How many have finished — sent or refused. */
+  readonly done: number;
+}
+
+let progress: UploadProgress = { total: 0, done: 0 };
+const listeners = new Set<() => void>();
+
+function setProgress(next: UploadProgress): void {
+  progress = next;
+  for (const notify of listeners) notify();
+}
+
+export function subscribeUploadProgress(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function getUploadProgress(): UploadProgress {
+  return progress;
+}
+
 export interface WorkspaceUploadsOutcome {
   sent: number;
   /** One line per refused file — filename plus the server's own reason. */
@@ -102,13 +146,27 @@ export async function sendWorkspaceUploads(
 ): Promise<WorkspaceUploadsOutcome> {
   const failures: string[] = [];
   let sent = 0;
-  for (const file of files) {
-    try {
-      await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file }, channel);
-      sent += 1;
-    } catch (error) {
-      failures.push(`${file.name} — ${error instanceof Error ? error.message : 'upload failed'}`);
+  // Concurrent drops ADD to the count rather than replacing it: two tabs of the
+  // same workspace, or a second drop while the first is still going, must not
+  // make the indicator claim the first one finished.
+  const before = getUploadProgress();
+  setProgress({ total: before.total + files.length, done: before.done });
+  try {
+    for (const file of files) {
+      try {
+        await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file }, channel);
+        sent += 1;
+      } catch (error) {
+        failures.push(`${file.name} — ${error instanceof Error ? error.message : 'upload failed'}`);
+      }
+      const now = getUploadProgress();
+      setProgress({ total: now.total, done: now.done + 1 });
     }
+  } finally {
+    // Back to zero once every drop in flight has finished, so a stuck counter
+    // can never leave a permanent "uploading…" on the header.
+    const now = getUploadProgress();
+    setProgress(now.done >= now.total ? { total: 0, done: 0 } : now);
   }
   return { sent, failures };
 }

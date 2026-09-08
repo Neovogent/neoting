@@ -151,6 +151,17 @@ function shell(subject: string, inner: string): string {
     `<p style="margin:0 0 20px;font-size:17px;font-family:${FONT};color:#0f1720;">` +
     `<span style="font-weight:800;">Neo</span><span style="font-weight:400;">&nbsp;Accounting</span></p>` +
     inner +
+    // The footer (item 4, 8 Sep 2026 — *"no footer"*). Deliberately BRANDING
+    // and nothing else: the plain-text rule above is that a client stripping
+    // HTML loses styling and never content, so the one thing that may live
+    // here is the thing that carries no information — who sent it, which every
+    // composed body already signs off with. No links, no unsubscribe (these
+    // are transactional messages a client asked their accountant for), no
+    // address block that would then be missing from the text part.
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;border-top:1px solid ${CARD_BORDER};">` +
+    `<tr><td style="padding-top:14px;color:${INK_SOFT};font-size:12px;line-height:1.5;font-family:${FONT};">` +
+    `<span style="font-weight:700;">Neo</span> Accounting — sent on behalf of your accountant.` +
+    `</td></tr></table>` +
     `</td></tr>` +
     `</table></td></tr></table></body></html>`
   );

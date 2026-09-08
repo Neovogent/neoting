@@ -138,7 +138,52 @@ export const FIELD_PRESENTATION: readonly FieldPresentation[] = [
   { key: 'docType', label: 'Type', coding: 'docType', kind: 'docType' },
 ];
 
-const PRESENTATION_BY_LABEL = new Map(FIELD_PRESENTATION.map((p) => [p.label, p]));
+/**
+ * A BANK STATEMENT's field rows (item 8, 8 Sep 2026).
+ *
+ * > *"If a document is received via bank statement chasing link then why is it
+ * > showing the customer, supplier, tax amount, invoice number…?"*
+ *
+ * The extractor had classified it correctly — `docType: STATEMENT`, which is
+ * the only reason the statement lane ran at all. What was wrong was this
+ * screen: one flat table of INVOICE fields rendered for every document type,
+ * so a statement was interrogated for a supplier it does not have, a tax
+ * amount it does not carry, and an "Invoice number" that was in fact its
+ * statement number — each one wearing "99% confident" beside an em dash.
+ *
+ * So a statement gets the rows a statement HAS, and the two that survive are
+ * renamed to what they actually are. Nothing is invented: these are the same
+ * wire keys, read the way a statement means them.
+ */
+const STATEMENT_PRESENTATION: readonly FieldPresentation[] = [
+  { key: 'customerName', label: 'Account holder', coding: 'customerName', kind: 'text' },
+  { key: 'documentDate', label: 'Statement date', coding: 'documentDate', kind: 'date' },
+  { key: 'reference', label: 'Statement number', coding: 'reference', kind: 'text' },
+  { key: 'currency', label: 'Currency', coding: 'currency', kind: 'currency' },
+  { key: 'docType', label: 'Type', coding: 'docType', kind: 'docType' },
+];
+
+/**
+ * Label → how that row is edited, over BOTH tables.
+ *
+ * The statement rows are here too — a renamed row is still an editable row,
+ * and `parseCodingDraft`/`isEditableLabel`/`isDateLabel` all resolve through
+ * this map. Leaving them out would have made "Account holder" and "Statement
+ * number" quietly uneditable, which is the failure mode a rename is most
+ * likely to cause.
+ */
+const PRESENTATION_BY_LABEL = new Map(
+  [...FIELD_PRESENTATION, ...STATEMENT_PRESENTATION].map((p) => [p.label, p]),
+);
+
+/**
+ * Which table this document is read through. Only `STATEMENT` diverges — every
+ * other type on the wire (invoice, receipt, credit note, OTHER) is the
+ * supplier-and-total shape the invoice table describes.
+ */
+function presentationFor(docType: string | null | undefined): readonly FieldPresentation[] {
+  return docType === 'STATEMENT' ? STATEMENT_PRESENTATION : FIELD_PRESENTATION;
+}
 
 /**
  * The Category row's label, named once.
@@ -340,7 +385,7 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
     ? rawCurrency.toUpperCase()
     : 'GBP';
 
-  for (const p of FIELD_PRESENTATION) {
+  for (const p of presentationFor(doc.docType)) {
     const field = wireFields[p.key];
     if (field !== undefined) {
       const boundingBox = usableBoundingBox(field.boundingBox);

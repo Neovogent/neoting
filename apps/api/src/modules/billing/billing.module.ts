@@ -4,6 +4,11 @@ import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
+import {
+  NotificationsModule,
+  NOTIFICATIONS_SERVICE,
+  type NotificationsService,
+} from '../notifications/index.js';
 import { PortalModule } from '../portal/index.js';
 import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
@@ -50,7 +55,10 @@ import {
   // `PortalModule` for `PORTAL_SESSION_CONTEXT` — checkout accepts the portal
   // bearer as well as the workspace cookie (#205), and a second resolver built
   // here would be a second opinion about what a live session is.
-  imports: [PortalModule],
+  // `NotificationsModule` since 8 Sep 2026 (item 2): a client finishing their
+  // setup is a fact the PRACTICE has to hear, and the subscription going live
+  // is the only server-written signal that it happened (D48 §24.5).
+  imports: [PortalModule, NotificationsModule],
   controllers: [BillingController, StripeWebhookController],
   providers: [
     StripeSignatureGuard,
@@ -77,8 +85,13 @@ import {
     },
     {
       provide: STRIPE_WEBHOOK_SERVICE,
-      useFactory: (prisma: PrismaClient, replay: StripeEventReplayStore) => new StripeWebhookService(prisma, replay),
-      inject: [PRISMA, STRIPE_EVENT_REPLAY_STORE],
+      useFactory: (
+        prisma: PrismaClient,
+        replay: StripeEventReplayStore,
+        notifications: NotificationsService,
+        env: Env,
+      ) => new StripeWebhookService(prisma, replay, { notifications, appOrigin: env.APP_ORIGIN }),
+      inject: [PRISMA, STRIPE_EVENT_REPLAY_STORE, NOTIFICATIONS_SERVICE, ENV],
     },
   ],
 })

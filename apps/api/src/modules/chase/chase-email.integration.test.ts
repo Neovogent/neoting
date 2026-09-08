@@ -6,7 +6,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
 import { ActionProposalsService } from '../approvals/action-proposals.service.js';
-import { DemoEmailSender, InMemoryEmailRateLimiter, parseEmailAddress } from '../notifications/index.js';
+import { DemoEmailSender, InMemoryEmailRateLimiter, parseEmailAddress, renderEmailHtml } from '../notifications/index.js';
 import type { PublishGateway } from '../validation-dedupe/proposals/publish-batch.js';
 import { buildExecutorRegistry } from '../validation-dedupe/proposals/registry.js';
 import { detectUnmatchedChases } from './detection.js';
@@ -67,7 +67,7 @@ const STUB_PUBLISHING: PublishGateway = {
 const TEST_CHASE_COMPOSE = { portalLinkSecret: PORTAL_SECRET, appOrigin: 'https://app.test' };
 
 function transport(): ChaseEmailTransport {
-  return { sender: email, limiter: new InMemoryEmailRateLimiter(), parseAddress: parseEmailAddress };
+  return { sender: email, limiter: new InMemoryEmailRateLimiter(), parseAddress: parseEmailAddress, renderHtml: renderEmailHtml };
 }
 
 function service(): ActionProposalsService {

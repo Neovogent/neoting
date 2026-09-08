@@ -3,7 +3,7 @@ import { Send } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { useChases, type LiveChase } from '../api/chases';
-import { requestChaseProposal } from '../api/proposals';
+import { sendChaseNow } from '../api/proposals';
 import { errorLabel } from '../api/slices';
 import { DataTable, Pill } from '../components/DynamicComponents/DataTable';
 import { commonLabels } from '../i18n/common';
@@ -65,11 +65,11 @@ const m = defineMessages({
   chaseQueued: {
     id: 'clients.clientChases.chaseQueued',
     defaultMessage:
-      'Chase queued for {count, plural, one {# transaction} other {# transactions}} — the message is composed at review and sends when it is approved in Approvals.',
+      'Chase sent for {count, plural, one {# transaction} other {# transactions}} — the client has been emailed their secure upload link. It is recorded in Approvals with your name on it.',
   },
   chaseQueueFailed: {
     id: 'clients.clientChases.chaseQueueFailed',
-    defaultMessage: 'The chase could not be queued. Nothing was sent — try again.',
+    defaultMessage: 'The chase could not be sent. Nothing has gone to the client — try again.',
   },
   allAlreadyChased: {
     id: 'clients.clientChases.allAlreadyChased',
@@ -153,7 +153,7 @@ export default function ClientChases({ client }: { client: Client }) {
     try {
       // One client, one business, one grouped message — the row's own server
       // id, which is the fact the compose seam re-derives and checks anyway.
-      await requestChaseProposal(chaseable[0]!.clientId, chaseable.map((r) => r.id));
+      await sendChaseNow(chaseable[0]!.clientId, chaseable.map((r) => r.id));
       setOutcome({ kind: 'queued', count: chaseable.length });
     } catch (error) {
       setOutcome({ kind: 'failed', label: errorLabel(error) ?? intl.formatMessage(m.chaseQueueFailed) });

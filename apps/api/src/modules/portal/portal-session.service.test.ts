@@ -286,6 +286,49 @@ test('an empty PORTAL_LINK_SECRET fails closed and loud, never as a quiet accept
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The link alone opens the session (item 4, 8 Sep 2026 — the owner's ruling)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('NO code at all opens the session — the emailed link is the credential', async () => {
+  // ⚠ The reverse of what this file asserted until 8 Sep 2026. ID delivers the
+  // chase by EMAIL and the six digits went to the same inbox as the link, so
+  // the second factor was one factor asked for twice — friction for the client
+  // and nothing for the practice. The contract carries the full argument.
+  const db = fixture();
+  const session = await new PortalSessionService(fakePrisma(db), config).createSession({ linkToken: link() }, NOW);
+
+  expect(session.token).not.toBe('');
+  // A real, verified session row — not the counter row a failure leaves.
+  expect(db.otpSessions[0]?.verifiedAt).not.toBeNull();
+  // And still scoped to exactly the granting chase, with an EMPTY grant until
+  // the first upload. Nothing about the boundary moved.
+  expect(db.otpSessions[0]?.chaseId).toBe('chase_1');
+  expect(db.otpSessions[0]?.grantedItemIds).toEqual([]);
+});
+
+test('a WRONG code supplied is still refused and still counted', async () => {
+  // The optionality is not a bypass: a caller that sends a code is verified
+  // exactly as before, so nothing a guesser sends can be better than sending
+  // nothing.
+  const db = fixture();
+  const token = link();
+  const service = new PortalSessionService(fakePrisma(db), config);
+
+  const error = await grab(() => service.createSession({ linkToken: token, otp: '111111' }, NOW));
+  expect(error.code).toBe('NT-OTP-001');
+  expect(db.otpSessions[0]?.attempts).toBe(1);
+  expect(db.otpSessions[0]?.verifiedAt).toBeNull();
+});
+
+test('a bad LINK is still refused, with or without a code', async () => {
+  const db = fixture();
+  const service = new PortalSessionService(fakePrisma(db), config);
+  const error = await grab(() => service.createSession({ linkToken: 'not-our-token' }, NOW));
+  expect(error.code).toBe('NT-OTP-001');
+  expect(db.otpSessions).toHaveLength(0);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A2 — attempt counting and lockout on otp_sessions.attempts / locked_until
 // ─────────────────────────────────────────────────────────────────────────────
 
