@@ -6,6 +6,7 @@ import type { PortalItem, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
 import type { CapturedPage } from '../../lib/capture';
+import { mimeTypeFor } from '../../lib/uploadMime';
 
 /**
  * The chase-portal journey, as one hook with two implementations behind it.
@@ -161,7 +162,13 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
         // have. Hence the second `try` around the settle poll below.
         await sendPortalUpload(
           token,
-          { filename: page.filename, mimeType: page.blob.type, bytes: page.blob },
+          // `mimeTypeFor`, never the blob's own type: `compressImage` hands
+          // back the ORIGINAL File whenever it could not decode the picture —
+          // every HEIC outside Safari — and its type is then the OS's
+          // unusable answer (`application/octet-stream` on Windows, `''` on
+          // iOS). Declared verbatim, that was a `415` from the allowlist, and
+          // the client was told to check their signal (8 Sep 2026).
+          { filename: page.filename, mimeType: mimeTypeFor({ name: page.filename, type: page.blob.type }), bytes: page.blob },
           transactionId,
         );
 

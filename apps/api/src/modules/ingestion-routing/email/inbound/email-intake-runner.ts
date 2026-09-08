@@ -104,6 +104,17 @@ export async function runEmailIntake(raw: InboundRawEmail, deps: EmailIntakeRunn
   deps.logger.log(
     `email ${raw.id} → practice ${practiceId}: ${result.accepted.length} accepted, ${result.rejected.length} rejected (trace=${traceId})`,
   );
+  // The owner's discard (9 Sep 2026): an unregistered sender's mail is thrown
+  // away unread, so this counter is the ONLY trace it ever existed. Deliberately
+  // no from-address — the ruling is that nothing about a stranger's email is
+  // kept, and a log line naming them would be exactly the retained record it
+  // exists to prevent. A rising count means senders need registering, which is
+  // self-service on the client's Users tab.
+  if (result.discarded > 0) {
+    deps.logger.warn(
+      `email ${raw.id} → practice ${practiceId}: discarded — sender not registered, ${result.discarded} attachment(s) dropped unread (trace=${traceId})`,
+    );
+  }
   // Each rejection with its reason, BEFORE the caller acks and deletes the
   // source email. The count alone survived the production path while the
   // per-attachment filename/code/reason — the thing a human needs to tell a

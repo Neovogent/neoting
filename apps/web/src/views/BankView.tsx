@@ -135,6 +135,12 @@ const m = defineMessages({
     id: 'bank.bankView.needsYouPill',
     defaultMessage: 'Needs you — {count, plural, one {# candidate} other {# candidates}}',
   },
+  // A line the matcher has already answered, waiting on Approve. It is not in
+  // the "Needs you" filter and must not claim to be — see the pill's own note.
+  suggestedPill: {
+    id: 'bank.bankView.suggestedPill',
+    defaultMessage: 'Suggested — {count, plural, one {# match} other {# matches}} to approve',
+  },
   creditNoDocument: { id: 'bank.bankView.creditNoDocument', defaultMessage: 'Credit — no document' },
   noDocument: { id: 'bank.bankView.noDocument', defaultMessage: 'No document' },
   unmatchConfirmTitle: { id: 'bank.bankView.unmatchConfirmTitle', defaultMessage: 'Break this match?' },
@@ -151,6 +157,14 @@ const m = defineMessages({
   transactionsEmpty: {
     id: 'bank.bankView.transactionsEmpty',
     defaultMessage: 'No transactions — upload a bank statement to bring them in.',
+  },
+  // ⚠ The message above is the NO-STATEMENT state and may only render there.
+  // One constant served both, so a filter that simply matched nothing told an
+  // accountant to upload a statement while its own 92 lines sat behind the chip
+  // they had just pressed (pipeline test, 8 Sep 2026).
+  transactionsFilteredEmpty: {
+    id: 'bank.bankView.transactionsFilteredEmpty',
+    defaultMessage: 'No transactions match these filters. Clear them to see the rest.',
   },
   chaseBulkAction: { id: 'bank.bankView.chaseBulkAction', defaultMessage: 'Chase for evidence' },
   // The LIVE selection chase (5 Sep 2026, review item 15). "Sent" since 8 Sep
@@ -747,7 +761,17 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
         // `'confident'`, and nothing links it on the live path, so asking only
         // about ties painted the matcher's best answers red as "No document".
         if (offersCandidates(v)) {
-          return <Pill tone="amber">{intl.formatMessage(m.needsYouPill, { count: v.candidates.length })}</Pill>;
+          // ⚠ THE PILL MUST ASK THE SAME QUESTION THE FILTER ASKS, and it did
+          // not: the filter and its count are `isUnexplained && offersCandidates`
+          // while this said "Needs you" on `offersCandidates` alone. A SUGGESTED
+          // line is not unexplained — the matcher has already attached its
+          // answer and it is waiting to be approved — so nine rows wore
+          // "Needs you — 1 candidate" above a chip reading "Needs you (3)"
+          // (pipeline test, 8 Sep 2026). Two states, two words: `isUnexplained`
+          // is the one that genuinely wants a decision.
+          return isUnexplained(t)
+            ? <Pill tone="amber">{intl.formatMessage(m.needsYouPill, { count: v.candidates.length })}</Pill>
+            : <Pill tone="amber">{intl.formatMessage(m.suggestedPill, { count: v.candidates.length })}</Pill>;
         }
         // Missing evidence is a RED flag regardless of direction (review item
         // 17): a credit with no document keeps its distinct wording but must
@@ -1074,7 +1098,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 rows={scopedTxns}
                 rowId={(t) => t.id}
                 selectable
-                emptyMessage={intl.formatMessage(m.transactionsEmpty)}
+                emptyMessage={intl.formatMessage(
+                  clientScopedTxns.length === 0 ? m.transactionsEmpty : m.transactionsFilteredEmpty,
+                )}
                 bulkActions={[
                   // Live, the selection stages a REAL chase.send per business
                   // (5 Sep 2026, review item 15 — this action used to vanish

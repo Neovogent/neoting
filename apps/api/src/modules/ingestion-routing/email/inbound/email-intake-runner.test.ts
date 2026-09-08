@@ -52,6 +52,12 @@ function baseDeps(over: Partial<EmailIntakeRunnerDeps> = {}): {
     queue,
     logger: { log: (m) => logs.push(m), warn: (m) => warns.push(m) },
     store: new InMemoryDocumentStore(),
+    // WARNING: the default sender is REGISTERED on purpose. Since 9 Sep 2026 an
+    // unregistered sender's mail is DISCARDED unread (the owner's ruling), so a
+    // test about parsing, tracing or rejection logging that left this out would
+    // assert against an empty result for the wrong reason and pass while the
+    // thing it names went untested. Routing tests override it.
+    senderMapLoader: fakeLoader(new Map([['sender@acme.co', ['biz_acme']]])),
     ...over,
   };
   return { deps, queue, logs, warns };
@@ -69,7 +75,9 @@ test('parses, resolves the practice from the recipient, and enqueues the accepte
   const job = queue.enqueued[0];
   expect(job?.source).toBe('email');
   expect(job?.practiceId).toBe('prac_x');
-  expect(job?.storageKey).toContain('w/_unrouted/prac_x/documents/');
+  // The practice still comes from the RECIPIENT (asserted above); the storage
+  // prefix is the sender's business, because the default sender is registered.
+  expect(job?.storageKey).toContain('w/biz_acme/documents/');
 });
 
 test('the envelope recipient wins over the To header for practice resolution', async () => {
@@ -304,8 +312,13 @@ test('a registered sender (in this practice’s map) routes MATCHED to its busin
   expect(job?.storageKey).toContain('w/biz_burger/documents/');
 });
 
-test('an unregistered sender stays UNROUTED even with a populated map', async () => {
-  const { deps, queue } = baseDeps({
+// REPLACES 'an unregistered sender stays UNROUTED even with a populated map'.
+// The platform has ONE intake address, so an Unrouted queue would hold every
+// stranger's mail for every practice -- a place one practice reads another's
+// documents, growing without bound. The owner ruled on 9 Sep 2026 that the file
+// vanishes instead, and this pins that it leaves NOTHING behind.
+test('an unregistered sender is discarded, and the drop is logged without naming them', async () => {
+  const { deps, queue, warns } = baseDeps({
     parser: stubParser(parsedEmail({ from: 'stranger@example.test' })),
     senderMapLoader: fakeLoader(new Map([['owner@americanburger.test', ['biz_burger']]])),
   });
@@ -313,7 +326,14 @@ test('an unregistered sender stays UNROUTED even with a populated map', async ()
   const outcome = await runEmailIntake(rawEmail(), deps);
   if (outcome.status !== 'processed') throw new Error('expected processed');
   expect(outcome.result.routing.kind).toBe('unrouted');
-  expect(queue.enqueued[0]?.storageKey).toContain('w/_unrouted/prac_x/documents/');
+  expect(outcome.result.discarded).toBeGreaterThan(0);
+  expect(queue.enqueued).toHaveLength(0);
+
+  // The counter is the only trace a discarded email leaves, and it must NOT
+  // carry the sender: a log line naming them is exactly the retained record the
+  // ruling exists to prevent.
+  expect(warns.some((w) => /discarded/i.test(w))).toBe(true);
+  expect(warns.some((w) => w.includes('stranger@example.test'))).toBe(false);
 });
 
 test('a mixed-case From still routes MATCHED — the lookup lower-cases too', async () => {

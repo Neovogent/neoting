@@ -16,7 +16,7 @@ import { PortalStorageError } from '../../api/portal';
  * | the bytes never reached storage (CORS, offline, DNS) | nothing — it is not their photograph, and trying again may not help |
  * | the subscription has lapsed (`402 NT-BIL-001`) | pay, and the portal has a checkout button |
  * | the sixty-minute session expired (`401 NT-OTP-002`) | ask for a new code |
- * | the file itself was refused (`400`) | send a different file |
+ * | the file itself was refused (`400`/`413`/`415`) | send a different file |
  *
  * "Try again" is the right advice for exactly one of those and actively wrong
  * for the other three. The reason was never missing — `send()` computed it and
@@ -59,7 +59,7 @@ export type PortalSendReason =
   | 'lapsed'
   /** `401 NT-OTP-002` — the sixty-minute bearer is finished. */
   | 'expired'
-  /** `400` — the file itself: its type, its size, its shape. */
+  /** `400`/`413`/`415` — the file itself: its type, its size, its shape. */
   | 'refused'
   /** Our API answered with something else. The code is what makes it reportable. */
   | 'server';
@@ -87,7 +87,16 @@ export function sendFaultFor(error: unknown): PortalSendFault {
     // arrives under some other code is still a lapsed subscription, and the
     // client still needs the checkout button rather than "try again".
     if (error.code === LAPSED_CODE || error.status === 402) return { reason: 'lapsed', code: error.code, detail };
-    if (error.status === 400) return { reason: 'refused', code: error.code, detail };
+    // ⚠ 415 and 413 belong here as much as 400, and leaving them out was the
+    // whole defect (8 Sep 2026). The door answers `415 NT-ING-002` for a type
+    // off the allowlist and `413 NT-ING-001` for a file over the channel cap —
+    // both are "the file itself", both are permanent, and both fell through to
+    // `server`, whose sentence is "try again in a moment". A client sending an
+    // iPhone photograph was told to check their signal and retry a file that
+    // could never be accepted.
+    if (error.status === 400 || error.status === 413 || error.status === 415) {
+      return { reason: 'refused', code: error.code, detail };
+    }
     return { reason: 'server', code: error.code, detail };
   }
 

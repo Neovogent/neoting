@@ -45,9 +45,14 @@ test('parses raw MIME and runs it through the intake end to end (offline, real p
   expect(parsed.attachments[0]?.contentType).toContain('image/png');
 
   const queue = new FixtureIngestQueue();
-  const result = await processEmail(parsed, { queue, practiceId: 'prac_test' });
+  // The sender is REGISTERED: this test is about the real MIME parser reaching
+  // the intake end to end, and since 9 Sep 2026 an unregistered sender's mail is
+  // discarded unread, which would empty the result for a reason that has nothing
+  // to do with parsing.
+  const senderMap = new Map<string, readonly string[]>([['sender@acme.co', ['biz-1']]]);
+  const result = await processEmail(parsed, { queue, practiceId: 'prac_test', senderMap });
   expect(result.accepted).toHaveLength(1);
   expect(result.accepted[0]?.detectedType).toBe('png');
-  expect(result.routing.kind).toBe('unrouted');
+  expect(result.routing.kind).toBe('matched');
   expect(queue.enqueued[0]?.source).toBe('email');
 });

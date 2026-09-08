@@ -55,11 +55,15 @@ function twoAttachmentEmail(): ParsedEmail {
   };
 }
 
+const BUSINESS = 'p78_biz';
+const senderMapLoader = { load: async () => new Map<string, readonly string[]>([['client@acme.co', [BUSINESS]]]) };
+
 const parser: EmailParser = { async parse() { return twoAttachmentEmail(); } };
 const quietLogger = { log: () => {}, warn: () => {} };
 
 async function cleanup(): Promise<void> {
   await owner.document.deleteMany({ where: { practiceId: PRACTICE } });
+  await owner.business.deleteMany({ where: { practiceId: PRACTICE } });
   await owner.membership.deleteMany({ where: { id: { startsWith: 'p78_' } } });
   await owner.user.deleteMany({ where: { id: { startsWith: 'p78_' } } });
   await owner.practice.deleteMany({ where: { id: { startsWith: 'p78_' } } });
@@ -73,6 +77,12 @@ beforeAll(async () => {
 
   await cleanup();
   await owner.practice.create({ data: { id: PRACTICE, name: 'P78' } });
+  // A REAL business for the sender to route to. Since 9 Sep 2026 an
+  // unregistered sender's mail is discarded before anything is stored (the
+  // owner's ruling), so this lane needs a registered sender to exercise at all
+  // -- and the sink writes `documents.business_id` as a foreign key, so the row
+  // has to exist rather than being invented in a stub map.
+  await owner.business.create({ data: { id: BUSINESS, practiceId: PRACTICE, name: 'P78 Client' } });
   await owner.user.create({ data: { id: 'p78_sys', kind: 'SYSTEM' } });
   await owner.membership.create({
     data: { id: 'p78_mem_sys', userId: 'p78_sys', practiceId: PRACTICE, role: 'PRACTICE_STANDARD' },
@@ -97,7 +107,7 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
         envelopeRecipient: `doc+${PRACTICE}@neoting.test`,
         receivedAtSeconds: 1_700_000_000,
       },
-      { parser, queue, logger: quietLogger, store },
+      { parser, queue, logger: quietLogger, store, senderMapLoader },
     );
 
     if (outcome.status !== 'processed') throw new Error(`expected processed, got ${outcome.status}`);
@@ -144,7 +154,11 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
     const row = await owner.document.findUnique({ where: { id: documentId } });
     expect(row?.channel).toBe('EMAIL');
     expect(row?.practiceId).toBe(PRACTICE);
-    expect(row?.inbox).toBe('UNROUTED');
+    // COSTS, not UNROUTED: the sender is a registered contact, so the document
+    // lands in its business's working queue. An UNREGISTERED sender never
+    // reaches this sink at all now -- it is discarded at the door.
+    expect(row?.inbox).toBe('COSTS');
+    expect(row?.businessId).toBe(BUSINESS);
 
     // A redelivery of the same job is a no-op — still exactly one document
     // (#78 acceptance 4). A fresh ProcessedStore forces the durability to rest on
