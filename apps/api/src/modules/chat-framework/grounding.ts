@@ -145,15 +145,31 @@ export async function retrieveRecords(db: ScopedClient, businessId: string): Pro
     }),
   ]);
 
+  // WHAT WAS ON THE DOCUMENT (owner, 8 Sep 2026: *"I need the chat to tell me
+  // everything, nothing skipped"*).
+  //
+  // ⚠ Until this, the window carried a document's supplier, total, VAT, date,
+  // state and category — and nothing else. So asked "and items?" about a
+  // receipt whose lines were sitting on screen in the card above, the model
+  // answered *"I don't have line-item detail"*. It was telling the truth about
+  // a context that had been built too thin, which is the worst shape an honest
+  // answer can take: indistinguishable from the data not existing.
+  //
+  // A SECOND query rather than an `include`: `Extraction.fields` is a jsonb
+  // holding every extracted field, and joining it onto the document window
+  // would drag all of that into a query that wants one key out of it.
+  const itemsByDocument = await lineItemsFor(db, documents.map((doc) => doc.id));
+
   const records: GroundedRecord[] = [];
 
   for (const doc of documents) {
     const supplier = doc.supplierName ?? 'unknown supplier';
+    const items = itemsByDocument.get(doc.id) ?? '';
     records.push({
       id: doc.id,
       type: 'document',
       label: `${supplier} — ${money(doc.totalPence, doc.currency)}`,
-      line: `[${doc.id}] document · supplier ${wrapUntrusted(supplier)} · total ${money(doc.totalPence, doc.currency)} · VAT ${money(doc.taxPence, doc.currency)} · dated ${day(doc.documentDate)} · state ${doc.state} · category ${doc.categoryCode ?? 'uncoded'}`,
+      line: `[${doc.id}] document · supplier ${wrapUntrusted(supplier)} · total ${money(doc.totalPence, doc.currency)} · VAT ${money(doc.taxPence, doc.currency)} · dated ${day(doc.documentDate)} · state ${doc.state} · category ${doc.categoryCode ?? 'uncoded'}${items}`,
     });
   }
 
@@ -218,6 +234,66 @@ export function verifyCitations(
 
 /** §9.4's literal fallback, verbatim. Not a template — the exact sentence. */
 export const NO_RECORDS_ANSWER = "Information not available in this client's records.";
+
+/**
+ * How many lines of one document reach the window before it says so.
+ *
+ * ⚠ **Not a silent truncation.** The instruction is "nothing skipped", and a
+ * 400-line statement-shaped invoice would otherwise crowd out every other
+ * record in a fixed window. Past the cap the line SAYS how many it did not
+ * carry, so the model can tell the accountant to open the document rather than
+ * answer from a list it cannot see the end of — the `paged.ts` rule, one lane
+ * over: a visible limit is acceptable, a quiet one is not.
+ */
+const ITEMS_PER_DOCUMENT = 60;
+
+/** One document's line items as the model reads them, or '' when it has none. */
+export function renderLineItems(items: readonly unknown[], currency: string | null): string {
+  const rendered: string[] = [];
+  for (const raw of items.slice(0, ITEMS_PER_DOCUMENT)) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const item = raw as Record<string, { value?: unknown } | undefined>;
+    const description = typeof item['description']?.value === 'string' ? item['description'].value : null;
+    const quantity = typeof item['quantity']?.value === 'number' ? item['quantity'].value : null;
+    const totalPence = typeof item['totalPence']?.value === 'number' ? item['totalPence'].value : null;
+    if (description === null && totalPence === null) continue;
+    const qty = quantity === null || quantity === 1 ? '' : `${quantity} × `;
+    rendered.push(`${qty}${wrapUntrusted(description ?? 'unnamed line')} ${money(totalPence, currency)}`);
+  }
+  if (rendered.length === 0) return '';
+  const more = items.length > ITEMS_PER_DOCUMENT ? ` (+${items.length - ITEMS_PER_DOCUMENT} more lines on the document)` : '';
+  return ` · lines: ${rendered.join('; ')}${more}`;
+}
+
+/**
+ * The accepted extraction's line items, per document.
+ *
+ * ⚠ They live INSIDE `Extraction.fields` under a reserved `lineItems` key —
+ * `common/documents/document-response.ts` carries the full story of why (METH
+ * S4 stored them there under the no-schema-change rule, and the read surface
+ * separates them out). Read defensively for the same reason that file does: a
+ * payload an older release wrote must degrade to "no lines", never throw on a
+ * chat turn.
+ */
+async function lineItemsFor(db: ScopedClient, documentIds: readonly string[]): Promise<Map<string, string>> {
+  const byDocument = new Map<string, string>();
+  if (documentIds.length === 0) return byDocument;
+
+  const extractions = await db.extraction.findMany({
+    where: { documentId: { in: [...documentIds] }, isAccepted: true },
+    select: { documentId: true, fields: true, document: { select: { currency: true } } },
+  });
+
+  for (const extraction of extractions) {
+    const fields = extraction.fields;
+    if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) continue;
+    const items = (fields as Record<string, unknown>)['lineItems'];
+    if (!Array.isArray(items)) continue;
+    const rendered = renderLineItems(items, extraction.document.currency);
+    if (rendered !== '') byDocument.set(extraction.documentId, rendered);
+  }
+  return byDocument;
+}
 
 function money(pence: number | null, currency: string | null): string {
   if (pence === null) return 'unknown';

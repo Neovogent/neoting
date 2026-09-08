@@ -26,7 +26,7 @@ vi.mock('../../context/AppContext', () => ({
   }),
 }));
 
-test('SHOW_APPROVALS with an empty queue renders the empty sentence and the way to the real queue — never a blank card', () => {
+test('SHOW_APPROVALS with an empty queue renders the empty sentence and the way to the real queue — never a blank card', async () => {
   const message: Message = {
     id: 'm1',
     role: 'assistant',
@@ -42,7 +42,12 @@ test('SHOW_APPROVALS with an empty queue renders the empty sentence and the way 
 
   // The empty set is a sentence, not silence. (getAll: DataTable renders both
   // its table and card branches in the DOM — container queries hide one.)
-  expect(screen.getAllByText('The approval queue is empty.').length).toBeGreaterThan(0);
+  //
+  // ⚠ `findAll`, not `getAll`: the chat's cards are LAZY since 8 Sep 2026 —
+  // the route was 56 kB over budget because this renderer imported all of them
+  // statically — so the chunk has to resolve before anything is on the page.
+  // Still offline; the only thing waited on is a dynamic `import()`.
+  expect((await screen.findAllByText('The approval queue is empty.')).length).toBeGreaterThan(0);
   // And the card always carries the way to the REAL queue, which reads
   // GET /action-proposals itself.
   fireEvent.click(screen.getByRole('button', { name: /Open the Approvals queue/ }));

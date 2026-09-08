@@ -57,6 +57,34 @@ The rest of ID in one line each: **D41** gates statement extraction on provable 
 
 Clone to running is a **10-minute** target. If a fresh clone fails, the environment is broken, not the developer, and fixing it is the day's first priority.
 
+## How to talk to Shakib
+
+**Plain English. No jargon, in either direction.**
+
+He owns this product and decides what it does; he is not reading your code. So
+when you report, explain or ask, use the words a person would use out loud:
+*the list of documents*, not "the register"; *the chat*, not "the grounding
+window"; *the page loads too much*, not "the route closure exceeds the budget".
+If a term only makes sense to someone who has read the file, it does not belong
+in a message to him.
+
+**What that does NOT mean:**
+
+- ⚠ **Not less true.** Keep the numbers, the caveats and the bad news. "It
+  works on my machine but I could not test it on the live site, and here is
+  why" is exactly right; smoothing that into "all done" is the failure this
+  rule is most likely to cause.
+- ⚠ **Not fewer decisions.** When a choice is his, put it to him as a choice,
+  in one sentence each, with your recommendation and what it costs. He answers
+  fast when the question is answerable.
+- **Not the code.** Comments, commit messages, PR bodies and these CLAUDE.md
+  files stay as technical as they need to be — they are written for whoever
+  maintains this, which is a different reader.
+
+**When you finish a piece of work, tell him three things:** what now behaves
+differently, what you could not check and why, and what you need from him next.
+He asked for exactly that, in those words, on 8 Sep 2026.
+
 ## Stop and ask a human
 
 Schema changes beyond additive fields · auth or permission logic · RLS policies · deleting or migrating data · adding a dependency · anything touching SMS sending or chase templates · the Review → Approve enforcement path · any public API contract · any Sprint-0 contract artefact.

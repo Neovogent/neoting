@@ -260,6 +260,23 @@ export function healthTone(health: number): 'green' | 'amber' | 'red' {
  * screens, which is where a `MessageDescriptor` can be formatted.
  */
 export const BASE_MANDATORY = ['Supplier', 'Total', 'Category'];
+
+/**
+ * What a BANK STATEMENT is asked for instead (owner, 8 Sep 2026).
+ *
+ * ⚠ **Not a variation on `BASE_MANDATORY` — a different question.** A
+ * statement has no supplier and no single total; `readiness.ts` exempts it
+ * from READY on exactly that ground, which left every imported statement
+ * being told it needed a Supplier, a Total and a Category it can never have.
+ * A statement is filed by whose account it is, which period it covers and its
+ * own number. The invoice-shaped fields belong to the receipts that answer its
+ * transactions, one lane over.
+ *
+ * These are LABELS from `api/document-detail.ts`'s statement table, matched by
+ * value the way `BASE_MANDATORY` is — the same join, the same fragility, and
+ * the same reason it is written once.
+ */
+export const STATEMENT_REQUIRED = ['Account holder', 'Statement date', 'Statement number'];
 export const OPTIONAL_MANDATORY = ['Tax amount', 'Invoice number', 'Project', 'Customer reference'];
 
 /** Which required fields a document is still missing. */

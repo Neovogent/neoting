@@ -19,6 +19,19 @@ test('⚠ the incident, verbatim: American Burger Ltd is not Zeplow Inc', () => 
   expect(finding?.detail).toContain('Zeplow Inc');
 });
 
+test('the sentence says NOTHING WAS IMPORTED, and names the way through', () => {
+  // ⚠ The owner reversed this on 8 Sep 2026: a statement naming another
+  // company is REFUSED, not imported-and-flagged. Two things have to be true
+  // of the words, or the rule is a wall rather than a gate — it must say the
+  // books are untouched, and it must name the trading-name route for a
+  // business that genuinely banks under another name.
+  const finding = accountHolderFinding('American Burger Ltd', ['Zeplow Inc']);
+  expect(finding?.detail).toContain('Nothing was imported');
+  expect(finding?.detail).toContain('trading name');
+  // And it never claims the transactions landed, which is what it used to say.
+  expect(finding?.detail).not.toContain('were imported here');
+});
+
 test('legal suffixes carry no identity — Ltd, Limited, PLC and "The" all strip', () => {
   expect(holderMatchesBusiness('American Burger Limited', ['American Burger Ltd'])).toBe(true);
   expect(holderMatchesBusiness('ZEPLOW PLC', ['Zeplow Inc'])).toBe(true);

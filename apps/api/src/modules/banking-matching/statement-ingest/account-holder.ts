@@ -116,9 +116,37 @@ export function accountHolderFinding(
   return {
     kind: 'accountHolderMismatch',
     sourceLine: null,
-    detail:
-      `This statement names “${presentable(accountHolder)}” as the account holder, ` +
-      `but this client is “${presentable(names[0]!)}”. Its transactions were imported here — `
-      + 'check the file was uploaded to the right client, and remove the statement if it was not.',
+    detail: holderRefusalText(accountHolder, names[0]!),
   };
+}
+
+/**
+ * The refusal an accountant reads when a statement is turned away for naming
+ * somebody else (owner, 8 Sep 2026).
+ *
+ * ⚠ **This REJECTS now, where it used to flag.** The old sentence ended
+ * *"its transactions were imported here — remove the statement if it was
+ * not"*, which is the D46 posture: flag, never block, the accountant decides
+ * after the fact. The owner overruled it for this one case and the reason is
+ * the blast radius: a receipt in the wrong client's books is one document a
+ * human will notice, and a STATEMENT is ninety-two bank lines that immediately
+ * become the client's reconciliation surface, their unexplained totals and
+ * their chase queue. Undoing that is `bank.remove-statement` — a proposal, an
+ * approval and a cascade — where refusing it costs one re-upload.
+ *
+ * ⚠ **So the sentence has to carry the way through, or the rule is a wall.**
+ * The comparison already accepts the client's TRADING NAME as well as its
+ * registered one (`statement-step.ts` passes both), so a business genuinely
+ * banking under another name has a one-field fix and the refusal names it.
+ * Without that clause this is the "unacceptable documents are flagged, never
+ * blocked" failure D46 exists to prevent.
+ */
+export function holderRefusalText(accountHolder: string, clientName: string): string {
+  return (
+    `This statement names “${presentable(accountHolder)}” as the account holder, ` +
+    `but this client is “${presentable(clientName)}”. Nothing was imported — no transaction ` +
+    'from this file has been added to the books. If that name is how this client banks, put it ' +
+    "in the client's trading name and upload the statement again; otherwise upload it to the " +
+    'client it belongs to.'
+  );
 }
