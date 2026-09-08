@@ -512,6 +512,17 @@ file's "reviewed bytes are the sent bytes" guarantee possible is unchanged:
 - **the text part is untouched**, so a client that strips HTML reads exactly
   what it read before.
 
+⚠ **One clause is dropped, and only from the HTML** (added after reading the
+first delivered chase, 8 Sep 2026). The body ends *"…on 31 Aug. Upload
+securely:"* and the button then says *Upload securely*, so the sent email read
+the call to action twice, one line apart. `dropLinkLabelClause` removes the
+trailing `Upload securely:` from the HTML rendering when the button is about to
+restate it verbatim — the exact label, at the very end, nowhere else. The SMS
+needs that clause (inline, before a bare URL, it IS the call to action) and the
+text part still carries it, so nothing is lost in either direction. That makes
+the HTML a rendering choice about whitespace AND one redundant lead-in; it is
+still not a re-composition, and `email-chase-sender.test.ts` pins both halves.
+
 `ChaseEmailTransport` grew `renderHtml`, handed in by `select-sms-sender.ts`
 for the same reason `parseAddress` is: a value import of the notifications seam
 from this module would close the runtime cycle the sender's header describes.

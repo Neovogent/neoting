@@ -139,6 +139,28 @@ const TRAILING_LINK = /https?:\/\/\S+$/;
 const LINK_LABEL = 'Upload securely';
 
 /**
+ * Drop the sentence's own "Upload securely:" when the BUTTON is about to say it.
+ *
+ * ⚠ Read the email that arrived on 8 Sep 2026 and this is the one thing wrong
+ * with it: *"...on 31 Aug. **Upload securely:** / [ Upload securely ] /
+ * https://..."*. The clause exists because the SMS has nowhere else to put the
+ * instruction: inline, before a bare URL, it IS the whole call to action. In the
+ * HTML the button is the call to action, and the clause becomes the same two
+ * words said twice, one line apart.
+ *
+ * ⚠ **Only the exact label, only at the very end, and only in the HTML part.**
+ * The text part keeps the approved sentence whole, so a client that strips HTML
+ * still reads the instruction it needs. Nothing is lost by dropping it here — the
+ * words it removes are restated verbatim on the button directly beneath.
+ */
+function dropLinkLabelClause(sentence: string): string {
+  const clause = `${LINK_LABEL}:`;
+  return sentence.toLowerCase().endsWith(clause.toLowerCase())
+    ? sentence.slice(0, -clause.length).trimEnd()
+    : sentence;
+}
+
+/**
  * The chase email's HTML part (item 4, 8 Sep 2026).
  *
  * > *"A bank statement request email should look like a bank statement asking
@@ -166,7 +188,7 @@ const LINK_LABEL = 'Upload securely';
  */
 function renderChaseEmailHtml(transport: ChaseEmailTransport, body: string): string {
   const link = TRAILING_LINK.exec(body.trim())?.[0] ?? null;
-  const reflowed = link === null ? body : `${body.trim().slice(0, -link.length).trimEnd()}\n${link}`;
+  const reflowed = link === null ? body : `${dropLinkLabelClause(body.trim().slice(0, -link.length).trimEnd())}\n${link}`;
   return transport.renderHtml({
     subject: CHASE_EMAIL_SUBJECT,
     body: reflowed,
