@@ -15,7 +15,6 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { dateField, type Page, type PageRequest, pageQuery, toPage } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
-import { assertCan, resolveActor } from '../approvals/index.js';
 import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
 import { type MembershipRow, toBusinessMember, toInvite } from './projections.js';
 import { buildSetupLink, hashSetupToken, mintSetupToken, setupLinkExpiry } from './setup-link.js';
@@ -185,10 +184,22 @@ export class TeamService {
     }
 
     await scopedDb(this.prisma, ctx, async (db) => {
-      // The same predicate every other client-profile act goes through, read
-      // from approvals' seam rather than re-derived (`assert-can.ts`).
-      assertCan(await resolveActor(db, ctx), 'business.profile.manage');
-
+      // ⚠ **NO ROLE GATE, and the first attempt at one was a live defect.**
+      // This shipped behind `business.profile.manage`, which is
+      // `role === 'BUSINESS_ADMIN'` — a CLIENT-side portal role. The practice
+      // admin correcting their own client's address was refused by their own
+      // product: *"Only an owner at your business can change its own details.
+      // Ask them."* Told to the accountant, about their client, that sentence
+      // is not merely wrong, it is advice they cannot act on.
+      //
+      // The honest gate is the one INTAKE has, because it is the same act:
+      // `POST /businesses` sets this very field for a brand-new client and
+      // checks no role at all. A practice member who can create a client with
+      // any address can obviously correct one. What confines them is RLS —
+      // this runs inside `scopedDb`, so the client has to be their practice's
+      // before the query can see it, which is the guarantee that actually
+      // matters here.
+      //
       // ⚠ `updateMany`, not `update`: the primary contact is addressed by
       // (business, is_primary) rather than by id, and `updateMany` returns a
       // COUNT — which is how a client whose intake predates the primary flag,
