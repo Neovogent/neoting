@@ -100,6 +100,10 @@ function liveDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
       { label: 'Category', value: '—', confidence: 1, provenance: 'AI suggested: extraction' },
     ],
     lineItems: [{ description: LONG_DESCRIPTION, quantity: 150, total: 22500, tax: 0 }],
+    // The fixture document is a USD invoice (see `doc` above), so its line
+    // items must print in USD — the 8 Sep 2026 defect, found on a live BDT
+    // receipt whose items read `1 × £257.14`.
+    currency: 'USD',
     state: 'TO_REVIEW',
     businessId: 'biz_burger',
     // The default is the world before this change: an uncoded document with
@@ -363,6 +367,19 @@ test('the panel exists only for To Review documents', () => {
   renderPreview();
 
   expect(screen.queryByText('Path to Ready')).toBeNull();
+});
+
+test("a line item is priced in the DOCUMENT's currency, never the £ default", () => {
+  // ⚠ Found on live, 8 Sep 2026: a BDT receipt whose items read `1 × £257.14`.
+  // The number was right and the symbol was a lie, which is the worse half —
+  // the same defect `moneyDisplay` fixed for the field rows one block above,
+  // in the one block that still called the £-defaulted helper.
+  detail = liveDetail();
+  renderPreview();
+
+  // 22,500 over 150 units, in the fixture's own USD.
+  expect(screen.getByText(/150 × \$150\.00/)).toBeTruthy();
+  expect(screen.queryByText(/150 × £150\.00/)).toBeNull();
 });
 
 test('truncated values carry their full text as titles', () => {
