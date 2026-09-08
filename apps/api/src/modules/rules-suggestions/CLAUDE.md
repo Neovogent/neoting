@@ -943,3 +943,44 @@ approves. There is no shortcut and no second door.
 - [ ] The versioned, evaluated §24.4 **context pack**. `profiles.ts` is the seed
       data it will consume, not a substitute for it.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## A basis may not contradict the account it codes to (8 Sep 2026)
+
+Found on the live walk: a card showing a document coded to a **Fixed assets**
+account with *"hardware below this practice's capitalisation threshold"*
+printed underneath as the reason it was coded that way. Below the threshold is
+precisely the finding that makes something **not** capital, so the sentence and
+the coding could not both be true — and the accountant reading it had no way to
+tell which half had gone wrong.
+
+Three pieces, all in `coding/`:
+
+- **`BASIS_TREATMENT`** (`capital-revenue.ts`) — the capital/revenue verdict a
+  basis ALREADY CONTAINS, or `null`. A basis is not decoration: several are a
+  whole accounting argument compressed to one token.
+  `HARDWARE_PER_UNIT_BELOW_THRESHOLD` says *expense it*;
+  `PERPETUAL_LICENCE_CAPITALISED` says *capitalise it*. `null` is the honest
+  entry for the escalations (whose whole point is that the question is NOT
+  settled) and the weak signals (a keyword hit, a supplier name, the client's own
+  history, the trade read), which can land either side.
+- **`treatmentOfLedger`** — `Fixed assets` IS capital. That is a fact about this
+  product's own chart, where a basis and a stated treatment are both claims made
+  about one document, which is what makes the account the side to trust.
+- **The enforcement, in `parseModelCodingSuggestion`** — the fourth refusal,
+  beside the three that function's header already lists. `treatment` is taken
+  from the account's ledger rather than from `value.treatment` (which defaulted
+  to `REVENUE` whenever a model omitted it, quietly labelling capitalised kit an
+  expense), and a basis carrying the opposite verdict is downgraded to
+  `INDUSTRY_CONTEXT_REASONING` — the `SUPPLIER_MEMORY` move one line up, for the
+  same reason: **the card may not print an authority the answer does not
+  support.** The SUGGESTION still stands; the code may well be right.
+
+⚠ **`capital-revenue.test.ts` asserts `BASIS_TREATMENT` against the
+deterministic rung's own `code(...)` pairings, and that test is load-bearing.**
+If the table were wrong the refusal above would start rejecting CORRECT answers
+— the guard becoming the defect. A second test pins the other half: every
+account the rules pick agrees with the treatment beside it.
+
+**`accountCatalogue` joined the seam** in the same change, for
+`modules/documents`' category labels — see that module's file for why the
+catalogue and not `ChartOfAccountsService`.
