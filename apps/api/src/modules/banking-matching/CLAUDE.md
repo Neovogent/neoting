@@ -709,3 +709,28 @@ executor writes `matches` and `bank_transactions` through the engine's
       since it landed on 29 Aug. Every other controller already injected by
       token; this one now matches.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+
+## Every real statement was unreadable, and the reason was six characters (8 Sep 2026 — items 10 and 13)
+
+Three uploads of the same PDF, two channels, one message: *"No transaction table
+was found. A statement needs a header row naming a date column and either an
+amount column or paid-in/paid-out columns."* Textract had read the document
+perfectly. The failure was in `statement-parser.ts`'s `findMapping`.
+
+The bank's own headers are `Money Out (GBP)`, `Money In (GBP)`, `Balance (GBP)`
+— Kestrel, and Barclays and Starling and every other UK bank that states its
+unit. The header regexes are ANCHORED, so `money out` matched and
+`money out (gbp)` did not: the parser found a date column, no amount column of
+any kind, walked all 25 candidate rows and reported `noHeaderRow`.
+
+Two fixes, both deterministic and both pinned by a regression test built from
+the statement that failed:
+
+- **`headerText(cell)`** strips a currency qualifier before matching — a known
+  code or symbol, in parentheses or bare. The vocabulary stays CLOSED: `Amount
+  (net)` is left unmatched, because "net" is not a currency and a header this
+  file does not understand must stay unknown rather than be guessed at.
+- **`parseStatementDate` accepts a two-digit year in the named form** — `01 Aug
+  26` is what that statement prints on every line, and without it every row
+  would have been skipped for having no date once the columns were found.

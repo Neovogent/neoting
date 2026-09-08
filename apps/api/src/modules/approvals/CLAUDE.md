@@ -969,3 +969,32 @@ documents:
 still unreachable until `POST .../review`, the hash is still computed over the
 render, and the executor still reads live rows. What changed is only what the
 human is shown — which is the whole product of this module.
+
+
+## `chase.send` left the release tier (8 Sep 2026 — item 3)
+
+> *"Only publishing an entry will require approval by default; a normal email
+> chase is going under approval [and should not]."* — the owner, live pass 3
+
+`RELEASE_KINDS['chase.send']` is `false`. D44's sentence named two outward acts
+and this table priced them the same; the owner has separated them, and the
+distinction survives inspection: a published entry changes the books and cannot
+be recalled, while a chase asks a client for a document they already owe — the
+daily work of the person doing the bookkeeping, made to wait for the firm's
+principal.
+
+⚠ **The spine did not move.** A chase still mints a proposal, still records Read
+review with its hash, still echoes that hash at Approve, still executes exactly
+once and still writes the audit row — and `action_proposals_guard()` still
+enforces it in the database. This table only ever legislated WHOSE signature the
+record carries.
+
+`approvalAction` therefore names `publish.release` for `publish.batch` alone.
+The `publish.release` refusal still carries a chase-shaped sentence, which is
+now unreachable through the engine and kept because `assertCan` is a public
+seam other callers may reach with that resource.
+
+`apps/web/src/api/proposals.ts`'s `NEEDS_RELEASE_AUTHORITY` is the mirror and
+moved with it; `LiveProposalFlow` additionally auto-opens the review for any
+TIER-2 kind, so an accountant's chase never sits in a queue waiting for someone
+who is not required.

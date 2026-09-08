@@ -225,3 +225,33 @@ Everything in `apps/api/CLAUDE.md`, plus: if you touch the checkout parameters,
 **re-run the probe in `docs/runbooks/stripe-billing.md` §4** and confirm
 subtotal/tax/total are still 850/170/1020. The unit tests pin the request
 shape; only the API can tell you the shape is *accepted*.
+
+
+## The webhook tells the practice when a client finishes (8 Sep 2026 — item 2)
+
+> *"Registered as client — no notification received via email or portal
+> notification system for the accounting firm."*
+
+`applySubscription` compares the stored status against the incoming one and,
+on the transition INTO `ACTIVE`/`TRIALING`, does two things:
+
+1. writes a `notifications` row (`event: 'client.registered'`) **in the same
+   transaction as the subscription**, so the bell can never name a state that
+   was rolled back — the `portal-upload-notifier.ts` / ingest-sink shape,
+   practice-wide with no `recipientUserId`;
+2. emails the practice OWNER (`memberships.is_owner`, resolved outside RLS the
+   way `resolveSystemActor` reads the actor tables) through the notifications
+   seam's new `sendClientRegistered`.
+
+⚠ **It is a TRANSITION, not a heartbeat.** Renewals, card updates and plan
+changes all arrive as `customer.subscription.updated`; telling a practice their
+client "finished setting up" once a month is how a signal becomes noise.
+
+⚠ **The email failing must never fail the webhook.** It runs outside the
+transaction and its refusals are logged: the subscription is live at Stripe and
+live here, and reporting a mail-transport problem back to Stripe would earn a
+retry storm. The `notifications` row is the record; the email is the copy.
+
+The notifier is an OPTIONAL constructor argument, so a composition root with no
+mail transport (and every unit test) still applies subscriptions and still
+writes the row.

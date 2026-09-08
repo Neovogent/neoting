@@ -1463,3 +1463,33 @@ rather than derived from a role — the client's own owner grants it per person,
 so the column IS the rule. It is `canManageBilling`'s standing: a fact for
 honest degradation, never a gate. The portal hides the tick without it, because
 an upload that cannot be claimed is simply an upload.
+
+
+## The chase link opens the session on its own (8 Sep 2026 — item 4)
+
+**`PortalSessionCreateRequest.otp` is OPTIONAL.** The owner's ruling on the live
+pass: *"remove the OTP sent to email while the user is landing the site to
+submit a document requested by the accountant"*.
+
+The security argument agrees with him, and it is worth stating so nobody
+re-adds the step by reflex: in Initial Delivery the chase travels by EMAIL, and
+`POST /portal/sign-in-codes` sent the six digits to the same registered address
+the link had just arrived at. **Two secrets in one inbox is one factor asked for
+twice** — friction for a client standing at a filing cabinet, and nothing at all
+for the practice.
+
+What still holds the boundary is what always did the work:
+
+- the link is an HMAC over the chase id with its own expiry (`chase/portal-link.ts`);
+- it is sent only to the chase's registered recipient contact (D45);
+- the session it opens can read and write **only the items that one chase asked
+  for** — the delegated RLS policies are untouched.
+
+`createSession` verifies a code when one IS supplied, exactly as before: the
+attempt counter, the lockout and the single-use minted hash all still apply, so
+a caller holding a code loses nothing and a guesser gains nothing by sending
+one. A bad link is still the same uniform `401 NT-OTP-001`.
+
+⚠ **The BUSINESS portal is unchanged and must stay that way.** Its session is a
+whole workspace rather than one chase's items, and `POST /portal/sign-in-codes`
+is still how it is opened.

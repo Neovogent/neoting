@@ -331,3 +331,33 @@ person probing for it.
 refused verification **throws**, because a practice whose mail never left is an
 account that can never be used. A refused duplicate notice **does not**, because
 turning a rate-limited courtesy into a 500 tells the caller the address exists.
+
+
+## The chase email is a designed email now (8 Sep 2026 — item 4)
+
+Every message this module composes has gone out multipart with the shell since
+28 Aug. **The chase did not** — it is sent from `chase/email-chase-sender.ts`,
+which copies the approved SMS body into the envelope verbatim, so a client
+received one line of plain text with a 300-character signed URL run into the
+middle of the sentence. That is what "no HTML design, no body text, no footer,
+no button" was describing.
+
+`renderEmailHtml` is now exported from `index.ts` and handed to that sender
+through its transport factory (a VALUE import there would close the seam cycle
+its header describes). The sender composes NOTHING: it moves the trailing URL
+onto its own line — whitespace only — so the renderer turns it into a button,
+and passes the same bytes. The text part is untouched and still authoritative.
+
+**The shell gained a FOOTER** (divider + "Neo Accounting — sent on behalf of
+your accountant"). It is deliberately branding and nothing else: the standing
+rule is that a client stripping HTML loses styling and never content, so the
+only thing that may live HTML-only is the thing that carries no information.
+
+**`client-registered` is the eleventh kind** (item 2) — the first message in
+this module whose recipient is the PRACTICE rather than a client or a
+candidate colleague. Written by the Stripe webhook when a client's
+subscription goes live, which D48 makes the last step of their own onboarding
+— the same fact the client board reads to decide whether to print "Awaiting
+client registration", so the email and the badge cannot disagree. Ceiling 10
+per address per hour, the document-request ceiling: the volume is a function
+of how many clients a firm onboards and a stranger cannot aim it.

@@ -825,3 +825,13 @@ starts. The count is raised deliberately, not by a deploy.
 `compute.tf` grants `s3:PutObject` on `unroutable/*` — the quarantine path for
 mail whose recipient carries no usable practice tag, which
 `email-intake-runner.ts` has always logged and could not previously write.
+
+
+## `documentIntakeAddress` answers null for an absent from-address (8 Sep 2026)
+
+`GET /me` composes the practice's `doc+<id>@…` intake address from
+`env.EMAIL_FROM_ADDRESS`, and a composition root that leaves it unset reached
+`undefined.lastIndexOf` — a 500 on the session endpoint, which is the one call
+every screen makes first. The guard is in this function rather than at the call
+site: its whole contract is *"an address, or null"*, and a caller is entitled to
+rely on that without checking the environment first.
