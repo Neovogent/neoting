@@ -827,6 +827,7 @@ mail whose recipient carries no usable practice tag, which
 `email-intake-runner.ts` has always logged and could not previously write.
 
 
+
 ## `documentIntakeAddress` answers null for an absent from-address (8 Sep 2026)
 
 `GET /me` composes the practice's `doc+<id>@…` intake address from

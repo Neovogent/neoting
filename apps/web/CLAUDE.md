@@ -2963,6 +2963,7 @@ remembered absolute. That is this file's own standing rule, and it keeps cutting
 both ways.
 
 
+
 ## The third live pass (8 Sep 2026 — items 1, 5, 6, 7, 8, 9, 11, 12)
 
 Eight web-side items from driving the deployed product. Six are the shape the

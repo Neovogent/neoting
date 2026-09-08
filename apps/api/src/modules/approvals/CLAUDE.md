@@ -971,6 +971,7 @@ render, and the executor still reads live rows. What changed is only what the
 human is shown — which is the whole product of this module.
 
 
+
 ## `chase.send` left the release tier (8 Sep 2026 — item 3)
 
 > *"Only publishing an entry will require approval by default; a normal email

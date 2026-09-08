@@ -496,6 +496,7 @@ detection skips. Rows imported before the deploy keep the old verdict until the
 backfill re-derives them; it is idempotent and only ever flips false → true.
 
 
+
 ## The chase email carries an HTML part (8 Sep 2026 — item 4)
 
 `email-chase-sender.ts` sent `message.body` as plain text and nothing else.
