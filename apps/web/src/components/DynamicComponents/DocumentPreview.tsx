@@ -337,6 +337,13 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
    */
   const billedTo = billedToMismatch(doc, fields);
   const lineItems = live ? detail.lineItems : doc.lineItems;
+  // ⚠ THE DOCUMENT'S currency, never the £ default. A live BDT receipt printed
+  // its items as `1 × £257.14` — right number, wrong money — which is exactly
+  // what `moneyDisplay` was introduced to stop happening on the field rows
+  // above. Synthetic documents carry no currency and are sterling by
+  // construction, so the fallback is the seeded cast's truth rather than a
+  // guess about a real one.
+  const lineItemCurrency = live ? detail.currency : 'GBP';
   const metaText = intl.formatMessage(m.meta, { client: doc.clientName, date: doc.date, total: currency(doc.total, doc.currency) });
 
   /**
@@ -1132,7 +1139,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                       <span className="text-white font-bold shrink-0">
                         {intl.formatMessage(m.lineItemAmount, {
                           quantity: li.quantity,
-                          unit: currency(li.total / li.quantity),
+                          unit: currency(li.total / li.quantity, lineItemCurrency),
                         })}
                       </span>
                     </div>
