@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BankView, csvAmount, txnAmountLabel } from './BankView';
@@ -98,6 +98,12 @@ vi.mock('../components/DynamicComponents/ConfirmProvider', () => ({
   useConfirm: () => vi.fn(async () => false),
 }));
 
+const sendChaseNow = vi.fn(async () => ({}));
+vi.mock('../api/proposals', () => ({
+  sendChaseNow: (...args: unknown[]) => sendChaseNow(...(args as [])),
+  requestRemoveStatementsProposal: vi.fn(),
+}));
+
 function renderView() {
   return render(
     <AppIntlProvider>
@@ -191,5 +197,50 @@ describe('the CSV export', () => {
   it('labels agree with the helper the table cell uses', () => {
     expect(txnAmountLabel(txn({ id: 'x', amount: -543.98, isCredit: true }))).toBe('+£543.98');
     expect(txnAmountLabel(txn({ id: 'y', amount: 100, isCredit: false }))).toBe('£100.00');
+  });
+});
+
+/**
+ * ⚠ **The outcome has to be where the button is** (owner, 8 Sep 2026:
+ * *"clicking on the bottom chase for evidence button not working"*).
+ *
+ * It WAS working — create → review → approve all answered and the email went
+ * out. The bulk bar sits under the table and the banner sat over it, so on a
+ * 92-row feed the only sign of success was 55 rows above the button that had
+ * just been pressed. An accountant reads that as a dead button and presses it
+ * again, which is a second chase to a real client.
+ *
+ * So this pins the two things that fix it, and neither is about the send: the
+ * banner comes AFTER the table in document order, and the seconds the three
+ * calls take are narrated rather than looking inert.
+ */
+describe('the chase outcome reaches the person who pressed the button', () => {
+  it('narrates the send and renders the result BELOW the table, next to the bulk bar', async () => {
+    sendChaseNow.mockClear();
+    let release!: () => void;
+    sendChaseNow.mockImplementationOnce(
+      () => new Promise<Record<string, never>>((resolve) => { release = () => resolve({}); }),
+    );
+
+    const { container } = renderView();
+    // ⚠ `DataTable`'s tick is a `<button aria-pressed>` with NO accessible
+    // name, so there is no role or label to query it by — hence the attribute.
+    // (That is its own a11y defect, noted rather than fixed here.) Index 0 is
+    // the header's select-all; index 1 is the first data row, which is an
+    // unexplained line and therefore chaseable.
+    fireEvent.click(container.querySelectorAll('[aria-pressed]')[1]!);
+    fireEvent.click(screen.getByRole('button', { name: /Chase for evidence/i }));
+
+    // While the three calls are in flight the screen says so.
+    const sending = await screen.findByText(/Sending the chase/i);
+    // ⚠ AFTER the table, not before it — the whole point.
+    const table = container.querySelector('table')!;
+    expect(table.compareDocumentPosition(sending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    release();
+    await waitFor(() => expect(screen.getByText(/Chase sent for/i)).toBeTruthy());
+    const settled = screen.getByText(/Chase sent for/i);
+    expect(table.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sendChaseNow).toHaveBeenCalledTimes(1);
   });
 });

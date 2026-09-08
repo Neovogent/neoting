@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Landmark, Search, Link2, Unlink, Send, UploadCloud, SlidersHorizontal,
   AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus, Trash2,
@@ -150,6 +150,12 @@ const m = defineMessages({
   // 2026 (item 3): `chase.send` left the release tier, so this act finishes
   // where it is performed. The proposal, the rendered review and the audit row
   // are all still written — the sentence names where to find them.
+  // The three calls behind one click take a couple of seconds against a real
+  // API, and an inert button for that long reads as a broken one.
+  chaseSending: {
+    id: 'bank.bankView.chaseSending',
+    defaultMessage: 'Sending the chase…',
+  },
   chaseQueued: {
     id: 'bank.bankView.chaseQueued',
     defaultMessage:
@@ -450,8 +456,25 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
    * so the record is unchanged and only the wait is gone.
    */
   const [chaseOutcome, setChaseOutcome] = useState<
-    { kind: 'queued'; count: number } | { kind: 'failed'; label: string } | null
+    { kind: 'sending' } | { kind: 'queued'; count: number } | { kind: 'failed'; label: string } | null
   >(null);
+  /**
+   * ⚠ **The outcome has to find the person who caused it** (owner, 8 Sep 2026:
+   * *"clicking on the bottom chase for evidence button not working"* — it was
+   * working; create → review → approve all answered 201/200/200 and the email
+   * went out). The bulk bar sits UNDER the table and this banner sat OVER it,
+   * so on a 92-row feed the only sign of success was 55 rows above the button
+   * that had just been pressed. Silence is indistinguishable from a dead
+   * button, so the accountant presses it again.
+   *
+   * The banner now renders directly beneath the table — inches from the bulk
+   * bar — and scrolls itself into view for the other caller, the match
+   * dialog's "Chase for it", which closes over whatever row was mid-screen.
+   */
+  const outcomeRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (chaseOutcome !== null) outcomeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [chaseOutcome]);
   const stageLiveChase = async (sel: readonly BankTransaction[]) => {
     const chaseable = sel.filter((t) => isUnexplained(t));
     if (chaseable.length === 0) {
@@ -464,7 +487,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       ids.push(t.id);
       byBusiness.set(t.clientId, ids);
     }
-    setChaseOutcome(null);
+    setChaseOutcome({ kind: 'sending' });
     try {
       for (const [businessId, ids] of byBusiness) {
         await sendChaseNow(businessId, ids);
@@ -1023,16 +1046,6 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 )}
               </AnimatePresence>
 
-              {chaseOutcome !== null && (
-                <p
-                  role={chaseOutcome.kind === 'failed' ? 'alert' : 'status'}
-                  className={`text-[12px] font-semibold mb-3 ${chaseOutcome.kind === 'failed' ? 'text-amber-400' : 'text-brand'}`}
-                >
-                  {chaseOutcome.kind === 'queued'
-                    ? intl.formatMessage(m.chaseQueued, { count: chaseOutcome.count })
-                    : chaseOutcome.label}
-                </p>
-              )}
               <DataTable<BankTransaction>
                 className="max-w-none"
                 columns={txnColumns}
@@ -1067,6 +1080,19 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 ]}
                 footer={intl.formatMessage(m.transactionsFooter, { count: scopedTxns.length, unmatched: unmatchedCount })}
               />
+              {chaseOutcome !== null && (
+                <p
+                  ref={outcomeRef}
+                  role={chaseOutcome.kind === 'failed' ? 'alert' : 'status'}
+                  className={`text-[12px] font-semibold mt-3 ${chaseOutcome.kind === 'failed' ? 'text-amber-400' : 'text-brand'}`}
+                >
+                  {chaseOutcome.kind === 'sending'
+                    ? intl.formatMessage(m.chaseSending)
+                    : chaseOutcome.kind === 'queued'
+                      ? intl.formatMessage(m.chaseQueued, { count: chaseOutcome.count })
+                      : chaseOutcome.label}
+                </p>
+              )}
             </>
           )}
 

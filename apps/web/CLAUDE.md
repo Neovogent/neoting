@@ -3055,3 +3055,34 @@ still names Approvals as where the record lives.
 review for any tier-2 kind). That is the path for a chase whose wording the
 accountant wants to see; these three are the ones where the selection IS the
 form and a queue was pure ceremony.
+
+
+### The chase outcome moved to where the button is (8 Sep 2026)
+
+> *"clicking on the bottom chase for evidence button not working"* — the owner
+
+**It was working.** Driven live on a 92-row feed: `POST /action-proposals`
+201, `…/review` 200, `…/approval` 200, and the email left. What did not work
+was the reporting. `BankView`'s bulk bar sits UNDER the table and
+`chaseOutcome` rendered OVER it, so the only sign of success was 55 rows above
+the button that had just been pressed — and the three calls take a couple of
+seconds during which nothing changed at all.
+
+Silence is indistinguishable from a dead button, and the recovery an
+accountant reaches for is pressing it again, which is a second real chase to a
+real client.
+
+Two changes, neither of them about the send:
+
+- **the banner renders after `<DataTable>`**, inches from the bulk bar, and
+  `outcomeRef.scrollIntoView({ block: 'nearest' })` fires when an outcome
+  appears — for the OTHER caller, the match dialog's "Chase for it", which
+  closes over whatever row was mid-screen;
+- **`{ kind: 'sending' }` joined the outcome union** so the wait is narrated
+  rather than looking inert.
+
+`BankView.test.tsx` pins both, and the placement assertion is
+`compareDocumentPosition` against the table — jsdom computes no layout, so
+document order is the only honest thing to assert. ⚠ The row tick is a
+`<button aria-pressed>` with **no accessible name**, so the test queries it by
+attribute; that is its own a11y defect, noted rather than fixed.
