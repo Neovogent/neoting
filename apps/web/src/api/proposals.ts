@@ -88,7 +88,10 @@ export const NEEDS_RELEASE_AUTHORITY: Readonly<Record<ProposalKind, boolean>> = 
   // reasoning; the two must move together.
   'chase.send': false,
   'publish.batch': true,
-  'document.update-coding': true,
+  // ⚠ FALSE since 9 Sep 2026 — the owner's third correction took coding out of
+  // the release tier. Mirrors `RELEASE_KINDS['document.update-coding']`, which
+  // carries the reasoning; the two must move together.
+  'document.update-coding': false,
   'bank.remove-statement': true,
   'rule.create': true,
   'business.offboard': true,

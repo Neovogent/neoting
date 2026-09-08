@@ -75,7 +75,7 @@ test('no role other than PRACTICE_ADMIN may release, owner flag or not', () => {
  * promotion nobody meant is the failure mode, and only the whole list catches
  * one.
  */
-test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's nine", () => {
+test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's seven", () => {
   for (const kind of Object.values(ProposalKind)) {
     expect(typeof RELEASE_KINDS[kind]).toBe('boolean');
   }
@@ -90,17 +90,24 @@ test("the tier table is total over ProposalKind, and tier 1 is exactly the matri
   // ⚠ EIGHT since 8 Sep 2026: the owner took `chase.send` out (item 3). A
   // chase still mints a proposal and still records review → approve → audit;
   // what it no longer does is wait for the firm's principal.
+  // ⚠ SEVEN since 9 Sep 2026: `document.update-coding` went the same way, on
+  // the owner's third statement of the same rule — "no approval for anything
+  // except when the document is going for publishing". Coding a document is
+  // the bookkeeper's own daily work; publishing it is still the principal's.
   expect(tier1).toEqual([
     'bank.remove-statement',
     'business.offboard',
     'business.reactivate',
     'document.purge',
-    'document.update-coding',
     'policy.activate',
     'publish.batch',
     'rule.create',
   ]);
   expect(requiresReleaseAuthority('chase.send')).toBe(false);
+  expect(requiresReleaseAuthority('document.update-coding')).toBe(false);
+  // ⚠ The one that must NOT move. Publishing is the act the owner has kept
+  // behind a signature every time he has narrowed this table.
+  expect(requiresReleaseAuthority('publish.batch')).toBe(true);
 });
 
 test('document.purge is TIER 1 since item 66 — and the executor refusal still binds the super admin', () => {

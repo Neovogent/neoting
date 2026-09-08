@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { AlertTriangle, PencilLine } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Check } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { defineMessages, useIntl } from 'react-intl';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
-import { holdsReleaseAuthority } from '../../api/auth';
 import { refreshDocument, updateCodingProposal } from '../../api/document-detail';
-import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import type { Document } from '../../lib/types';
 
 const m = defineMessages({
@@ -19,31 +17,14 @@ const m = defineMessages({
   enforcement: {
     id: 'documents.codingProposal.enforcement',
     defaultMessage:
-      'Approving files this as a correction: the value becomes human-confirmed, the original stays immutable, and the server refuses an approval whose review was never opened.',
+      'Filed as a correction: the value is human-confirmed, the original stays immutable, and the change is recorded against your name.',
   },
-  enforcementQueued: {
-    id: 'documents.codingProposal.enforcementQueued',
-    defaultMessage:
-      'A change to a document’s figures or coding is released by your practice’s super admin. This queues it for them with the original untouched — nothing on the document changes until they approve it.',
-  },
-  approve: { id: 'documents.codingProposal.approve', defaultMessage: 'Approve change' },
-  /**
-   * ⚠ Items 24 + 66. `document.update-coding` is TIER 1 now, so a member who
-   * cannot release STAGES this correction rather than applying it — and the
-   * button has to say which. "Approve change" on a click that queues would be
-   * the same lie in the other direction from item 24's lecture.
-   */
-  stage: { id: 'documents.codingProposal.stage', defaultMessage: 'Send for approval' },
+  applying: { id: 'documents.codingProposal.applying', defaultMessage: 'Applying {field}…' },
   success: {
     id: 'documents.codingProposal.success',
-    defaultMessage: 'Correction approved — {field} is now human-confirmed.',
-  },
-  staged: {
-    id: 'documents.codingProposal.staged',
-    defaultMessage: 'Sent for approval — {field} changes when your practice’s super admin approves it.',
+    defaultMessage: '{field} is now {value} — human-confirmed.',
   },
   auditAction: { id: 'documents.codingProposal.auditAction', defaultMessage: 'Corrected document coding' },
-  auditStaged: { id: 'documents.codingProposal.auditStaged', defaultMessage: 'Sent a coding correction for approval' },
   auditScope: { id: 'documents.codingProposal.auditScope', defaultMessage: '{supplier} · {field}: {from} → {to}' },
   failedAudit: { id: 'documents.codingProposal.failedAudit', defaultMessage: 'Coding correction was refused' },
   supplierUnread: { id: 'documents.codingProposal.supplierUnread', defaultMessage: 'No supplier read' },
@@ -78,9 +59,9 @@ const UNREAD_PARTY = new Set(['', '—', 'Unknown']);
 
 /**
  * The edit-a-field flow, live (METH S7): a typed correction becomes a real
- * `document.update-coding` proposal — created, reviewed, approved — through
- * the same `ReviewGate` every state change in the workspace uses, so Approve
- * cannot mount before Read review here either.
+ * `document.update-coding` proposal — created, reviewed, approved — driven in
+ * that order behind the one click that opened this card. Since 9 Sep 2026 the
+ * kind is tier 2, so there is no second signature to wait for and no gate.
  *
  * The S11 pattern: the local update is optimistic (the click feels instant),
  * the refetch afterwards replaces it with server truth, so a refusal corrects
@@ -100,38 +81,29 @@ export default function CodingProposalCard({
   nextValueLabel,
   fields,
   warnings = [],
-  onEdit,
   onSettled,
 }: {
   document: Document;
   fieldLabel: string;
   currentValue: string;
   nextValue: string;
-  /**
-   * What to SHOW for the new value, when the value itself is a code.
-   *
-   * ⚠ 7 Sep 2026, found live: the suggestion card offered "Expenses: Repairs
-   * and maintenance" and the review card a person then reads before approving
-   * said `REPAIRS_AND_MAINTENANCE`. Same decision, two vocabularies, and the
-   * second one is the screen the approval is echoed from. The VALUE written
-   * and audited is unchanged — this is display only, and `auditScope` below
-   * deliberately keeps the raw code.
-   */
+  /** What to SHOW for the new value, when the value itself is a code. */
   nextValueLabel?: string | undefined;
   fields: UpdateCodingPayload['fields'];
+  /** The deterministic checks that fired on this correction, restated here so
+      the person who chose Ignore can still see what they overrode. */
+  warnings?: string[];
   /**
    * Checks the person already chose to IGNORE in the warning step
    * (`CodingProposalModal`). Restated on the review itself so the last thing
    * read before Approve still carries them — the server puts the same checks
    * on the proposal's own review render.
    */
-  warnings?: string[];
   /**
    * Makes [Edit] mean something: the host takes the correction back to the
    * field it came from. Without it the button only collapses the review, which
    * reads as a dead control (see `ReviewGate`).
    */
-  onEdit?: () => void;
   /**
    * Fired when the proposal call SETTLED SUCCESSFULLY — review item 20.
    *
@@ -145,13 +117,28 @@ export default function CodingProposalCard({
   onSettled?: () => void;
 }) {
   const intl = useIntl();
-  const { updateDocumentField, logAudit, session } = useAppContext();
-  // D44, items 24 + 66 — the one shared fact (`api/auth.ts`). It decides three
-  // things together: which button word, whether the value is painted
-  // optimistically, and whether the third call is made at all.
-  const canRelease = holdsReleaseAuthority(session);
+  const { updateDocumentField, logAudit } = useAppContext();
   const queryClient = useQueryClient();
   const [refused, setRefused] = useState<string | null>(null);
+  const [applied, setApplied] = useState(false);
+  /**
+   * ⚠ **Applied on mount, and that is the whole change of 9 Sep 2026.**
+   *
+   * > *"No approval will be required for anything, except for when the document
+   * > is going for publishing."* — the owner, third time of asking.
+   *
+   * `document.update-coding` left the release tier with that ruling, so there
+   * is no second signature left to collect and a Read review → Approve dialog
+   * here would be asking the same person to agree with themselves. The three
+   * server calls still happen in order behind this one click — created,
+   * reviewed with its hash recorded, approved echoing that hash — exactly as
+   * `sendChaseNow` does since the same ruling was made for chases. What is gone
+   * is the WAIT, not the record.
+   *
+   * The ref makes it fire at most once: this card is remounted by the modal's
+   * warning step, and a correction applied twice is a second proposal.
+   */
+  const fired = useRef(false);
 
   // One substitution point, so the subtitle and the audit line can never
   // disagree about which document was corrected.
@@ -159,16 +146,24 @@ export default function CodingProposalCard({
     ? intl.formatMessage(doc.kind === 'sales' ? m.customerUnread : m.supplierUnread)
     : doc.supplier;
 
-  const approve = () => {
+  const apply = () => {
     setRefused(null);
-    // ⚠ Optimistic ONLY when this session can release (items 24 + 66). A member
-    // who is staging has changed nothing yet, and painting the new value onto
-    // the document would show them a correction the super admin has not
-    // approved — the 5 s poll would take it away again a moment later, which is
-    // exactly the "a write the next poll reverts" failure the S14 sweep swept.
-    if (canRelease) updateDocumentField(doc.id, fieldLabel, nextValue);
-    void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields }, { canRelease })
-      .then(() => onSettled?.())
+    // Optimistic: the correction applies on this click now, so painting it is
+    // telling the truth. The refetch below still replaces it with server truth,
+    // which is what corrects the screen if the server refuses.
+    updateDocumentField(doc.id, fieldLabel, nextValue);
+    void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields }, { canRelease: true })
+      .then(() => {
+        // ReviewGate used to write this line on the approve it no longer shows.
+        // The record is the half the owner did NOT ask to lose.
+        logAudit({
+          action: intl.formatMessage(m.auditAction),
+          scope: intl.formatMessage(m.auditScope, { supplier: party, field: fieldLabel, from: currentValue, to: nextValue }),
+          reviewOpened: true,
+        });
+        setApplied(true);
+        onSettled?.();
+      })
       .catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : 'unknown error';
         // On the CARD as well as in the audit log — the gate has already shown
@@ -186,6 +181,13 @@ export default function CodingProposalCard({
       });
   };
 
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    apply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (refused !== null) {
     return (
       <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">
@@ -198,40 +200,37 @@ export default function CodingProposalCard({
   }
 
   return (
-    <ReviewGate
-      icon={PencilLine}
-      title={intl.formatMessage(m.title)}
-      subtitle={intl.formatMessage(m.subtitle, { supplier: party, field: fieldLabel })}
-      detail={
-        <ReviewSection title={intl.formatMessage(m.changeHeading)}>
-          {warnings.length > 0 && (
-            <div role="alert" className="mb-3 rounded-xl border border-amber-400/25 bg-amber-400/5 p-3">
-              {warnings.map((warning) => (
-                <p key={warning} className="flex items-start gap-2 text-[12px] text-amber-400 leading-relaxed">
-                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                  {warning}
-                </p>
-              ))}
-            </div>
-          )}
-          <ReviewRows
-            rows={[
-              { label: intl.formatMessage(m.rowField), value: fieldLabel },
-              { label: intl.formatMessage(m.rowCurrent), value: currentValue },
-              { label: intl.formatMessage(m.rowNew), value: nextValueLabel ?? nextValue },
-            ]}
-          />
-          <p className="mt-3 text-[12px] text-zinc-500 leading-relaxed">
-            {intl.formatMessage(canRelease ? m.enforcement : m.enforcementQueued)}
-          </p>
-        </ReviewSection>
-      }
-      approveLabel={intl.formatMessage(canRelease ? m.approve : m.stage)}
-      successMessage={intl.formatMessage(canRelease ? m.success : m.staged, { field: fieldLabel })}
-      auditAction={intl.formatMessage(canRelease ? m.auditAction : m.auditStaged)}
-      auditScope={intl.formatMessage(m.auditScope, { supplier: party, field: fieldLabel, from: currentValue, to: nextValue })}
-      onApprove={approve}
-      {...(onEdit ? { onEdit } : {})}
-    />
+    <div className="p-4 rounded-2xl border border-white/5 bg-card">
+      {/* Which document and which field — the line the review subtitle used to
+          carry. It is the only thing on this card that says WHAT was corrected,
+          and the "No supplier read" work exists because it has to stay true
+          when the supplier was never read. */}
+      <h4 className="text-[14px] font-bold text-white" title={intl.formatMessage(m.title)}>
+        {intl.formatMessage(m.title)}
+      </h4>
+      <p
+        className="text-[12px] font-semibold text-zinc-400 mb-2 mt-0.5"
+        title={intl.formatMessage(m.subtitle, { supplier: party, field: fieldLabel })}
+      >
+        {intl.formatMessage(m.subtitle, { supplier: party, field: fieldLabel })}
+      </p>
+      <p className="flex items-start gap-2 text-[13px] font-semibold text-brand leading-relaxed">
+        <Check size={15} className="shrink-0 mt-0.5" />
+        {intl.formatMessage(applied ? m.success : m.applying, { field: fieldLabel, value: nextValueLabel ?? nextValue })}
+      </p>
+      {warnings.length > 0 && (
+        <div role="alert" className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/5 p-3">
+          {warnings.map((warning) => (
+            <p key={warning} className="flex items-start gap-2 text-[12px] text-amber-400 leading-relaxed">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[12px] text-zinc-500 leading-relaxed">
+        {intl.formatMessage(m.enforcement)}
+      </p>
+    </div>
   );
 }

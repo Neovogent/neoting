@@ -267,11 +267,9 @@ test('the Ready panel names the missing mandatory field and its edit stages the 
   fireEvent.keyDown(input, { key: 'Enter' });
 
   // The staged card is the Review → Approve gate: Approve is not mounted
-  // until Read review has been opened.
+  // ⚠ Since 9 Sep 2026 there is no gate here: the correction applies on open.
   expect(await screen.findByText('Update coding')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Approve change/ })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
-  fireEvent.click(screen.getByRole('button', { name: /Approve change/ }));
 
   expect(updateCodingProposal).toHaveBeenCalledExactlyOnceWith({
     businessId: 'biz_burger',
@@ -289,7 +287,7 @@ async function stageCategoryCorrection(value = '5100') {
   return screen.findByRole('dialog');
 }
 
-test('the staged correction is presented as a dialog, and Approve is STILL unmounted until Read review is opened', async () => {
+test('the correction is presented as a dialog, and applies on open with no gate to press', async () => {
   detail = liveDetail();
   renderPreview();
 
@@ -298,35 +296,42 @@ test('the staged correction is presented as a dialog, and Approve is STILL unmou
 
   const dialog = await stageCategoryCorrection();
 
-  // The gate is the gate, in the dialog exactly as it was inline: the review
-  // has not been opened, so [Approve change] does not exist to be pressed —
-  // and nothing has reached the network either.
+  // ⚠ TIER 2 since 9 Sep 2026 — coding left the release tier, so neither
+  // [Read review] nor [Approve change] exists to be pressed at all. The dialog
+  // reports what it did rather than asking permission to do it.
   expect(within(dialog).getByText('Update coding')).toBeTruthy();
+  expect(within(dialog).queryByRole('button', { name: /Read review/ })).toBeNull();
   expect(within(dialog).queryByRole('button', { name: /Approve change/ })).toBeNull();
-  expect(updateCodingProposal).not.toHaveBeenCalled();
 
-  fireEvent.click(within(dialog).getByRole('button', { name: /Read review/ }));
-  expect(within(dialog).getByRole('button', { name: /Approve change/ })).toBeTruthy();
+  // The three server calls ran behind the click that opened it.
+  expect(updateCodingProposal).toHaveBeenCalledTimes(1);
+  expect(updateCodingProposal).toHaveBeenCalledWith(
+    expect.objectContaining({ fields: expect.objectContaining({ categoryCode: '5100' }) }),
+  );
 });
 
-test('Escape closes the dialog, creates nothing, and leaves the correction re-stageable', async () => {
+test('Escape closes the dialog on a correction that has already applied', async () => {
+  // ⚠ **THIS IS THE COST OF THE 9 Sep RULING, recorded rather than hidden.**
+  // Until coding left the release tier, opening this dialog created nothing and
+  // Escape was a free way out. The click that opens it is now the decision, so
+  // Escape closes a dialog whose work is done — it does not undo it. That is
+  // what "no approval except publishing" means in this corner, and the way back
+  // is to correct the field again, which is a fresh correction with its own
+  // audit row.
   detail = liveDetail();
   renderPreview();
 
   await stageCategoryCorrection();
 
-  // The dialog owns the key through the useEscape stack.
+  // Applied on open — before any key is pressed.
+  expect(updateCodingProposal).toHaveBeenCalledTimes(1);
+
+  // The dialog still owns the key through the useEscape stack.
   fireEvent.keyDown(document, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-  // Closing undecided is free: the proposal is minted by Approve and by
-  // nothing else, so there is no pending record to cancel and no duplicate to
-  // mint on the next visit.
-  expect(updateCodingProposal).not.toHaveBeenCalled();
-
-  // The door is still open — the Path-to-Ready button stages it again.
-  const dialog = await stageCategoryCorrection();
-  expect(within(dialog).getByText('Update coding')).toBeTruthy();
+  // Closing does not mint a second one.
+  expect(updateCodingProposal).toHaveBeenCalledTimes(1);
 });
 
 test('the dialog carries the review header without clipping it — full title and subtitle, both keyboard reachable', async () => {
@@ -572,7 +577,7 @@ test('a SUGGESTION shows the code, its confidence and its working — and the Ca
   expect(screen.getByText(/Ready needs a value for Category/)).toBeTruthy();
 });
 
-test('accepting a suggestion goes through Read review → Approve — unchanged, and not shortcut', async () => {
+test('accepting a suggestion applies it on the spot — no second signature is owed', async () => {
   detail = liveDetail({ codingSuggestion: SUGGESTION });
   renderPreview();
 
@@ -582,8 +587,6 @@ test('accepting a suggestion goes through Read review → Approve — unchanged,
   // before the review is opened — it is not in the DOM.
   expect(await screen.findByText('Update coding')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Approve change/ })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
-  fireEvent.click(screen.getByRole('button', { name: /Approve change/ }));
 
   // The suggested CODE is what travels, never the analysis account label and
   // never a note — the same `UpdateCodingPayload` a typed correction carries.
@@ -691,7 +694,7 @@ test('a warned correction opens on the WARNING, not the review — Ignore procee
   const dialog = await stageCategoryCorrection();
 
   // The warning step, with exactly the two actions the ruling names — and no
-  // review affordance behind it: [Read review] is not in the DOM yet.
+  // review affordance behind it: nothing is pressable until Ignore is chosen.
   expect(within(dialog).getByText(/does not appear to be a financial document/)).toBeTruthy();
   expect(within(dialog).queryByRole('button', { name: /Read review/ })).toBeNull();
   expect(within(dialog).queryByRole('button', { name: /Approve change/ })).toBeNull();
@@ -702,9 +705,7 @@ test('a warned correction opens on the WARNING, not the review — Ignore procee
   // ignored warning inside it (the server puts the same checks on the
   // proposal's own review render).
   expect(await within(dialog).findByText('Update coding')).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole('button', { name: /Read review/ }));
   expect(within(dialog).getByRole('alert').textContent).toContain('does not appear to be a financial document');
-  fireEvent.click(within(dialog).getByRole('button', { name: /Approve change/ }));
 
   // Ignore proceeded with the ORIGINAL typed value — nothing was rewritten.
   expect(updateCodingProposal).toHaveBeenCalledExactlyOnceWith({

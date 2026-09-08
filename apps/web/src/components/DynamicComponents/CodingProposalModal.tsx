@@ -204,7 +204,6 @@ export default function CodingProposalModal({
           fields={fields}
           warnings={warnings}
           onSettled={dismissAfterConfirmation}
-          {...(onEdit ? { onEdit } : {})}
         />
       )}
     </Modal>

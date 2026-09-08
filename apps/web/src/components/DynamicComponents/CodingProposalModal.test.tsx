@@ -88,22 +88,26 @@ function renderModal(over: Partial<Document> = {}, onClose = vi.fn()) {
   return { onClose };
 }
 
-test('Approve is absent from the DOM until Read review is opened, and nothing is created before it is pressed', () => {
+test('the correction applies on open — there is no gate left to press', () => {
+  // ⚠ TIER 2 since 9 Sep 2026. The owner, third time of asking: "No approval
+  // will be required for anything, except for when the document is going for
+  // publishing." `document.update-coding` left the release tier with that
+  // ruling, so a Read review → Approve dialog here would be asking the same
+  // person to agree with themselves.
   renderModal();
 
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByText('Update coding')).toBeTruthy();
 
-  // Not merely disabled — not mounted. There is no Approve to press.
+  // The three server calls still run in order behind the one click that opened
+  // this card — created, reviewed with its hash recorded, approved echoing it.
+  // What is gone is the WAIT, not the record.
+  expect(updateCodingProposal).toHaveBeenCalledWith(expect.anything(), { canRelease: true });
+
+  // And no ceremony is left on screen pretending a second signature is owed.
+  expect(within(dialog).queryByRole('button', { name: /Read review/ })).toBeNull();
   expect(within(dialog).queryByRole('button', { name: /Approve change/ })).toBeNull();
-  expect(updateCodingProposal).not.toHaveBeenCalled();
-
-  fireEvent.click(within(dialog).getByRole('button', { name: /Read review/ }));
-
-  expect(within(dialog).getByRole('button', { name: /Approve change/ })).toBeTruthy();
-  // Opening the review still creates nothing: the proposal is minted by the
-  // Approve click and by nothing else, so closing undecided leaves no record.
-  expect(updateCodingProposal).not.toHaveBeenCalled();
+  expect(within(dialog).queryByRole('button', { name: /Send for approval/ })).toBeNull();
 });
 
 test('a document whose supplier has not been read says so, and never the literal word Unknown', () => {
@@ -180,33 +184,24 @@ test('Escape closes the dialog through the useEscape stack', () => {
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-/* ── items 24 + 66: a member STAGES, and the card says so ───────────────── */
+/* ── 9 Sep 2026: coding no longer waits for the super admin ─────────────── */
 
-test('a member who cannot release sends the correction for approval instead of applying it', () => {
-  // ⚠ `document.update-coding` became TIER 1 (matrix ⚖5, the literal reading of
-  // "any filed update like the category must need approval"). Before this the
-  // card ran create → review → approve behind one click and the third call
-  // answered 403, so the person read "That correction was NOT saved" about an
-  // act that WAS staged and IS in the queue.
+test('a member who is not the super admin applies the correction too', () => {
+  // ⚠ This REPLACES the stage-and-stop behaviour of items 24 + 66. Coding was
+  // tier 1 between 6 and 9 Sep, so a member staged and the firm's principal
+  // released. The owner has now taken coding out of the release tier, and the
+  // reason he gave for chases applies here twice over: the person correcting a
+  // category IS the bookkeeper, and making every category tap wait for the
+  // principal made the principal the bottleneck.
   isOwner = false;
 
   renderModal();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
-
-  // The button says what the click does, and the note says who releases.
-  expect(screen.queryByRole('button', { name: 'Approve change' })).toBeNull();
-  const stage = screen.getByRole('button', { name: 'Send for approval' });
-  expect(document.body.textContent).toContain('released by your practice’s super admin');
-
-  fireEvent.click(stage);
-
-  // It STAGES: the third call is never made, and the value is not painted onto
-  // the document — an optimistic update here would show a correction the super
-  // admin has not approved, which the next 5 s poll would take away again.
-  expect(updateCodingProposal).toHaveBeenCalledWith(expect.anything(), { canRelease: false });
-  expect(updateDocumentField).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain('Sent for approval');
+  expect(updateCodingProposal).toHaveBeenCalledWith(expect.anything(), { canRelease: true });
+  // The value is painted immediately, because it really does apply now.
+  expect(updateDocumentField).toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Send for approval' })).toBeNull();
+  expect(document.body.textContent).not.toContain('released by your practice’s super admin');
 });
 
 /* ── item 20: the dialog dismisses itself after the confirmation ─────────── */
@@ -220,12 +215,10 @@ test('the dialog shows the confirmation and then closes itself, backdrop and all
   vi.useFakeTimers();
   try {
     const { onClose } = renderModal();
-    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
 
     // The confirmation is READ first — it is on screen and the dialog is still
     // open. A dialog that vanishes on the click is the mirror-image defect.
-    expect(document.body.textContent).toContain('Correction approved');
+    expect(document.body.textContent).toContain('Applying');
     expect(onClose).not.toHaveBeenCalled();
 
     // Let the server call settle, then let the dwell elapse.
@@ -242,16 +235,14 @@ test('the dialog shows the confirmation and then closes itself, backdrop and all
 });
 
 test('⚠ a REFUSED correction keeps the dialog open — the red alert is the only place it is said', async () => {
-  // The dismissal fires on the server settle, never on the click, precisely
-  // because `ReviewGate` shows its banner optimistically and a refusal a moment
-  // later swaps the card to `failedOnCard`. Closing on the click would throw
-  // away the one screen telling somebody their correction was not saved.
+  // The dismissal fires on the SERVER SETTLE, never on mount, precisely because
+  // the card paints its confirmation optimistically and a refusal a moment
+  // later swaps it to `failedOnCard`. Closing early would throw away the one
+  // screen telling somebody their correction was not saved.
   updateCodingProposal.mockRejectedValueOnce(new Error('NT-PRP-006 — that category is not on the chart'));
   vi.useFakeTimers();
   try {
     const { onClose } = renderModal();
-    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
 
     await act(async () => {
       await Promise.resolve();

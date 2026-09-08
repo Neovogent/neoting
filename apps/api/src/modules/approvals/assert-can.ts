@@ -223,7 +223,27 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // cannot release must STAGE AND STOP rather than run
   // `updateCodingProposal`'s third call into a 403 and read "that correction
   // was NOT saved" about an act that was, in fact, queued.
-  'document.update-coding': true,
+  // ⚠ **TIER 2 since 9 Sep 2026 — the owner's third and final correction.**
+  //
+  // > *"No approval will be required for anything, except for when the document
+  // > is going for publishing. I have corrected this twice already. Now I'm
+  // > saying it for the third time."*
+  //
+  // Asked to choose between taking that literally and keeping the record while
+  // dropping the wait, he chose the literal reading. This is the same tier flip
+  // `chase.send` took on 8 Sep and it is made for the same reason: the person
+  // correcting a category is the person doing the bookkeeping, and making every
+  // category tap wait for the firm's principal made the principal the
+  // bottleneck on the second most frequent act in the product.
+  //
+  // ⚠ **What this flip does NOT change.** The proposal is still minted, Read
+  // review is still recorded server-side with its hash, the hash is still
+  // echoed at Approve, the executor still runs exactly once and the audit row
+  // is still written. Governance §10's spine is untouched — what moved is
+  // WHOSE signature the record carries, which is all this table legislates.
+  // The £9,000-of-tax argument above is answered by the review the server
+  // still renders and records, not by whose name is on it.
+  'document.update-coding': false,
   'document.route': false,
   'document.archive': false,
   'document.move-business': false,

@@ -12,6 +12,7 @@ import { compressImage } from '../../lib/capture';
 import type { CapturedPage } from '../../lib/capture';
 import { currency } from '../../lib/resolver';
 import { navigate, path } from '../../lib/router';
+import { PORTAL_ACCEPT } from './portalUploadRules';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 import { usePortalJourney } from './usePortalJourney';
 import type { PortalFault, UploadOutcome } from './usePortalJourney';
@@ -579,7 +580,7 @@ function Capture({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept={PORTAL_ACCEPT}
         className="hidden"
         onChange={(e) => {
           void take(e.target.files?.[0]);
