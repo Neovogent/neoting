@@ -51,6 +51,29 @@ describe('the coding rung, replayed', () => {
     expect(answer.basis).toBe('INDUSTRY_CONTEXT_REASONING');
   });
 
+  test('⚠ a café bill does NOT escalate — the owner’s +2 / -5 rule, held against the real model', async () => {
+    // His own screenshot, 8 Sep 2026: three items on a café bill came back with
+    // a blank Category and "nothing on this client's chart matches", while
+    // STAFF_WELFARE — keywords "staff refreshments, tea and coffee" — sat on
+    // that very chart unchosen. His ruling: a category is worth +2, no category
+    // -5, "I need category at any cost". The instructions say so now, and this
+    // is the recorded proof that the live model does it.
+    //
+    // The assertion is deliberately NOT `=== 'STAFF_WELFARE'`. What was ruled
+    // is that an everyday purchase gets an ANSWER off the client's own chart —
+    // pinning the exact account would fail the day a re-record picks
+    // BUSINESS_ENTERTAINING, which is a defensible reading of the same bill and
+    // not a regression.
+    const kase = CODING_REPLAY_CASES.find((c) => c.name === 'coding-cafe-bill-to-restaurant');
+    const answer = await replayModel().suggest((kase as (typeof CODING_REPLAY_CASES)[number]).request);
+
+    expect(answer?.outcome).toBe('SUGGEST');
+    if (answer?.outcome !== 'SUGGEST') return;
+    const codes = kase?.request.chart.categories.map((category) => category.code) ?? [];
+    expect(codes).toContain(answer.categoryCode);
+    expect(answer.note.length).toBeGreaterThan(0);
+  });
+
   /**
    * ⚠ **The measurement that put `MODEL_MAX_CONFIDENCE` in the code.** The first
    * live answer to the case above reported **0.97** on a zero-shot categorisation

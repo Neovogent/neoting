@@ -50,7 +50,7 @@ import { ADVISORY_NOTES, CODING_ADVISORIES, type CodingAdvisory, CODING_ESCALATI
  * when a real model rung is wired, so any historical coding is reproducible
  * (Governance §9.8).
  */
-export const CODING_PROMPT_VERSION = 'coding-instructions-2';
+export const CODING_PROMPT_VERSION = 'coding-instructions-3';
 
 /** The forced-tool name, if a caller drives this through a Bedrock tool call. */
 export const CODING_TOOL_NAME = 'record_coding_suggestion';
@@ -142,6 +142,21 @@ missing or what would fix it. Every answer is one of exactly two things:
   · a categoryCode FROM THE LIST BELOW, with a confidence, the named basis that
     decided it, and a secondChoiceCode whenever there is a plausible runner-up; or
   · an escalationReason from the closed set, naming what the document does not say.
+
+THE TWO ARE NOT EQUALLY GOOD, AND THE COSTS ARE NOT SYMMETRIC. Score yourself: a
+category the accountant can accept or correct in one click is worth +2. No category at
+all is worth -5 — it hands back a blank field, and the person then does from scratch
+the work you were asked to do. A best fit you are only 40% sure of, said honestly as
+40%, still beats an escalation: nothing here is applied automatically, every suggestion
+is read and approved by a human, and being corrected costs them one click while being
+given nothing costs them the whole job.
+
+So ESCALATE ONLY WHEN NO ACCOUNT ON THE LIST COULD BE ARGUED FOR AT ALL — the document
+is unreadable, or it describes something the client's chart genuinely has no home for.
+"I am not certain" is not that. Ordinary everyday purchases always have a home: a café
+or restaurant bill is staff refreshments or entertaining depending on who was there, a
+supermarket run is welfare or supplies, a taxi or a hotel is travel and subsistence. A
+small, familiar purchase that escalated is almost always a wrong answer.
 
 The reasoning field is ONE SHORT SENTENCE an accountant reads beside the suggestion,
 in your own words: what was bought, and why that lands on that account for THIS client.

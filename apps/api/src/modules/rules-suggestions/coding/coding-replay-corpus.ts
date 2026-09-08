@@ -117,6 +117,68 @@ export const CODING_REPLAY_CASES: readonly CodingReplayCase[] = [
   },
   {
     /**
+     * ⚠ **THE CAFÉ CASE — the owner's own screenshot, 8 Sep 2026, as a
+     * fixture.** Three items on a café bill for a restaurant client came back
+     * with a BLANK category and *"nothing on this client's chart matches"*.
+     *
+     * Two things were true at once, and only one of them was the model's
+     * fault. The deterministic rung matched "Sun Water 325 Ml" to
+     * `RATES_AND_WATER` and correctly refused to file coffee under water
+     * rates. And `STAFF_WELFARE` — whose own keywords are *"staff
+     * refreshments, tea and coffee"* — was sitting on the chart the whole
+     * time, unchosen, because the instructions offered escalation as an equal
+     * exit.
+     *
+     * The owner's ruling, in his words: *"if the AI gives a category it gets 2
+     * points, if it doesn't it gets -5 — I need category at any cost"*. This
+     * case is what holds that. It is a FOREIGN-CURRENCY receipt on purpose:
+     * BDT, a foreign consumption tax and no exchange rate were three of the
+     * advisories the model hid behind, and none of them makes a coffee bill
+     * uncodeable.
+     */
+    name: 'coding-cafe-bill-to-restaurant',
+    description: 'coding · a small everyday purchase in a foreign currency · must not escalate',
+    request: {
+      practiceId: 'prac_replay',
+      chart: chartFor(RESTAURANT),
+      policy: PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+      client: RESTAURANT_CONTEXT,
+      evidence: {
+        supplier: { name: 'Cafe Arabika', key: 'cafe arabika', isNew: true },
+        currency: 'BDT',
+        totalPence: 34_000,
+        taxPence: 1_619,
+        lines: [
+          { description: 'Espresso (Hot) Large', quantity: 1, netPence: 25_714, taxPence: 0 },
+          { description: 'ICE', quantity: 1, netPence: 4_762, taxPence: 0 },
+          { description: 'Sun Water 325 Ml', quantity: 1, netPence: 1_905, taxPence: 0 },
+        ],
+      },
+    },
+    syntheticResponse: {
+      stop_reason: 'tool_use',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_REDACTED',
+          name: 'record_coding_suggestion',
+          input: {
+            categoryCode: 'STAFF_WELFARE',
+            secondChoiceCode: 'BUSINESS_ENTERTAINING',
+            treatment: 'REVENUE',
+            escalationReason: null,
+            basis: 'INDUSTRY_CONTEXT_REASONING',
+            advisories: ['NEW_SUPPLIER'],
+            confidence: 0.55,
+            reasoning: 'Coffee and water bought at a café, which for this client is staff refreshments rather than stock.',
+          },
+        },
+      ],
+      usage: usage(3_500, 140),
+    },
+  },
+  {
+    /**
      * The other half of the ruling. A model that is *given* a document nothing
      * can be said about must still not invent a category — the closed-set
      * escalation is the answer, and `parseModelCodingSuggestion` is what turns a

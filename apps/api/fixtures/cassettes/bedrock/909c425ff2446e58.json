@@ -1,0 +1,46 @@
+{
+  "key": "909c425ff2446e58",
+  "recordedAt": "2026-09-08",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "coding · a small everyday purchase in a foreign currency · must not escalate",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_coding_suggestion",
+        "input": {
+          "categoryCode": "STAFF_WELFARE",
+          "escalationReason": null,
+          "confidence": 0.45,
+          "basis": "INDUSTRY_CONTEXT_REASONING",
+          "reasoning": "Coffee and water from a café, likely refreshments for staff at this restaurant — staff welfare rather than cost of sales since these are prepared drinks for consumption, not stock.",
+          "secondChoiceCode": "COS_FOOD_AND_DRINK",
+          "treatment": "REVENUE",
+          "advisories": [
+            "FOREIGN_TAX_IN_COST",
+            "NEW_SUPPLIER"
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 5397,
+      "output_tokens": 232,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}
