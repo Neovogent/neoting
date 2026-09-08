@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { chartOfAccountsFor } from '../chart-of-accounts/chart-of-accounts.js';
 import {
+  BASIS_TREATMENT,
   type CapitalisationPolicy,
   capitalisesAsHardware,
   classifyLine,
@@ -9,6 +10,7 @@ import {
   type LineContext,
   PLATFORM_DEFAULT_CAPITALISATION_POLICY,
   thresholdVerdictFor,
+  treatmentOfLedger,
 } from './capital-revenue.js';
 
 /**
@@ -278,6 +280,64 @@ describe('the amount decides ONE thing and nothing else', () => {
       const small = classifyLine(line(description, { quantity: 1, netPence: 100 }), context());
       const large = classifyLine(line(description, { quantity: 1, netPence: 100_000_000 }), context());
       expect(small).toEqual(large);
+    }
+  });
+});
+
+describe('a basis and the account it decides can never contradict each other', () => {
+  /**
+   * ⚠ **The claim `BASIS_TREATMENT`'s own doc comment makes, asserted rather
+   * than trusted.** Every non-null entry in that table says a basis already
+   * contains a capital/revenue verdict; this is what proves the deterministic
+   * rung agrees, so the table cannot drift away from the `code(...)` calls it
+   * was read off.
+   *
+   * It matters because `parseModelCodingSuggestion` refuses a MODEL answer
+   * whose basis disagrees with its account. If the table were wrong, that
+   * refusal would start rejecting correct answers — the guard turning into the
+   * defect.
+   */
+  const CORPUS = [
+    line('Microsoft 365 E3 annual subscription', { quantity: 150, netPence: 2_250_000 }),
+    line('Perpetual licence — design suite', { quantity: 1, netPence: 480_000 }),
+    line('Perpetual licence — utility tool', { quantity: 1, netPence: 3_000 }),
+    line('Dell PowerEdge server', { quantity: 2, netPence: 900_000 }),
+    line('Workstation', { quantity: 1, netPence: 100_000 }),
+    line('Network switch'),
+    line('Cloud hosting — dedicated compute', { netPence: 120_000 }),
+    line('24×7 server support contract', { netPence: 360_000 }),
+    line('Onsite administrator training, 2 days', { netPence: 260_000 }),
+    line('Tenant configuration and data migration', { netPence: 450_000 }),
+    line('Installation and commissioning of the new servers', { netPence: 300_000 }),
+    line('Professional services — advisory', { netPence: 180_000 }),
+  ];
+
+  test('every basis the rules produce agrees with the treatment beside it', () => {
+    for (const candidate of CORPUS) {
+      for (const hasCapitalHardware of [true, false]) {
+        const verdict = classifyLine(candidate, context({ hasCapitalHardware }));
+        if (verdict.outcome !== 'CODE') continue;
+        const settled = BASIS_TREATMENT[verdict.basis];
+        if (settled === null) continue;
+        expect(settled, `${verdict.basis} on "${candidate.description}"`).toBe(verdict.treatment);
+      }
+    }
+  });
+
+  test('and every account the rules pick agrees with it too', () => {
+    // `Fixed assets` IS capital. A rule that coded a capitalised line to an
+    // expense account — or the reverse — would put the contradiction one field
+    // further along, where `parseModelCodingSuggestion` reads it from.
+    for (const candidate of CORPUS) {
+      for (const hasCapitalHardware of [true, false]) {
+        const verdict = classifyLine(candidate, context({ hasCapitalHardware }));
+        if (verdict.outcome !== 'CODE') continue;
+        const account = CHART.accounts.find((entry) => entry.code === verdict.categoryCode);
+        expect(account, `${verdict.categoryCode} is on the chart`).toBeDefined();
+        expect(treatmentOfLedger(account!.ledger), `${verdict.categoryCode} on "${candidate.description}"`).toBe(
+          verdict.treatment,
+        );
+      }
     }
   });
 });

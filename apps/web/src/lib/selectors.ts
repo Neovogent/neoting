@@ -163,11 +163,21 @@ function pipelineHealth(x: {
  * is that same predicate written for a row in hand, and `deriveClientStats`
  * above uses it so the seeded half of this column agrees with the live half.
  *
- * Two counts have no server column yet and are honestly zero rather than
- * guessed: `duplicates` (the pair table is not aggregated on this endpoint) and
- * `itemDelay` (no per-item age is projected). Both cost points in the health
- * score, so a live client scores at or above its seeded twin, never below —
- * an absent input must not read as a problem.
+ * `itemDelay` has no server column yet and is honestly zero rather than
+ * guessed (no per-item age is projected). It costs points in the health score,
+ * so a live client scores at or above its seeded twin, never below — an absent
+ * input must not read as a problem.
+ *
+ * ⚠ **`duplicates` USED TO BE HARD-CODED HERE AND IT WAS WRONG** (found live,
+ * 8 Sep 2026). Unlike `itemDelay` it is not absent: duplicates are DERIVED in
+ * the browser from the documents already in hand — `AppContext` runs
+ * `detectDuplicates` on the same array the board draws its flags from — so the
+ * value existed all along and this function ignored it. The client panel read
+ * “Duplicates flagged 0” while two rows on the board beside it wore a
+ * duplicate flag, and the health score fed on that zero, which is part of why
+ * it sat at 99% and could not move. It is now a required argument rather than
+ * an optional one: a caller that has the documents has the count, and a caller
+ * that does not must say so by passing zero on purpose.
  *
  * `bankConnected: true` is passed deliberately. The seeded formula docks ten
  * points for a client with no bank feed; ID has no feed to connect (D40 makes
@@ -175,18 +185,22 @@ function pipelineHealth(x: {
  * mark every client in the practice down for declining to use a feature that
  * does not exist.
  */
-export function clientStatsFromCounts(counts: {
-  toReview: number;
-  ready: number;
-  failed: number;
-  published: number;
-  missing: number;
-  requested: number;
-  overdue: number;
-  unmatched: number;
-  statementGaps: number;
-  approvals: number;
-}): ClientStats {
+export function clientStatsFromCounts(
+  counts: {
+    toReview: number;
+    ready: number;
+    failed: number;
+    published: number;
+    missing: number;
+    requested: number;
+    overdue: number;
+    unmatched: number;
+    statementGaps: number;
+    approvals: number;
+  },
+  /** Flagged duplicate pairs for THIS client, derived in the browser from the documents on hand. */
+  duplicates: number,
+): ClientStats {
   return {
     missing: counts.missing,
     requested: counts.requested,
@@ -200,7 +214,7 @@ export function clientStatsFromCounts(counts: {
     processing: 0,
     rejected: counts.failed,
     published: counts.published,
-    duplicates: 0,
+    duplicates,
     approvals: counts.approvals,
     unverified: 0,
     health: pipelineHealth({
@@ -208,7 +222,7 @@ export function clientStatsFromCounts(counts: {
       overdue: counts.overdue,
       toReview: counts.toReview,
       rejected: counts.failed,
-      duplicates: 0,
+      duplicates,
       approvals: counts.approvals,
       bankConnected: true,
     }),

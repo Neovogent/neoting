@@ -102,6 +102,14 @@ export async function computeChaseSendPayload(
 
     let businessId: string;
     let body: string;
+    // ⚠ Stamped for the REVIEWER, the same reason `recipientEmail` is (below).
+    // Read review used to print the raw ids — "Chasing transactions:
+    // cmts8x617005wyy8vozab1uyh, cmts8x617005syy8vvpqhsq94, …" — to the one
+    // person whose whole job is to check what is about to be sent. A cuid tells
+    // them nothing, and the row is the only place the review says WHICH lines
+    // are being chased rather than merely how the body reads. Found live,
+    // 8 Sep 2026. Empty for a statement request, which chases no lines.
+    let transactionLabels: string[] = [];
     if (hasTransactions) {
       // One row per DISTINCT id — a benign duplicate in the payload must not be
       // misreported as unreachable (the executor's own discipline).
@@ -159,6 +167,7 @@ export async function computeChaseSendPayload(
               })),
               portalLink,
             });
+      transactionLabels = transactions.map((t) => chasedLineLabel(t));
     } else {
       // A statement request has no transactions to derive a business from —
       // the proposal's own anchor is the answer, and a proposal without one
@@ -240,10 +249,33 @@ export async function computeChaseSendPayload(
       // field as a patterned string — absent is legal, null is not.
       ...(recipientE164 === null ? {} : { recipientE164 }),
       ...(hasPeriod ? { statementPeriod: message.statementPeriod } : {}),
+      ...(transactionLabels.length > 0 ? { transactionLabels } : {}),
       body,
     });
   }
   return { ...payload, messages };
+}
+
+/**
+ * One chased bank line, as a person reads it: `FRESH DIRECT CD 4211 · £217.50 ·
+ * 14 Aug 2026`. Composed here rather than in `render-summary.ts` because this is
+ * where the rows are in hand — that module is a pure formatter over the stored
+ * payload and must not go to the database to name something.
+ *
+ * The merchant when the reader knows it, the bank's own descriptor when it does
+ * not; never an id. Money is integer pence divided at the very last step, and
+ * the date is UK order, matching the body the same rows produce.
+ */
+function chasedLineLabel(t: { amountPence: number; bookedAt: Date; descriptionRaw: string; merchantName: string | null }): string {
+  const label = t.merchantName ?? t.descriptionRaw;
+  const amount = `£${(Math.abs(t.amountPence) / 100).toFixed(2)}`;
+  const date = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(t.bookedAt);
+  return `${label} · ${amount} · ${date}`;
 }
 
 async function requireBusiness(db: ScopedClient, businessId: string): Promise<{ name: string }> {

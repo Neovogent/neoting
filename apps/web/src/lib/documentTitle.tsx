@@ -70,3 +70,23 @@ export function DocumentTotal({ doc }: { doc: Pick<Document, 'total' | 'totalKno
     <span className="text-white font-bold tabular-nums">{text}</span>
   );
 }
+
+/**
+ * The date cell on a document board.
+ *
+ * ⚠ A date nobody has read is `—`, never today (8 Sep 2026, found live on a
+ * document still in Processing). `toLocalDocument` falls back to `receivedAt`
+ * so every list has something to sort by, and the board then printed that
+ * arrival date in the DATE column beside dates genuinely read off paper. Same
+ * mistake as `£0.00`, one column over, and the same shape of answer: the
+ * predicate is whether the SERVER sent a document date, not whether the string
+ * is falsy.
+ */
+export function documentDate(doc: Pick<Document, 'date' | 'dateKnown'>): string | null {
+  return doc.dateKnown === false ? null : doc.date;
+}
+
+export function DocumentDate({ doc }: { doc: Pick<Document, 'date' | 'dateKnown'> }) {
+  const text = documentDate(doc);
+  return text === null ? <span className="text-zinc-600 font-medium">—</span> : <>{text}</>;
+}

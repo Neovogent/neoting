@@ -461,3 +461,36 @@ S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor)
       suppresses on ANY chase precisely because there is no scheduler to own the
       second message. Whoever builds one owns relaxing it, in that function.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## The two shapes the suppression list did not cover (8 Sep 2026)
+
+Found on the live walk. A chase went out reading *"we're missing the receipts
+for FRESH DIRECT CD 4211 on 14 Aug, **PAYROLL AUG STAFF** on 21 Aug and **HMRC
+VAT** on 28 Aug"*. A payroll run and a VAT payment have no supplier receipt in
+existence, so the client was being asked for a document nobody can produce — and
+the accountant had to apologise for a message the product composed. The
+mechanism to prevent it already existed and simply had nothing in it for these
+two shapes.
+
+`FOUND_LIVE_SUPPRESSION_DESCRIPTORS` is `PAYROLL · WAGES · SALARY · SALARIES ·
+HMRC · PAYE`, and `isChaseSuppressed` now defaults to
+`ALL_SUPPRESSION_DESCRIPTORS` — the SoT list plus these.
+
+- **⚠ Kept SEPARATE from `SUPPRESSION_DESCRIPTORS` on purpose.** That constant is
+  quoted verbatim from SoT §4 Stage 7 so a reader can check it against the
+  document; folding these in would make the citation false. They are owed a SoT
+  amendment.
+- **Conservative by design**, because a suppressed line is never chased, so a
+  false positive costs a document that should have been collected. Only
+  descriptors whose paperwork cannot exist are here: staff pay, and money paid to
+  the revenue.
+- **⚠ Own-account transfers are deliberately NOT added.** `TFR TO SAVINGS`
+  belongs to the same class, but `TRANSFER`/`TFR` also appears on genuine
+  supplier payments and a substring match cannot tell them apart. That one needs
+  the counterparty, not a keyword.
+
+⚠ **`db/backfill-chase-suppression.ts` has to be RE-RUN after this deploys.**
+Since 5 Sep the ingest lane writes the `chase_suppressed` column with this
+predicate, so widening the list changes what is STORED and not merely what
+detection skips. Rows imported before the deploy keep the old verdict until the
+backfill re-derives them; it is idempotent and only ever flips false → true.

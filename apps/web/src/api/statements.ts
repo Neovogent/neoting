@@ -82,6 +82,11 @@ export function toUiStatement(
     // reader the difference — never the zero.
     openingBalance: (row.openingBalancePence ?? 0) / 100,
     closingBalance: (row.closingBalancePence ?? 0) / 100,
+    // Nothing read is not zero. See `Statement.balancesKnown` — a statement
+    // with no running-balance column has NULL for both, and £0.00 → £0.00 is
+    // two figures the file never carried.
+    balancesKnown: row.openingBalancePence !== null && row.openingBalancePence !== undefined
+      && row.closingBalancePence !== null && row.closingBalancePence !== undefined,
     rows: row.rowCount,
     // The import either happened or the row would not exist, so the legacy
     // three-state `status` is always 'extracted' live. The thing worth reading

@@ -2890,3 +2890,74 @@ disabled one wearing its reason states something true and stops an accountant
 wondering whether a text went out too. It submits nothing — email is the only
 value — and the reason renders as TEXT, not only a `title`, because a title
 never appears on touch and a phone is where this is read.
+
+## The boards stopped stating what nobody had read (8 Sep 2026 — the live walk)
+
+Ten defects from driving the DEPLOYED product, and nine of them are one shape:
+**a screen presenting an absence as a fact.** A green test suite cannot find
+that class, because the fixtures always have the value.
+
+- **`offersCandidates` in `lib/matching.ts` (D1).** Four sites in `BankView`
+  asked `verdict.kind === 'confused'`, so a `'confident'` verdict fell through
+  to the red *"No document"* pill — the strongest match the engine produces
+  rendering as the total absence of one. One predicate now, used by the
+  needs-you filter, the count, the evidence pill and the Match button, so they
+  cannot disagree.
+- **`DocumentDate` in `lib/documentTitle.tsx` (D2).** `api/documents.ts` falls
+  back to `receivedAt` so every consumer has SOME orderable date, and the boards
+  printed it as the document's own. **A date nobody has read is not the day it
+  arrived.** `dateKnown` carries the distinction and seven board sites render an
+  em dash instead. Same shape as `balancesKnown` on `api/statements.ts` (D8),
+  where a statement whose balances were never extracted was showing £0.00.
+- **`clientStatsFromCounts` takes `duplicates` as a REQUIRED argument (D4).** It
+  hard-coded zero because the derived count was declared BELOW the memos that
+  needed it, so the client panel read *"Duplicates flagged 0"* beside a board
+  showing two — and `pipelineHealth` fed on that zero. The three declarations
+  are hoisted in `AppContext` and the argument is required so a future caller
+  cannot quietly reintroduce the zero.
+- **`sessionExpiryParts` (D6)** turns a bare instant into *"signs you out at
+  4:41 pm on 8 September"* in Europe/London, and says the link keeps working.
+- **The outbox badge is gated on `API_ENABLED` (D7).** A live board wore
+  *"Demo data"* over real chases.
+- **`NEEDS_RELEASE_AUTHORITY` in `api/proposals.ts` (D12)** — a documented mirror
+  of the server's `RELEASE_KINDS`, so `LiveProposalCard` can degrade honestly
+  instead of offering Approve to a member the server will refuse. ⚠ The reason
+  renders as TEXT, not only a `title`: a title never appears on touch, and a
+  phone is where this gets read.
+
+**`category` reads the server's words (D3).** `row.categoryLabel ?? categoryCode
+?? '—'`. ⚠ It can only ever be READ — the ledger prefix is nowhere inside the
+code, so a helper that tried to derive it would be a second description of an
+account, free to disagree with the one the export writes.
+
+**`practiceName` and `docEmail` fill from `/me` (D5).** M8 blanks both live so a
+real firm never wears the seeded identity; that left the Settings screen saying
+a practice has no name and no intake address, and since the email lane went live
+that address is real and is what a client is told to forward receipts to. Filled
+**only when still empty**, because `updateSettings` is how an accountant
+overrides either and an unconditional fill would take that back on the next
+session refetch. `whatsappNumber` stays blank: no server field, no WhatsApp
+intake in this release.
+
+### Bundle — paired A/B, both sides built with `--manifest`, closure walk
+
+| Route | main | branch | Δ | headroom |
+|---|---|---|---|---|
+| `AIWorkspaceView` | 305,492 | 305,970 | +478 | **55,970 OVER** |
+| `InboxesView` | 246,614 | **247,036** | +422 | **2,964 B** |
+| `ClientDetailView` | 244,788 | 244,966 | +178 | 5,034 |
+| `ApprovalsView` | 233,363 | 233,784 | +421 | 16,216 |
+| `ChasePortalView` | 218,169 | 218,471 | +302 | 31,529 |
+| floor (uniform, every untouched route) | — | — | **+166** | — |
+
+The floor is `AppContext`'s D5 fill and the `categoryLabel` fallback in
+`api/documents.ts` — boundary code, and neither is reclaimable by rewording.
+`AIWorkspaceView` is the breach this file has recorded since 3 Sep; it is
+55,492 B over on **main**, before this branch touches it, and the named reclaim
+is still making `DocumentPreview` lazy in `IntentRenderer`.
+
+⚠ **These absolutes are ~2.5 kB LOWER than the 7 Sep table above for the same
+routes.** Neither is wrong — the quantity moves with what else is on `main` and
+with gzip's own boundaries. Measure your own paired A/B and quote the Δ, never a
+remembered absolute. That is this file's own standing rule, and it keeps cutting
+both ways.

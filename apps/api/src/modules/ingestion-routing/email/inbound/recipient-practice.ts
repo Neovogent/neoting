@@ -49,3 +49,33 @@ export function resolvePracticeFromRecipient(recipient: string | null): string |
   const tag = localPart.slice(plus + 1).trim();
   return PRACTICE_TAG.test(tag) ? tag : null;
 }
+
+/**
+ * The inverse: the address a practice's clients forward paperwork to.
+ *
+ * `doc+<practiceId>@<domain of the from-address>` — the exact form
+ * {@link resolvePracticeFromRecipient} parses, composed here rather than typed
+ * out at a call site so the two directions cannot drift. That is the same
+ * discipline `analysisAccount` / `splitAnalysisAccount` keep over the ledger
+ * prefix, and for the same reason: a published address that the receiver does
+ * not recognise is a document nobody ever gets.
+ *
+ * ⚠ **The domain comes from `EMAIL_FROM_ADDRESS`, deliberately, and is not a
+ * constant of its own.** The domain we SEND from is the domain whose MX record
+ * points at SES inbound, which is what makes `doc@` deliverable at all
+ * (`config/env.ts`, the note at `EMAIL_FROM_ADDRESS`). A second setting would
+ * be a second answer to one question, and the wrong one would be discovered by
+ * a client whose receipts silently bounce.
+ *
+ * Returns `null` for a from-address with no `@` or an empty domain — there is
+ * no address to publish, and a screen must say nothing rather than print a
+ * broken one. The practice id is shape-checked with the SAME pattern the parser
+ * accepts, so this can never compose an address that would not parse back.
+ */
+export function documentIntakeAddress(practiceId: string, fromAddress: string): string | null {
+  if (!PRACTICE_TAG.test(practiceId)) return null;
+  const at = fromAddress.lastIndexOf('@');
+  if (at === -1) return null;
+  const domain = fromAddress.slice(at + 1).trim();
+  return domain === '' ? null : `doc+${practiceId}@${domain}`;
+}

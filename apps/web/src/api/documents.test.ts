@@ -275,6 +275,36 @@ describe('the rest of the row', () => {
     expect(toLocalDocument(row({ categoryCode: null }), nameFor).category).toBe('—');
   });
 
+  it('prefers the SERVER’s words for the account, and never derives them', () => {
+    // Found live, 8 Sep 2026: the boards printed `REPAIRS_AND_MAINTENANCE`
+    // while the publish review card and the exported file — both composed
+    // server-side — printed `Expenses: Repairs and maintenance`. One document,
+    // two vocabularies, decided by which screen you were on.
+    //
+    // ⚠ The label can only ever be READ. The ledger prefix appears nowhere
+    // inside the code, so nothing here could produce it; a helper that tried
+    // would be a second description of an account, free to disagree with the
+    // one the export writes.
+    const doc = toLocalDocument(
+      row({ categoryCode: 'REPAIRS_AND_MAINTENANCE', categoryLabel: 'Expenses: Repairs and maintenance' }),
+      nameFor,
+    );
+    expect(doc.category).toBe('Expenses: Repairs and maintenance');
+  });
+
+  it('falls back to the bare code when the server has no name for it', () => {
+    // `category_code` is free text server-side and an accountant's explicit rule
+    // may name a code no chart carries, so the server answers null rather than
+    // matching the near miss. The board then shows exactly what it showed
+    // before this field existed — never a guess, and never an em dash, which
+    // would hide a coding that is really there.
+    expect(toLocalDocument(row({ categoryCode: 'BESPOKE_CODE', categoryLabel: null }), nameFor).category).toBe(
+      'BESPOKE_CODE',
+    );
+    // An older server omits the key entirely; `undefined` reads the same way.
+    expect(toLocalDocument(row({ categoryCode: 'BESPOKE_CODE' }), nameFor).category).toBe('BESPOKE_CODE');
+  });
+
   it('defaults the currency to sterling when the server omits it', () => {
     expect(toLocalDocument(row({ currency: null }), nameFor).currency).toBe('GBP');
     expect(toLocalDocument(row({ currency: 'EUR' }), nameFor).currency).toBe('EUR');

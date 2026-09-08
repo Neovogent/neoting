@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, ChevronRight, Clock, MessageSquare, Send, Sm
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import type { ChaseDetectionEngine, ChaseState } from '@neoting/contracts/model';
+import { API_ENABLED } from '../api/config';
 import { useAppContext } from '../context/AppContext';
 import type { LiveChase, LiveSms } from '../api/chases';
 import { currency } from '../lib/resolver';
@@ -48,15 +49,19 @@ const m = defineMessages({
   },
   closeDetail: { id: 'chase.liveBoard.closeDetail', defaultMessage: 'Close' },
 
-  outboxHeading: { id: 'chase.liveBoard.outboxHeading', defaultMessage: 'Message outbox — the client’s phone' },
+  outboxHeading: { id: 'chase.liveBoard.outboxHeading', defaultMessage: 'Message outbox — what the client received' },
   outboxDemoTag: { id: 'chase.liveBoard.outboxDemoTag', defaultMessage: 'Demo surface' },
   outboxNote: {
     id: 'chase.liveBoard.outboxNote',
+    defaultMessage: 'Every approved chase message the sender recorded, exactly as it went out — link and all.',
+  },
+  outboxNoteDemo: {
+    id: 'chase.liveBoard.outboxNoteDemo',
     defaultMessage: 'With the demo sender nothing leaves this machine — every approved message lands here instead, link and all.',
   },
   outboxEmpty: {
     id: 'chase.liveBoard.outboxEmpty',
-    defaultMessage: 'Nothing sent yet. Approve a chase and its message arrives here.',
+    defaultMessage: 'No recorded messages yet. An approved chase arrives here once the sender has written it.',
   },
   outboxError: { id: 'chase.liveBoard.outboxError', defaultMessage: 'Could not load the outbox — {error}' },
   outboxTo: { id: 'chase.liveBoard.outboxTo', defaultMessage: 'To {to} · {at}' },
@@ -274,11 +279,23 @@ export function ChasesLiveBoard({
               <Smartphone size={16} />
             </div>
             <h3 className="font-sans font-bold text-lg text-white tracking-tight min-w-0">{intl.formatMessage(m.outboxHeading)}</h3>
-            <span className="ml-auto shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              {intl.formatMessage(m.outboxDemoTag)}
-            </span>
+            {/* ⚠ The DEMO badge and its blurb are synthetic-only since 8 Sep 2026.
+                Live they claimed "nothing leaves this machine" on a board whose
+                chase had just been delivered by SES, and wore a Demo-surface tag
+                on a real practice's screen. The contract calls this endpoint
+                demo-only but says in the same breath that it "reads the same rows
+                the real sender will write, so the surface survives the un-faking;
+                only its audience changes" — so the panel stays and only the claim
+                about where the message went is gated. */}
+            {!API_ENABLED && (
+              <span className="ml-auto shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {intl.formatMessage(m.outboxDemoTag)}
+              </span>
+            )}
           </div>
-          <p className="text-[12px] text-zinc-500 mb-5">{intl.formatMessage(m.outboxNote)}</p>
+          <p className="text-[12px] text-zinc-500 mb-5">
+            {intl.formatMessage(API_ENABLED ? m.outboxNote : m.outboxNoteDemo)}
+          </p>
 
           {outboxError && (
             <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-[13px] text-red-300 mb-4">

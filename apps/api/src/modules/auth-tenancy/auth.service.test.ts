@@ -11,7 +11,16 @@ import { createTotpEnrolment, recoveryCodesRemaining, TOTP_PERIOD_SECONDS, totpE
 import { pickActingMembership } from './session-scope.js';
 
 const SECRET = 'test-session-secret';
-const env = { SESSION_SECRET: SECRET, OTP_MODE: 'demo', NODE_ENV: 'test' } as Env;
+// `EMAIL_FROM_ADDRESS` is here because `me()` publishes the practice's document
+// intake address, and the domain it composes from is the one the API SENDS from
+// — the only domain whose MX points at SES inbound. The real `Env` defaults it;
+// this stub is a cast, so a field the service reads has to be stated.
+const env = {
+  SESSION_SECRET: SECRET,
+  OTP_MODE: 'demo',
+  NODE_ENV: 'test',
+  EMAIL_FROM_ADDRESS: 'no-reply@neoting.test',
+} as Env;
 
 /** The shape `findCredentialRow` selects. Defaults are "a healthy account". */
 interface UserRow {
@@ -192,7 +201,15 @@ test('me() projects user + practice + acting role + RLS-visible businesses from 
 
   expect(transactions).toBe(1);
   expect(me.user).toEqual({ id: 'usr_shakib_demo', email: 'shakib@neoting.test', firstName: 'Shakib', lastName: 'Bin Kabir' });
-  expect(me.practice).toEqual({ id: 'prac_1', name: 'Neovogent Accounting' });
+  // ⚠ The intake address is COMPOSED, never stored — `doc+<practiceId>@` on the
+  // domain the API sends from, which is the domain whose MX points at SES
+  // inbound. A screen publishing any other one would hand a client an address
+  // nothing receives.
+  expect(me.practice).toEqual({
+    id: 'prac_1',
+    name: 'Neovogent Accounting',
+    documentEmail: 'doc+prac_1@neoting.test',
+  });
   expect(me.role).toBe('PRACTICE_ADMIN');
   // D44's other half, and it is read off the SAME acting membership as `role` —
   // the release gate is `role AND isOwner`, so a screen that reads one without

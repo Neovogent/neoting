@@ -945,3 +945,27 @@ file has never been told who the subject is. They live in
 `practice-team.service.ts`. An authority check answers *may this person act*;
 folding a rule about the owner into it would put a fact it cannot see inside a
 function that fails closed on absence.
+
+## A review card that named nothing a person recognises (8 Sep 2026)
+
+Found on the live walk, and it is the plainest kind of defect this module can
+have: the `chase.send` card listed the transactions it was about to chase as
+their **cuids**, and the four `Documents` sections listed document ids the same
+way. A reviewer was being asked to authorise a message to somebody's client on
+the strength of `cmtndidpz003y96czwm24v0vc`.
+
+Two changes, both in the compose-at-creation pattern this file already
+documents:
+
+- **`compose-chase-send.ts` puts `transactionLabels` in the payload** —
+  `FRESH DIRECT CD 4211 · £217.50 · 14 Aug 2026`, composed server-side beside
+  the message body it already composes there, from the rows it has already read
+  under RLS. `render-summary.ts` prefers them and falls back to the ids, so a
+  proposal stored before this existed still reviews.
+- **`documentEntries()` names documents by counterparty** rather than by id, in
+  all four places a `Documents` heading was built.
+
+⚠ **Both are payload/render changes and neither touches the gate.** Approve is
+still unreachable until `POST .../review`, the hash is still computed over the
+render, and the executor still reads live rows. What changed is only what the
+human is shown — which is the whole product of this module.

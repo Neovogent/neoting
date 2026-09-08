@@ -799,3 +799,35 @@ code distinguishes them.
 operation that answers a different shape from its neighbours is the one a caller
 gets wrong. The first draft here shipped `{ data }` alone and the checker caught
 it.
+
+## Two fields the live walk proved were missing (8 Sep 2026)
+
+Both additive and optional; every existing consumer keeps compiling, and every
+older server keeps parsing.
+
+**`DocumentSummary.categoryLabel`** — `categoryCode` in the words a person
+reads, the same string the export file's `Analysis account` column carries. It
+is on the wire because **the browser must not invent it**: the ledger prefix
+(`Expenses: `) appears nowhere inside the code, so no client-side helper could
+produce it. Before this, the boards printed the raw enum while the publish
+review card and the exported file — both composed server-side — printed the
+name, and one document wore two vocabularies depending on which screen you were
+on. Null is a real answer: `category_code` is free text server-side and an
+accountant's explicit rule may name a code no chart carries, so an unknown one
+is surfaced AS ITSELF rather than matched to the nearest name — a near miss is a
+wrong nominal in somebody's books. Producer:
+`apps/api/src/modules/documents/category-labels.ts`, whose header explains why
+it is the account catalogue rather than a per-client read.
+
+**`Me.practice.documentEmail`** — `doc+<practiceId>@<inbound domain>`, composed
+server-side from the address the API actually sends from so it cannot drift from
+the SES identity that receives it. The practice tag is what makes the mail
+routable at all: the single platform address is `doc@` (SoT §4 Stage 1.2) and a
+bare `doc@` reaches SES with no tenancy anchor and is quarantined unprocessed.
+Optional, so an older server simply omits it and the Settings screen says
+nothing rather than publishing an address nobody reads.
+
+⚠ Neither is required, and for the `BusinessSummary.subscription` reason rather
+than the ten-counts one: absence is an unambiguous, true answer in both cases —
+"we hold no name for this code" and "we hold no address to show you" — where an
+absent count and a zero count are indistinguishable once drawn.

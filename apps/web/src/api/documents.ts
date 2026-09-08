@@ -133,10 +133,20 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     clientName: clientNameFor(row.businessId),
     supplier: party,
     date: fromIsoDate(row.documentDate ?? row.receivedAt),
+    // A date nobody has read is not today. See `Document.dateKnown` — the
+    // fallback to `receivedAt` above stays, because every consumer needs SOME
+    // orderable date, but the boards must not print it as the document's own.
+    dateKnown: row.documentDate !== null && row.documentDate !== undefined,
     total: fromPence(row.totalPence),
     // Nothing read is not zero. See `Document.totalKnown`.
     totalKnown: row.totalPence !== null && row.totalPence !== undefined,
-    category: row.categoryCode ?? '—',
+    // The SERVER's words for the account, falling back to the bare code and
+    // then to the em dash. ⚠ Never derived here: the ledger prefix
+    // ("Expenses: ") is nowhere inside the code, so a browser-side helper could
+    // only invent it — and would then be a second description of an account,
+    // free to disagree with the one the publish review and the export file
+    // print. See `DocumentSummary.categoryLabel`.
+    category: row.categoryLabel ?? row.categoryCode ?? '—',
     status: STATE_TO_STATUS[row.state] ?? 'processing',
     // The contract guarantees a reason on REJECTED and FAILED, so it is shown
     // as-is rather than replaced with a generic line.

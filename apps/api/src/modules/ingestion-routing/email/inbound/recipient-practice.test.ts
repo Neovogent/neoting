@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { resolvePracticeFromRecipient } from './recipient-practice.js';
+import { documentIntakeAddress, resolvePracticeFromRecipient } from './recipient-practice.js';
 
 // The recipient is sender-chosen, so this is a tenancy-adjacent parse: the tag it
 // yields becomes documents.practice_id. These pin exactly what is and is not a tag.
@@ -41,4 +41,35 @@ test('a tag that is not shaped like a practice id resolves to nothing — it is 
   expect(resolvePracticeFromRecipient(`doc+${'a'.repeat(65)}@neoting.test`)).toBeNull();
   // The legitimate cuid/uuid character classes still pass.
   expect(resolvePracticeFromRecipient('doc+prac_x-1@neoting.test')).toBe('prac_x-1');
+});
+
+test('the address a practice publishes is the one this parser reads back', () => {
+  // ⚠ The round trip is the point. A published intake address that the receiver
+  // does not recognise is a client's receipts landing nowhere, discovered by
+  // the client. `GET /v1/me` composes with one of these functions and SES
+  // inbound is read with the other, so they cannot be allowed to drift.
+  for (const practiceId of ['cmtnddebp0033771', 'prac_x-1', 'a', 'A1_-']) {
+    const address = documentIntakeAddress(practiceId, 'no-reply@neoting.neovogent.com');
+    expect(address).toBe(`doc+${practiceId}@neoting.neovogent.com`);
+    expect(resolvePracticeFromRecipient(address!)).toBe(practiceId);
+  }
+});
+
+test('the domain is the one the API SENDS from — that is the domain with the inbound MX', () => {
+  expect(documentIntakeAddress('p1', 'no-reply@example.test')).toBe('doc+p1@example.test');
+  // A display-name form is not a from-address; the last `@` wins so a quoted
+  // local part cannot smuggle a second domain in.
+  expect(documentIntakeAddress('p1', 'a@b@example.test')).toBe('doc+p1@example.test');
+});
+
+test('nothing composable means NO address, never a broken one', () => {
+  // A screen must say nothing rather than publish something that bounces.
+  expect(documentIntakeAddress('p1', 'no-reply')).toBeNull();
+  expect(documentIntakeAddress('p1', '')).toBeNull();
+  expect(documentIntakeAddress('p1', 'no-reply@')).toBeNull();
+  // And a practice id the parser would refuse can never be composed into one,
+  // so this side cannot mint an address the other side rejects.
+  expect(documentIntakeAddress('prac/../etc', 'a@b.test')).toBeNull();
+  expect(documentIntakeAddress('prac id', 'a@b.test')).toBeNull();
+  expect(documentIntakeAddress('a'.repeat(65), 'a@b.test')).toBeNull();
 });

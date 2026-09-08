@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal } from '@neoting/contracts/model';
+import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import {
   approveReviewed,
@@ -12,6 +13,7 @@ import {
   denyReviewed,
   KIND_LABEL,
   KIND_NOTE,
+  NEEDS_RELEASE_AUTHORITY,
   offboardReason,
   openReview,
   type ReviewCard,
@@ -36,6 +38,10 @@ const m = defineMessages({
   opening: { id: 'proposals.liveCard.opening', defaultMessage: 'Opening the review…' },
   unknownKind: { id: 'proposals.liveCard.unknownKind', defaultMessage: 'A change awaiting your review' },
   approve: { id: 'proposals.liveCard.approve', defaultMessage: 'Approve' },
+  approveNotYours: {
+    id: 'proposals.liveCard.approveNotYours',
+    defaultMessage: 'Only your practice’s super admin can approve this. It is queued for them — nothing has changed yet.',
+  },
   approving: { id: 'proposals.liveCard.approving', defaultMessage: 'Executing…' },
   approved: { id: 'proposals.liveCard.approved', defaultMessage: 'Approved and executed — {title}' },
   cancelled: { id: 'proposals.liveCard.cancelled', defaultMessage: 'Cancelled — nothing was changed.' },
@@ -157,6 +163,18 @@ export function LiveProposalCard({
   // does before Read review is even opened.
   const kindNote = KIND_NOTE[proposal.kind];
   const reason = offboardReason(proposal);
+  /**
+   * May THIS session approve THIS kind — presentation only.
+   *
+   * Both halves matter. A tier-2 kind (routing a document, confirming a match)
+   * is any member's to approve, so gating on the session alone would withhold
+   * Approve from people the server would have admitted. And a kind the map has
+   * not got — a server ahead of this build, the `KIND_LABEL` hazard above —
+   * defaults to ALLOWED, because the alternative is a card that refuses to
+   * offer a decision the server would have taken. The refusal still arrives
+   * with its code if it comes.
+   */
+  const mayApprove = NEEDS_RELEASE_AUTHORITY[proposal.kind] !== true || holdsReleaseAuthority(session);
   /**
    * A proposal that arrives ALREADY denied wears the reason it was denied for
    * (item 27 — *"the reason … must be shown"*).
@@ -448,6 +466,19 @@ export function LiveProposalCard({
         </div>
       )}
 
+      {/*
+        ⚠ Presentation only, and it degrades by DISABLING rather than hiding —
+        a reviewer with no release authority still has a legitimate interest in
+        seeing that the decision exists and who it waits for. The server refuses
+        with `NT-PRM-001` regardless; this stops the standard user pressing a
+        primary button that was always going to 403 (found live, 8 Sep 2026).
+        The reason is rendered as TEXT and not only as a `title`, because a
+        title never appears on touch.
+      */}
+      {review && DECIDABLE.has(phase) && !mayApprove && (
+        <p className="px-4 pt-3 text-[12px] text-amber-300/90">{intl.formatMessage(m.approveNotYours)}</p>
+      )}
+
       {/* Approve mounts only once the server-rendered review is on screen. */}
       {review && DECIDABLE.has(phase) && (
         <div className="p-4 bg-card flex justify-end gap-3 flex-wrap">
@@ -478,9 +509,10 @@ export function LiveProposalCard({
           */}
           {denyReason === null && (
             <button
-              onClick={() => void approve()}
-              aria-disabled={phase === 'approving'}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong aria-disabled:opacity-50"
+              onClick={() => { if (!mayApprove) return; void approve(); }}
+              aria-disabled={phase === 'approving' || !mayApprove}
+              title={mayApprove ? undefined : intl.formatMessage(m.approveNotYours)}
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
             >
               <Check size={18} strokeWidth={2.5} />
               {intl.formatMessage(phase === 'approving' ? m.approving : m.approve)}

@@ -570,3 +570,42 @@ controller → guard → service → RLS path end to end.
       and `(businessId, byteHash)` only, so those two sorts are a scan-and-sort
       over everything RLS leaves visible.
 - [ ] Update this file on exit.
+
+## `DocumentSummary.categoryLabel` — one document, one vocabulary (8 Sep 2026)
+
+Found on the live walk. The boards printed `REPAIRS_AND_MAINTENANCE`; the
+publish review card and the exported VT file — both composed server-side —
+printed `Expenses: Repairs and maintenance`. One document wore two vocabularies
+depending on which screen you were on, and an accountant reading them side by
+side had no way to know they named the same account.
+
+**The name is DATA, not a transformation.** The ledger prefix appears nowhere
+inside the code, so no browser-side helper could ever have produced it — which
+is why this had to be a contract field rather than a fix in `apps/web`.
+
+`category-labels.ts` is the whole of the server half, and its header carries the
+argument. The two decisions worth knowing here:
+
+- **The chart crosses `toDocumentSummary` as a `ReadonlyMap`, never as a
+  dependency** — the `exports-public-api/api/analysis-account-chart.ts` rule,
+  verbatim. A value import of `rules-suggestions` would drag a Nest module and a
+  Prisma factory into a projection whose whole point is that it is pure, and
+  `common/documents/` is shared with `portal`.
+- **⚠ It is the account CATALOGUE, not this client's own chart**, which is the
+  one place this departs from the export. Two measured reasons:
+  `getChartOfAccounts` **writes** (it seeds a chart on first read) and this
+  endpoint is `x-nt-side-effect: none` and polls every five seconds in every open
+  browser; and it would answer the same thing — a code's `(ledger, name)` is a
+  property of the account DEFINITION, checked over all 51, and a profile only
+  decides WHICH codes a chart carries. `category-labels.test.ts` asserts both
+  halves rather than trusting them, so the day a chart-EDITING surface exists
+  this fails and has to become a per-business read.
+
+Null is a real answer: `category_code` is free text and an accountant's explicit
+rule may name a code no chart carries, so an unknown code resolves to nothing
+and the board shows it as itself — never the near miss it is one character away
+from, which would be a wrong nominal in somebody's books.
+
+Wired on `listDocuments`, `getDocument` and both management responses. NOT on
+`web-upload`'s completion: a document that has just been created has no coding,
+so the field would always be null there.

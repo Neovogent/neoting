@@ -707,3 +707,32 @@ Two lessons are worth more than the one-word fix:
 
 `notifications-signup-mailer.test.ts` now reads M9’s own source and fails if the
 two drift again.
+
+## `Me.practice.documentEmail` — the address nobody could be given (8 Sep 2026)
+
+The Settings screen stated that a practice had no name and no document intake
+address. Launch M8 blanks both live so a real firm never presents under the
+seeded identity — right, and it left two false claims behind. Since the email
+lane went live the intake address is REAL and is the one a client is told to
+forward receipts to, so a blank there is a feature nobody can use.
+
+`me()` composes it: `doc+<practiceId>@<domain of EMAIL_FROM_ADDRESS>`.
+
+- **⚠ The domain is the one the API SENDS from, deliberately, and is not a
+  setting of its own.** That is the domain whose MX points at SES inbound, which
+  is what makes `doc@` deliverable at all. A second setting would be a second
+  answer to one question, and the wrong one would be discovered by a client whose
+  receipts silently bounce.
+- **The composer lives beside the parser that reads it back** —
+  `documentIntakeAddress` next to `resolvePracticeFromRecipient` in
+  `ingestion-routing`, exported on that seam, round-tripped by test. It is the
+  `analysisAccount` / `splitAnalysisAccount` discipline: two directions of one
+  format, in one file, so they cannot drift.
+- **OMITTED, never nulled, when it cannot be composed.** The contract types it
+  optional, so absence means "we hold no address to show you" and the screen
+  prints nothing rather than a broken one. Under `exactOptionalPropertyTypes`
+  those are two different things.
+
+⚠ `auth.service.test.ts`'s `Env` is a cast, so a field the service reads has to
+be stated on it — `EMAIL_FROM_ADDRESS` is there for this reason. The real `Env`
+defaults it.

@@ -33,6 +33,12 @@ locals {
   task_size = {
     api     = { cpu = 256, memory = 1024 }
     workers = { cpu = 512, memory = 1024 }
+
+    # Same shape as workers, and for the same reason: before it enqueues
+    # anything the poller runs the full sanitisation lane on each attachment —
+    # ClamAV hand-off, sharp image normalisation, perceptual hashing. It is a
+    # poll loop with a worker's appetite, not a webhook.
+    email-intake = { cpu = 512, memory = 1024 }
   }
 
   # Non-secret runtime coordinates. Endpoints and bucket names are not
@@ -871,6 +877,103 @@ resource "aws_ecs_task_definition" "workers" {
 }
 
 # --------------------------------------------------------------------------
+# email-intake — the inbound-mail poller (issue #78).
+#
+# ⚠ WITHOUT THIS SERVICE THE EMAIL CHANNEL IS NOT CONNECTED, and it fails
+# silently in the worst direction: SES accepts the mail, writes it to
+# `receipts/inbound/`, and nothing ever reads it. A client who forwards an
+# invoice gets no bounce and no document. Found on the 8 Sep 2026 end-to-end
+# walk, where a real message sat in S3 with the app none the wiser — the
+# consumer (`worker/email-intake-main.ts`) had been written, tested and left
+# with nothing to run it.
+#
+# A THIRD service rather than a flag on workers, because it is a different
+# shape of work: workers pull from Redis and scale on queue depth, this one
+# polls S3 on a timer and must be exactly one task — two pollers would list the
+# same prefix and race for the same objects, and `EMAIL_SOURCE=s3` DELETES on
+# ack. Its `desired_count` therefore has a ceiling of 1, not a target.
+#
+# It reuses the WORKERS image and repository: api, workers and this all ship
+# the same digest (apps/api/Dockerfile), so the only thing that distinguishes
+# them is `command`. A new ECR repository would be a second copy of the same
+# bytes and a second thing to keep in step, which is why `local.services` is
+# left alone and the log group below is declared on its own.
+resource "aws_cloudwatch_log_group" "email_intake" {
+  name              = "/nt/${local.env}/email-intake"
+  retention_in_days = 30 # Governance §12.2, as local.services gets in compute.tf
+
+  tags = { Component = "email-intake" }
+}
+
+resource "aws_ecs_task_definition" "email_intake" {
+  family                   = "nt-${local.env}-email-intake"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = local.task_size["email-intake"].cpu
+  memory                   = local.task_size["email-intake"].memory
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.app.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "email-intake"
+      image     = "${aws_ecr_repository.this["workers"].repository_url}:${local.image_tag}"
+      essential = true
+
+      # The whole point of the service. The shared image's CMD starts the API,
+      # so without this it would come up as a third API with no load balancer —
+      # healthy-looking, polling nothing, and the mail would keep piling up in
+      # S3 exactly as it did before this service existed.
+      command = ["node", "apps/api/dist/worker/email-intake-main.js"]
+
+      # No portMappings: it dials S3 and Redis and nothing dials in.
+
+      environment = concat(local.common_environment, [
+        { name = "SERVICE_NAME", value = "email-intake" },
+
+        # ⚠ THE ONE VALUE THAT TURNS THE CHANNEL ON. `fixture` is the default
+        # in `config/env.ts`, which is why every other task can carry the
+        # shared environment and still poll nothing. `env.ts` refuses `s3`
+        # unless INGEST_QUEUE=bullmq and OBJECT_STORE=s3 — both are in
+        # `local.common_environment` — because a restart with fixture stores
+        # would destroy everything in flight after this poller has already
+        # deleted it from S3.
+        { name = "EMAIL_SOURCE", value = "s3" },
+      ])
+
+      secrets = local.injected_secrets
+
+      linuxParameters = {
+        initProcessEnabled = true
+      }
+
+      # The loop checks `running` between polls and the poll interval is 5s, so
+      # SIGTERM is honoured within one tick. The generous window is for the
+      # email already in flight: it has been fetched and may have been deleted
+      # from S3, so killing it mid-sanitisation is the one case that loses a
+      # client's document.
+      stopTimeout = 120
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.email_intake.name
+          "awslogs-region"        = local.region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    }
+  ])
+
+  tags = { Component = "email-intake" }
+}
+
+# --------------------------------------------------------------------------
 # Services.
 #
 # ⚠ BOTH RUN AT desired_count = 0 AND THAT IS DELIBERATE.
@@ -1030,18 +1133,68 @@ resource "aws_ecs_service" "workers" {
   }
 }
 
+resource "aws_ecs_service" "email_intake" {
+  name            = "nt-${local.env}-email-intake"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.email_intake.arn
+  desired_count   = 0
+
+  # Spot, like workers and for the same reason: a reclaimed poller costs one
+  # tick, not a user request. The loop is idempotent by construction — an
+  # object is only deleted after it has been handled, so an interrupted poll
+  # re-lists the same key on the next tick.
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+    base              = 0
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # ⚠ 0/100 IS LOAD-BEARING HERE, not a copy of the workers block. A rolling
+  # deploy that briefly runs two tasks would put two pollers on the same S3
+  # prefix, and `EMAIL_SOURCE=s3` deletes on ack: both would list the same
+  # object, both would ingest it, and the client's invoice would land twice.
+  # Replace in place, never side by side.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+
+  network_configuration {
+    subnets          = module.network.public_subnet_ids
+    security_groups  = [module.network.app_security_group_id]
+    assign_public_ip = true # no NAT — see the api service above
+  }
+
+  enable_ecs_managed_tags = true
+  propagate_tags          = "SERVICE"
+  enable_execute_command  = false
+
+  depends_on = [aws_ecs_cluster_capacity_providers.main]
+
+  tags = { Component = "email-intake" }
+
+  lifecycle {
+    ignore_changes = [desired_count, task_definition]
+  }
+}
+
 # --------------------------------------------------------------------------
 output "ecs_service_names" {
   value = {
-    api     = aws_ecs_service.api.name
-    workers = aws_ecs_service.workers.name
+    api          = aws_ecs_service.api.name
+    workers      = aws_ecs_service.workers.name
+    email-intake = aws_ecs_service.email_intake.name
   }
-  description = "Both run at desired_count = 0 until an image exists; deploying is a count change."
+  description = "All run at desired_count = 0 until an image exists; deploying is a count change. email-intake has a CEILING of 1 — two pollers race the same S3 prefix."
 }
 
 output "ecs_task_families" {
   value = {
-    api     = aws_ecs_task_definition.api.family
-    workers = aws_ecs_task_definition.workers.family
+    api          = aws_ecs_task_definition.api.family
+    workers      = aws_ecs_task_definition.workers.family
+    email-intake = aws_ecs_task_definition.email_intake.family
   }
 }

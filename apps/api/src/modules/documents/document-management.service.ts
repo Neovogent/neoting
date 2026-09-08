@@ -6,6 +6,7 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { CLAIMANT_INCLUDE, toDocumentResponse, toExtraction } from '../../common/documents/document-response.js';
+import { categoryLabels } from './category-labels.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
@@ -150,7 +151,7 @@ export class DocumentManagementService {
 
       const accepted = after.extractions[0];
       return {
-        ...toDocumentResponse(after),
+        ...toDocumentResponse(after, categoryLabels()),
         acceptedExtraction: accepted === undefined ? null : toExtraction(accepted),
       };
     });

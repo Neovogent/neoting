@@ -65,6 +65,7 @@ export {
 } from './chart-of-accounts/chart-of-accounts.service.js';
 
 export {
+  accountCatalogue,
   BUSINESS_PROFILE_IDS,
   BUSINESS_PROFILES,
   type BusinessProfileDefinition,

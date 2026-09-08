@@ -45,9 +45,9 @@ function toDate(value: Date | null): string | null {
  * Rejected/Failed view shows, and retrying is itself a `document.reprocess`
  * proposal.
  */
-export function toDocumentResponse(row: WithClaimant<DocumentRow>): Document {
+export function toDocumentResponse(row: WithClaimant<DocumentRow>, categoryLabels?: CategoryLabels): Document {
   return {
-    ...toDocumentSummary(row),
+    ...toDocumentSummary(row, categoryLabels),
     // ---- detail (DocumentAllOf) ----
     mimeType: row.mimeType,
     byteSize: row.byteSize,
@@ -89,7 +89,24 @@ export const CLAIMANT_INCLUDE = {
   claimant: { select: { id: true, firstName: true, lastName: true } },
 } as const;
 
-export function toDocumentSummary(row: WithClaimant<DocumentRow>): DocumentSummary {
+/**
+ * `documents.category_code` → the ledger-prefixed `Analysis account` name, for
+ * `DocumentSummary.categoryLabel`.
+ *
+ * ⚠ **The chart crosses this boundary as DATA, never as a dependency** — the
+ * same rule, and the same `ReadonlyMap<code, name>` shape, as
+ * `exports-public-api`'s `AnalysisAccountChart`. Read that file's header: a
+ * value import of `rules-suggestions` would drag a Nest module and a Prisma
+ * factory into a projection whose whole point is that it is pure. The caller
+ * builds the map; this file only reads it.
+ *
+ * A caller with no map passes nothing and the field is null — the honest
+ * answer, and the one the boards already render: the bare code, exactly as
+ * before.
+ */
+export type CategoryLabels = ReadonlyMap<string, string>;
+
+export function toDocumentSummary(row: WithClaimant<DocumentRow>, categoryLabels?: CategoryLabels): DocumentSummary {
   return {
     id: row.id,
     // ⚠ CONTRACT DIVERGENCE, not an oversight. `DocumentSummary.businessId` is
@@ -118,6 +135,12 @@ export function toDocumentSummary(row: WithClaimant<DocumentRow>): DocumentSumma
     taxPence: row.taxPence,
     reference: row.reference,
     categoryCode: row.categoryCode,
+    // The same code in words a person reads — looked up, never derived. The
+    // ledger prefix ("Expenses: ") appears nowhere inside the code, so no
+    // string manipulation could produce this name; a board that invented one
+    // would be a second description of an account, free to disagree with the
+    // one the export file writes.
+    categoryLabel: row.categoryCode === null ? null : (categoryLabels?.get(row.categoryCode) ?? null),
     description: row.description,
     projectRef: row.projectRef,
     parentDocumentId: row.parentDocumentId,

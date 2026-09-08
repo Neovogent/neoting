@@ -788,3 +788,40 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       HTTP-level test (blocked — needs `@nestjs/testing`/`supertest` added as
       devDependencies, which needs a human).
 - [ ] Update this file on exit — it is how the next session picks up
+
+## `documentIntakeAddress` — the inverse of the recipient parser (8 Sep 2026)
+
+`GET /v1/me` publishes the address a practice's clients forward paperwork to, so
+the `doc+<practice>@` format is now composed as well as parsed. Both directions
+live in `email/inbound/recipient-practice.ts` and the composer is on this
+module's seam for that one caller.
+
+**⚠ The round trip is the point, and it is asserted rather than assumed.** A
+published intake address the receiver does not recognise is a client's receipts
+landing nowhere — discovered by the client. The composer shape-checks the
+practice id with the SAME pattern the parser accepts, so it can never mint an
+address the other side would refuse, and returns `null` rather than a broken one
+when there is no domain to build on.
+
+The domain comes from `EMAIL_FROM_ADDRESS` because that is the domain whose MX
+points at SES inbound; see `modules/auth-tenancy/CLAUDE.md` for the full
+argument.
+
+## The email-intake poller has an ECS service (8 Sep 2026 — launch blocker L4)
+
+`worker/email-intake-main.js` had no service anywhere, so mail to
+`doc+<practice>@` reached SES, landed in `receipts/inbound/` and stopped. This
+module's whole inbound-email lane was unreachable in the deployed product.
+
+`infra/envs/staging/services.tf` now carries `aws_ecs_service.email_intake` on
+the workers image with `EMAIL_SOURCE=s3`.
+
+⚠ **`desired_count = 0` with a `0/100` deployment configuration is
+load-bearing, not a default.** The poller consumes ONE S3 prefix and deletes as
+it goes; a rolling deploy that briefly ran two tasks would have them race the
+same objects. Zero-minimum-healthy forces the old task down before the new one
+starts. The count is raised deliberately, not by a deploy.
+
+`compute.tf` grants `s3:PutObject` on `unroutable/*` — the quarantine path for
+mail whose recipient carries no usable practice tag, which
+`email-intake-runner.ts` has always logged and could not previously write.

@@ -1000,12 +1000,76 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).format(parsed);
   };
 
+  // ⚠ HOISTED ABOVE `liveClients` ON 8 SEP 2026, and the order is the fix.
+  // `clientStatsFromCounts` used to hard-code `duplicates: 0` because the
+  // derived count was declared below the memos that needed it — so the client
+  // panel read "Duplicates flagged 0" beside a board showing two flagged rows,
+  // and `pipelineHealth` fed on that zero, which is part of why the score sat
+  // at 99% and could not move. All three of these are self-contained (no hook
+  // dependency of their own beyond `intl`/`documents`, both declared further
+  // up), so moving them costs nothing and lets the card and the panel read ONE
+  // count. Keep them here.
+  const [resolvedDuplicates, setResolvedDuplicates] = useState<string[]>([]);
+
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const base = SYNTHETIC
+      ? DEFAULT_SETTINGS
+      : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' };
+    return { ...base, theme: resolveInitialTheme() };
+  });
+
+  // ⚠ The two blanks M8 left, filled from the SERVER — not un-blanked.
+  //
+  // M8 empties `practiceName`/`docEmail` live so a real firm never presents
+  // under the seeded identity, and that was right: the alternative was showing
+  // an accountant somebody else's firm name. But it left the Settings screen
+  // stating that a practice has no name and no intake address, which is its own
+  // false claim — and since the email lane went live the address is real and is
+  // the one a client is told to forward receipts to, so a blank there is a
+  // feature nobody can use.
+  //
+  // ONLY WHEN STILL EMPTY. `updateSettings` is how an accountant overrides
+  // either — a firm may want its trading name on screen, not its registered one
+  // — and a fill that ran unconditionally would take that back on the next
+  // session refetch. `whatsappNumber` stays blank: there is no server field for
+  // it and this release has no WhatsApp intake.
+  const practice = session.status === 'authenticated' ? session.me.practice : null;
+  const practiceName = practice?.name ?? '';
+  const docEmail = practice?.documentEmail ?? '';
+  useEffect(() => {
+    if (practiceName === '' && docEmail === '') return;
+    setSettings((current) => ({
+      ...current,
+      ...(current.practiceName === '' && practiceName !== '' ? { practiceName } : {}),
+      ...(current.docEmail === '' && docEmail !== '' ? { docEmail } : {}),
+    }));
+  }, [practiceName, docEmail]);
+
+  /**
+   * Duplicates are derived, never stored: a flag is a live opinion about the
+   * documents on file, so correcting a supplier or a total re-runs the test
+   * rather than leaving a stale pair behind. `off` disables the whole stage.
+   */
+  const duplicates = useMemo(
+    () =>
+      settings.duplicateMode === 'off'
+        ? []
+        : detectDuplicates(intl, documents).filter((d) => !resolvedDuplicates.includes(d.id)),
+    [intl, documents, settings.duplicateMode, resolvedDuplicates],
+  );
+
+  /** Flagged duplicate pairs for one client, by the name `DuplicatePair` carries. */
+  const duplicatesFor = useCallback(
+    (name: string) => duplicates.filter((d) => d.clientName === name).length,
+    [duplicates],
+  );
+
   const liveClients = useMemo<Client[]>(
     () =>
       !liveBoard
         ? []
         : businessesQuery.businesses.map((b) => {
-            const stats = clientStatsFromCounts(b.counts);
+            const stats = clientStatsFromCounts(b.counts, duplicatesFor(b.name));
             return {
               id: b.id,
               name: b.name,
@@ -1069,7 +1133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 : { awaitingRegistration: true }),
             };
           }),
-    [liveBoard, businessesQuery.businesses],
+    [liveBoard, businessesQuery.businesses, duplicatesFor],
   );
 
   /**
@@ -1077,8 +1141,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * row without folding arrays that are empty when the API is on.
    */
   const liveStats = useMemo(
-    () => new Map(businessesQuery.businesses.map((b) => [b.id, clientStatsFromCounts(b.counts)])),
-    [businessesQuery.businesses],
+    () => new Map(businessesQuery.businesses.map((b) => [b.id, clientStatsFromCounts(b.counts, duplicatesFor(b.name))])),
+    [businessesQuery.businesses, duplicatesFor],
   );
 
   /**
@@ -1150,8 +1214,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * pure and re-runs on every change — without this, "keep both" would be
    * undone the moment anything else moved.
    */
-  const [resolvedDuplicates, setResolvedDuplicates] = useState<string[]>([]);
-
   const [rules, setRules] = useState<Rule[]>(SYNTHETIC ? seedRules : []);
   const [chasePolicy, setChasePolicyState] = useState<ChasePolicy>(DEFAULT_CHASE_POLICY);
 
@@ -1250,26 +1312,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // before the first paint; recomputing it here is what makes React's state
   // agree with the class already on `<html>`, so the effect in `App.tsx` is a
   // no-op on load rather than a second, visible flip.
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    const base = SYNTHETIC
-      ? DEFAULT_SETTINGS
-      : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' };
-    return { ...base, theme: resolveInitialTheme() };
-  });
-
-  /**
-   * Duplicates are derived, never stored: a flag is a live opinion about the
-   * documents on file, so correcting a supplier or a total re-runs the test
-   * rather than leaving a stale pair behind. `off` disables the whole stage.
-   */
-  const duplicates = useMemo(
-    () =>
-      settings.duplicateMode === 'off'
-        ? []
-        : detectDuplicates(intl, documents).filter((d) => !resolvedDuplicates.includes(d.id)),
-    [intl, documents, settings.duplicateMode, resolvedDuplicates],
-  );
-
   const [missing, setMissing] = useState<MissingItem[]>(initial.missing);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
 

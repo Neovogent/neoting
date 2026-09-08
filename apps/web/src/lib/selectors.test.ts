@@ -101,7 +101,7 @@ describe('the seeded half and the live half agree', () => {
       unmatched: asTheServerCounts(TRANSACTIONS, '1'),
       statementGaps: 0,
       approvals: 0,
-    }).unmatched;
+    }, 0).unmatched;
 
     expect(seededAnswer).toBe(liveAnswer);
   });
@@ -127,5 +127,27 @@ describe('the three surfaces now count the same set', () => {
     expect(scoped.filter((t) => t.matchedDocId === undefined && t.matchState !== 'CONFIRMED').length).toBe(5);
     // `!t.matchedDocId` — AnalyticsView's old tile: every row in the feed.
     expect(scoped.filter((t) => !t.matchedDocId).length).toBe(6);
+  });
+});
+
+describe('duplicates reach the live projection', () => {
+  const COUNTS = {
+    toReview: 0, ready: 0, failed: 0, published: 0, missing: 0,
+    requested: 0, overdue: 0, unmatched: 0, statementGaps: 0, approvals: 0,
+  };
+
+  it('reports the count it was given, not a hard-coded zero', () => {
+    // 8 Sep 2026, found live: the client panel read "Duplicates flagged 0"
+    // beside a board showing two flagged rows, because this projection ignored
+    // a count `detectDuplicates` had already produced from the same documents.
+    expect(clientStatsFromCounts(COUNTS, 2).duplicates).toBe(2);
+  });
+
+  it('lets duplicates move the health score, which could not move before', () => {
+    const clean = clientStatsFromCounts(COUNTS, 0).health;
+    const flagged = clientStatsFromCounts(COUNTS, 2).health;
+
+    expect(clean).toBe(100);
+    expect(flagged).toBeLessThan(clean);
   });
 });

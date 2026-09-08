@@ -1,7 +1,7 @@
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, it, test, vi } from 'vitest';
 
 import { ProposalKind } from '@neoting/contracts/model';
-import { approveReviewed, cancelPending, createProposal, KIND_LABEL, openReview } from './proposals';
+import { approveReviewed, cancelPending, createProposal, KIND_LABEL, NEEDS_RELEASE_AUTHORITY, openReview } from './proposals';
 
 /**
  * The proposal-queue boundary (METH Stage 12), recorder-fetch style like the
@@ -153,4 +153,30 @@ test('a create response that drifts from the contract is refused with the field 
   await expect(
     createProposal({ kind: 'document.route', businessId: null, payload: { documentId: 'doc_1', inbox: 'COSTS' } }),
   ).rejects.toThrow(/payloadHash/);
+});
+
+describe('who may approve which kind', () => {
+  it('reserves the tier-1 kinds for the super admin, and no others', () => {
+    // ⚠ A MIRROR of `RELEASE_KINDS` in `approvals/assert-can.ts` — the server is
+    // the rule and this only decides what the screen offers before the click.
+    // 8 Sep 2026, found live: a PRACTICE_STANDARD colleague was shown a fully
+    // enabled, primary-styled Approve on his own correction, pressed it, and
+    // got NT-PRM-001 back.
+    expect(NEEDS_RELEASE_AUTHORITY['publish.batch']).toBe(true);
+    expect(NEEDS_RELEASE_AUTHORITY['chase.send']).toBe(true);
+    expect(NEEDS_RELEASE_AUTHORITY['document.update-coding']).toBe(true);
+    expect(NEEDS_RELEASE_AUTHORITY['document.purge']).toBe(true);
+
+    // Tier 2 is any member's, so gating on the session alone would withhold
+    // Approve from people the server would have admitted.
+    expect(NEEDS_RELEASE_AUTHORITY['document.route']).toBe(false);
+    expect(NEEDS_RELEASE_AUTHORITY['bank.confirm-match']).toBe(false);
+    expect(NEEDS_RELEASE_AUTHORITY['document.resolve-duplicate']).toBe(false);
+  });
+
+  it('answers for every kind the contract has, so a new one cannot default in', () => {
+    for (const kind of Object.keys(KIND_LABEL) as (keyof typeof KIND_LABEL)[]) {
+      expect(typeof NEEDS_RELEASE_AUTHORITY[kind]).toBe('boolean');
+    }
+  });
 });
