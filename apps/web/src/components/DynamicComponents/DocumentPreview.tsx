@@ -13,7 +13,7 @@ import { currency } from '../../lib/resolver';
 import { receivedViaHeading } from '../../lib/channelLabels';
 import { billedToMismatch } from '../../lib/billedTo';
 import { correctionWarnings } from '../../lib/correctionChecks';
-import { BASE_MANDATORY } from '../../lib/selectors';
+import { BASE_MANDATORY, STATEMENT_REQUIRED } from '../../lib/selectors';
 import { Pill } from './DataTable';
 import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types';
 
@@ -164,6 +164,30 @@ const m = defineMessages({
     defaultMessage: 'Read from the document by extraction — highlighted where it was read.',
   },
   readyHeading: { id: 'documents.documentPreview.readyHeading', defaultMessage: 'Path to Ready' },
+  /**
+   * A STATEMENT's own panel (owner, 8 Sep 2026): *"a bank statement doesn't
+   * need those, it needs the details like company name, month, invoice
+   * details — and based on those, transactions will be needing total,
+   * category, supplier, line items"*.
+   *
+   * The generic panel asked every document for Supplier, Total and Category.
+   * On a bank statement those are not merely absent, they are the wrong
+   * question — a statement has no supplier and no single total, which is why
+   * `readiness.ts` exempts it from READY in the first place. What it HAS is a
+   * holder, a period and a number; what its lines then need is receipts, and
+   * those are the documents the invoice-shaped fields belong to.
+   */
+  statementHeading: { id: 'documents.documentPreview.statementHeading', defaultMessage: 'What this statement needs' },
+  statementMissing: {
+    id: 'documents.documentPreview.statementMissing',
+    defaultMessage:
+      'This statement is still missing {fields}. A statement is filed by whose account it is, which period it covers and its own number — never a supplier, a total or a category, which belong to the receipts that answer its lines.',
+  },
+  statementComplete: {
+    id: 'documents.documentPreview.statementComplete',
+    defaultMessage:
+      'This statement is complete — {fields} are all read. Its transactions are on the Bank tab, and each one still without evidence is what a receipt has to answer.',
+  },
   readyMissing: {
     id: 'documents.documentPreview.readyMissing',
     defaultMessage:
@@ -358,8 +382,17 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
    * write would do nothing — reported as a contract gap rather than bent.
    */
   const readyPanelOn = live && detail.state === 'TO_REVIEW';
+  /**
+   * ⚠ A STATEMENT is asked for ITS OWN fields (owner, 8 Sep 2026). It has no
+   * supplier and no single total — `readiness.ts` exempts it from READY for
+   * exactly that reason — so asking for Supplier, Total and Category was a
+   * question the document can never answer, printed on every bank statement
+   * the product has ever imported.
+   */
+  const isStatement = detail.checkContext?.docType === 'STATEMENT';
+  const requiredLabels = isStatement ? STATEMENT_REQUIRED : BASE_MANDATORY;
   const missingForReady = readyPanelOn
-    ? BASE_MANDATORY.filter((label) => {
+    ? requiredLabels.filter((label) => {
         const field = fields.find((f) => f.label === label);
         return field === undefined || field.value === '—';
       })
@@ -861,7 +894,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             {readyPanelOn && (
               <div className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
                 <div className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mb-2">
-                  {intl.formatMessage(m.readyHeading)}
+                  {intl.formatMessage(isStatement ? m.statementHeading : m.readyHeading)}
                 </div>
                 {/* The TYPE gate, FIRST (items 36/47): confirming what this
                     document IS precedes filling its fields — the server's
@@ -889,7 +922,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 {missingForReady.length > 0 ? (
                   <>
                     <p className="text-[13px] text-zinc-300 leading-relaxed">
-                      {intl.formatMessage(m.readyMissing, {
+                      {intl.formatMessage(isStatement ? m.statementMissing : m.readyMissing, {
                         fields: intl.formatList(missingForReady, { type: 'conjunction' }),
                         count: missingForReady.length,
                       })}
@@ -915,8 +948,8 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   // Not rendered while the type gate holds: "every field Ready
                   // requires is present" would contradict the sentence above it.
                   <p className="text-[13px] text-zinc-300 leading-relaxed">
-                    {intl.formatMessage(m.readyComplete, {
-                      fields: intl.formatList(BASE_MANDATORY, { type: 'conjunction' }),
+                    {intl.formatMessage(isStatement ? m.statementComplete : m.readyComplete, {
+                      fields: intl.formatList(requiredLabels, { type: 'conjunction' }),
                     })}
                   </p>
                 )}

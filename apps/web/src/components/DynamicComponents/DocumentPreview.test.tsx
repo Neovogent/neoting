@@ -369,6 +369,29 @@ test('the panel exists only for To Review documents', () => {
   expect(screen.queryByText('Path to Ready')).toBeNull();
 });
 
+test('a STATEMENT is asked for its OWN fields, never Supplier / Total / Category', () => {
+  // ⚠ The owner's ruling, 8 Sep 2026: "a bank statement doesn't need those, it
+  // needs the details like company name, month, invoice details". Every
+  // imported statement was being told it needed a Supplier and a Total it can
+  // never have — `readiness.ts` exempts statements from READY for exactly that
+  // reason, so the panel was asking an unanswerable question forever.
+  detail = liveDetail({
+    fields: [
+      { label: 'Account holder', value: 'MERIDIAN SOFTWARE SOLUTIONS LTD', confidence: 0.95, provenance: 'AI suggested' },
+      { label: 'Statement date', value: '31 Aug 2026', confidence: 0.95, provenance: 'AI suggested' },
+      { label: 'Statement number', value: '—', confidence: 0.95, provenance: 'AI suggested' },
+    ],
+    checkContext: { docType: 'STATEMENT', totalPence: null, taxPence: null, documentDate: null, currency: 'GBP', extractionHadValues: true },
+  });
+  renderPreview();
+
+  const panel = document.body.textContent ?? '';
+  expect(panel).toContain('What this statement needs');
+  expect(panel).toContain('Statement number');
+  // The invoice-shaped question is gone from the statement's panel.
+  expect(panel).not.toContain('Ready needs a value for');
+});
+
 test("a line item is priced in the DOCUMENT's currency, never the £ default", () => {
   // ⚠ Found on live, 8 Sep 2026: a BDT receipt whose items read `1 × £257.14`.
   // The number was right and the symbol was a lie, which is the worse half —
