@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { processEmail } from '../email/email-intake.js';
+
+/** A registered contact, so a test about STORAGE is not silently a test about routing. */
+const KNOWN = new Map<string, readonly string[]>([['sender@acme.co', ['biz-1']]]);
 import type { EmailAttachment, ParsedEmail } from '../email/parsed-email.js';
 import { FixtureIngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { documentKey, InMemoryDocumentStore, UNROUTED_WORKSPACE } from './document-store.js';
@@ -55,22 +58,26 @@ test('get on a missing key throws rather than returning empty', async () => {
 test('processEmail stores the sanitised bytes; the job carries a w/ key that fetches them', async () => {
   const store = new InMemoryDocumentStore();
   const queue = new FixtureIngestQueue();
-  await processEmail(email([{ filename: 'receipt.png', contentType: 'image/png', bytes: png() }]), { queue, practiceId: PRAC, store });
+  await processEmail(email([{ filename: 'receipt.png', contentType: 'image/png', bytes: png() }]), { queue, practiceId: PRAC, store, senderMap: KNOWN });
   const key = queue.enqueued[0]?.storageKey;
   expect(key).toBeDefined();
   expect(key?.startsWith('w/')).toBe(true);
   if (key !== undefined) expect((await store.get(key)).equals(png())).toBe(true);
 });
 
-test('unrouted mail stores under w/_unrouted; a routed sender under its workspace', async () => {
+// REPLACES 'unrouted mail stores under w/_unrouted; a routed sender under its
+// workspace'. The `w/_unrouted/` prefix is no longer reachable from the email
+// lane: an unregistered sender's mail is discarded before anything is stored
+// (owner ruling, 9 Sep 2026). `UNROUTED_WORKSPACE` stays in the module because a
+// REGISTERED sender on two workspaces still has no business to key on.
+test('an unregistered sender stores nothing; a routed sender stores under its workspace', async () => {
   const store = new InMemoryDocumentStore();
 
-  const unrouted = new FixtureIngestQueue();
-  await processEmail(email([{ filename: 'a.png', contentType: 'image/png', bytes: png() }]), { queue: unrouted, practiceId: PRAC, store });
-  expect(unrouted.enqueued[0]?.storageKey?.startsWith('w/_unrouted/')).toBe(true);
+  const stranger = new FixtureIngestQueue();
+  await processEmail(email([{ filename: 'a.png', contentType: 'image/png', bytes: png() }]), { queue: stranger, practiceId: PRAC, store });
+  expect(stranger.enqueued).toHaveLength(0);
 
   const routed = new FixtureIngestQueue();
-  const senderMap = new Map<string, readonly string[]>([['sender@acme.co', ['biz-1']]]);
-  await processEmail(email([{ filename: 'a.png', contentType: 'image/png', bytes: png() }]), { queue: routed, practiceId: PRAC, store, senderMap });
+  await processEmail(email([{ filename: 'a.png', contentType: 'image/png', bytes: png() }]), { queue: routed, practiceId: PRAC, store, senderMap: KNOWN });
   expect(routed.enqueued[0]?.storageKey?.startsWith('w/biz-1/')).toBe(true);
 });

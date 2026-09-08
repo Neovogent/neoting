@@ -1,4 +1,5 @@
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
+import { MIME_BY_EXTENSION, UPLOAD_ACCEPT, extensionOf, mimeTypeFor } from '../../lib/uploadMime';
 
 /**
  * What the client portal may actually send, and why a file was refused.
@@ -26,40 +27,15 @@ import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
  * module could not translate and a test could only assert by matching prose.
  */
 
-/** Extension → the MIME the server's allowlist admits. Lowercase, no dot. */
-export const PORTAL_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  bmp: 'image/bmp',
-  tif: 'image/tiff',
-  tiff: 'image/tiff',
-  heic: 'image/heic',
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  odt: 'application/vnd.oasis.opendocument.text',
-  rtf: 'application/rtf',
-  zip: 'application/zip',
-  // Spreadsheets (5 Sep 2026): the server has accepted both since D40 made
-  // manual statement upload the only bank input — some clients' banks export
-  // nothing else. `.xls` declares the legacy alias the server's DECLARED_ALIASES
-  // admits at the door; the byte sniff decides what it really is.
-  csv: 'text/csv',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  xls: 'application/vnd.ms-excel',
-};
-
 /**
- * The `accept` attribute. Deliberately the extensions and not the MIME types:
- * a phone that hands over a `.heic` with an empty `type` still matches on the
- * extension, and an `accept` of MIME types alone hides those files from the
- * picker entirely.
+ * The server's allowlist mirror now lives in `lib/uploadMime.ts`, because the
+ * accountant's own upload page needs the same answers and was getting different
+ * ones -- the HEIC defect of 8 Sep 2026. Re-exported under the portal's original
+ * names so this module's callers are unaffected.
  */
-export const PORTAL_ACCEPT = Object.keys(PORTAL_MIME_BY_EXTENSION)
-  .map((extension) => `.${extension}`)
-  .join(',');
+export const PORTAL_MIME_BY_EXTENSION = MIME_BY_EXTENSION;
+export const PORTAL_ACCEPT = UPLOAD_ACCEPT;
+export { extensionOf, mimeTypeFor };
 
 export type RefusalReason = 'unsupported-type' | 'too-large' | 'empty';
 
@@ -68,26 +44,6 @@ export interface ScreenedFile {
   readonly reason: RefusalReason;
   /** The extension it was refused for, for the `unsupported-type` sentence. */
   readonly extension: string;
-}
-
-/** `receipt.HEIC` → `heic`. Empty when the name carries no extension. */
-export function extensionOf(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  if (dot < 1 || dot === filename.length - 1) return '';
-  return filename.slice(dot + 1).toLowerCase();
-}
-
-/**
- * The MIME to declare for a picked file.
- *
- * ⚠ The browser's own `type` wins when it has one, and the extension answers
- * when it does not — which is not a rare case. iOS hands over `.heic` files
- * with an empty `type` often enough that trusting the browser alone made the
- * commonest phone photograph on earth a `400` from the allowlist.
- */
-export function mimeTypeFor(file: { name: string; type: string }): string {
-  if (file.type !== '') return file.type;
-  return PORTAL_MIME_BY_EXTENSION[extensionOf(file.name)] ?? '';
 }
 
 /** Null when the file may be sent; otherwise the named refusal. */

@@ -31,6 +31,15 @@ export interface EmailIntakeResult {
   readonly routing: RoutingDecision;
   readonly accepted: readonly AcceptedEmailDocument[];
   readonly rejected: readonly EmailRejection[];
+  /**
+   * How many attachments were thrown away unread because the sender is not
+   * registered (owner ruling, 9 Sep 2026 — see `processEmail`).
+   *
+   * Counted rather than described: the point of the ruling is that nothing about
+   * a stranger's email is kept, so this is a number an operator can watch and
+   * not a record of who sent what. Zero on every routed email.
+   */
+  readonly discarded: number;
 }
 
 export interface EmailIntakeDeps {
@@ -101,6 +110,33 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
   // writes `Owner@Acme.test` must still match the `owner@acme.test` key rather
   // than silently landing Unrouted. `toLowerCase()` is safe on the empty string.
   const routing = decideRouting(email.from.toLowerCase(), deps.senderMap ?? new Map<string, readonly string[]>());
+
+  // ⚠ AN UNREGISTERED SENDER'S EMAIL IS DISCARDED HERE, BEFORE A BYTE IS
+  // STORED — nothing sanitised, nothing in S3, no `documents` row, no
+  // extraction spend, nothing to purge later (owner ruling, 9 Sep 2026).
+  //
+  // The Unrouted queue this used to feed cannot survive the platform having ONE
+  // intake address. `doc+<practiceId>@` is chosen by the SENDER, and this
+  // module's own tenancy caveat leaned on the queue as the safety net for a
+  // misdirected email — but a queue holding every stranger's mail for the whole
+  // platform is a place one practice reads another's documents, and it grows
+  // without bound because nobody owns the rows enough to clear them. The owner's
+  // words: *"if that email is not registered, it will become unrouted, disappear,
+  // and completely vanish from the server. I have no need for that file."*
+  //
+  // This also finishes what D45 started. D45 already says an unregistered sender
+  // is "rejected with a reason rather than queued for triage", and it survives
+  // intact: the sender is a stranger, so there is no client to have lost
+  // anything and no practice with a legitimate interest in the file.
+  //
+  // ⚠ ONLY `unrouted`, NEVER `multiple`. A `multiple` sender IS registered — the
+  // ambiguity is which of their businesses, not whether we know them — and
+  // discarding it would destroy a real client's paperwork. That case still lands
+  // with `businessId: null`, which is why the sink keeps its UNROUTED branch.
+  if (routing.kind === 'unrouted') {
+    return { routing, accepted: [], rejected: [], discarded: email.attachments.length };
+  }
+
   const store = deps.store ?? new InMemoryDocumentStore();
   // Every attachment of one email shares its routing, so one workspace for all.
   const workspaceId = routing.kind === 'matched' ? routing.businessId : null;
@@ -184,5 +220,5 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
     await deps.queue.enqueue(job);
   }
 
-  return { routing, accepted, rejected };
+  return { routing, accepted, rejected, discarded: 0 };
 }

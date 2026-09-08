@@ -150,6 +150,20 @@ const m = defineMessages({
     defaultMessage:
       'Something went wrong at your accountant’s end. Try again in a moment — if it keeps happening, tell them and quote the reference below.',
   },
+  // ⚠ The two `NT-ING-` codes are the file, not the system, and they are
+  // PERMANENT. Sending a client back to "try again in a moment" for either one
+  // is a loop with no exit — it is what an iPhone photograph got until
+  // 9 Sep 2026 — so each says what to send instead.
+  faultFileType: {
+    id: 'portal.chasePortal.faultFileType',
+    defaultMessage:
+      'We cannot read that kind of file. Take a photo of it instead, or send a PDF or a screenshot.',
+  },
+  faultFileTooBig: {
+    id: 'portal.chasePortal.faultFileTooBig',
+    defaultMessage:
+      'That file is too big to send. Photographing it is usually much smaller than the original.',
+  },
   faultCode: { id: 'portal.chasePortal.faultCode', defaultMessage: 'Reference {code}' },
 
   exitAction: { id: 'portal.chasePortal.exitAction', defaultMessage: 'Back to the practice app' },
@@ -681,21 +695,28 @@ function Result({
         {matched ? <Check size={26} strokeWidth={3} /> : <AlertTriangle size={24} />}
       </motion.div>
 
-      <p className="text-[14px] text-zinc-400 leading-relaxed">
-        {outcome.kind === 'failed'
-          ? intl.formatMessage(m.faultUnreachable)
-          : /* A pending outcome names no item on purpose: everything we can
-               truthfully say ("we have it, it is not matched yet") is in
-               `unmatchedDetailNoItem`, and naming the item here would read as
-               the verdict we do not have. */
-            item && !pending
+      {/* ⚠ A FAILURE GETS NO LEDE, because this one was hardcoded to
+          `faultUnreachable` — "check your signal" — for EVERY fault, including
+          the `415` that refused an iPhone photograph. It sat directly above the
+          `Fault` box, which was already saying something different, so the
+          screen contradicted itself and both halves were wrong (8 Sep 2026).
+          `Fault` renders `faultMessageFor` plus the reference, which is the
+          whole truth; a second sentence here could only repeat it or fight it. */}
+      {outcome.kind !== 'failed' && (
+        <p className="text-[14px] text-zinc-400 leading-relaxed">
+          {/* A pending outcome names no item on purpose: everything we can
+              truthfully say ("we have it, it is not matched yet") is in
+              `unmatchedDetailNoItem`, and naming the item here would read as
+              the verdict we do not have. */}
+          {item && !pending
             ? intl.formatMessage(matched ? m.matchedDetail : m.unmatchedDetail, {
                 merchant: item.label ?? intl.formatMessage(m.itemUnnamed),
                 amount: currency(Math.abs(item.amount)),
                 date: item.date,
               })
             : intl.formatMessage(m.unmatchedDetailNoItem)}
-      </p>
+        </p>
+      )}
 
       {outcome.kind === 'failed' && <Fault fault={outcome.fault} />}
 
@@ -797,6 +818,12 @@ function Shell({ title, subtitle, children }: { title: string; subtitle?: string
 export function faultMessageFor(fault: PortalFault): MessageDescriptor {
   if (fault.code === 'NT-OTP-001') return m.faultOtp;
   if (fault.code === 'NT-OTP-002') return m.faultSession;
+  // ⚠ The file itself, and PERMANENTLY so. `faultRefused` says "try again in a
+  // moment", which for a type off the allowlist or a file over the cap is a
+  // loop with no exit — the client retries on the train, retries at home, and
+  // telephones the accountant. Each of these names what to send instead.
+  if (fault.code === 'NT-ING-002') return m.faultFileType;
+  if (fault.code === 'NT-ING-001') return m.faultFileTooBig;
   return fault.code === null ? m.faultUnreachable : m.faultRefused;
 }
 

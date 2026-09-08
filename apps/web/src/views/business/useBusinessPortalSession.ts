@@ -461,10 +461,21 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       // bad mobile data. Non-images pass through untouched — re-encoding a PDF
       // as a JPEG would throw away the text layer extraction wants.
       const page = await compressImage(file);
-      // The declared MIME is checked against the server's allowlist, and a
-      // browser that hands over an empty `type` — iOS, routinely, for HEIC —
-      // would otherwise turn the commonest phone photograph into a 400.
-      const mimeType = page.blob.type || mimeTypeFor(file);
+      // ⚠ Ask about the PAGE, not the original file, and never trust the blob's
+      // own type on its own.
+      //
+      // `compressImage` returns the ORIGINAL File untouched whenever it could
+      // not decode the picture — which is every HEIC outside Safari — so
+      // `page.blob.type` is then the OS's unusable answer, and the old
+      // `page.blob.type || …` short-circuited on it because
+      // `application/octet-stream` is truthy. That declared an unaccepted type
+      // and the server refused every HEIC with `415` (8 Sep 2026).
+      //
+      // Asking `mimeTypeFor` about `{ page.filename, page.blob.type }` is right
+      // for both outcomes: compressed, it sees `x.jpg` + `image/jpeg` and keeps
+      // it; untouched, it sees `x.HEIC` + an unaccepted type and reads the
+      // extension.
+      const mimeType = mimeTypeFor({ name: page.filename, type: page.blob.type });
       return send({ filename: page.filename, mimeType, bytes: page.blob }, transactionId, note, expenseClaim);
     },
     [send],

@@ -836,3 +836,74 @@ mail whose recipient carries no usable practice tag, which
 every screen makes first. The guard is in this function rather than at the call
 site: its whole contract is *"an address, or null"*, and a caller is entitled to
 rely on that without checking the environment first.
+
+## 🚨 An unregistered sender's email is DISCARDED, and the Unrouted queue is dead (9 Sep 2026)
+
+**Owner ruling, and it reverses this module's founding assumption.** The rule is
+one sentence: *"check if the mail the document came from is unregistered — just
+don't intake it; and if it is registered, do intake it and put whom it belongs
+to."*
+
+`processEmail` therefore returns before a byte is touched when
+`decideRouting` answers `unrouted`: nothing sanitised, nothing in S3, no
+`documents` row, no extraction spend, nothing to purge later. `EmailIntakeResult`
+gained `discarded` (a count), and the runner logs it.
+
+### Why the queue could not survive
+
+The queue was the compensating guarantee for two things, and the platform's shape
+broke both:
+
+- **`doc+<practiceId>@` is chosen by the SENDER.** `recipient-practice.ts` says so
+  in its own tenancy caveat and leans on the queue as the safety net — a
+  misdirected email "surfaces in a queue rather than granting any access".
+- **There is ONE intake address for the whole platform** (and one WhatsApp
+  number). So the queue holds every stranger's mail for every practice. The
+  owner's words: *"if these documents are shown to every user as unrouted, then
+  every user will be able to see another person's — another accountant's —
+  documents."* And it grows without bound, because nobody owns the rows enough to
+  clear them.
+
+It also finishes what **D45** started. D45 already says an unregistered sender is
+"rejected with a reason rather than queued for triage"; its compensating clause —
+the rejection is "visible and reasoned in the Rejected/Failed view, and the sender
+is told" — is unimplementable for a stranger, because there is no practice with a
+legitimate interest in the file and (the owner, explicitly) *"we won't be sending
+emails to them."* A stranger is not a client who has lost anything.
+
+### ⚠ ONLY `unrouted`, NEVER `multiple`
+
+A `multiple` sender **is registered** — the ambiguity is which of their
+businesses, not whether we know them — and discarding their paperwork would be
+exactly the data loss this ruling exists to avoid. That case still reaches the
+sink with `businessId: null`, which is why `document-sink.ts` keeps its
+`UNROUTED` branch and `UNROUTED_WORKSPACE` stays in `document-store.ts`. The
+guard is `routing.kind === 'unrouted'` and must stay that narrow.
+
+### ⚠ The log names a COUNT, never the sender
+
+`email-intake-runner.ts` warns with the practice, the trace and how many
+attachments were dropped — and deliberately no from-address. A log line naming
+the stranger is precisely the retained record the ruling exists to prevent
+(*"I have no need for that file"*). A rising count means senders need
+registering, which is self-service on the client's Users tab.
+
+### ⚠ The WhatsApp lane still queues, and fixing it is NOT a copy of this
+
+`ingest-processor.ts`'s `resolveWhatsAppAnchors` **collapses `multiple` into
+`unrouted`** with a reason string, so the same guard applied there would destroy a
+registered client's document — the one outcome the ruling forbids. WhatsApp intake
+is not live in this release; when it is turned on, `multiple` has to keep its own
+identity through the job payload first. Named here rather than half-built.
+
+### What this cost the tests, and why they were REPLACED
+
+Nearly every email-lane test used an unregistered sender and no map, so the old
+unrouted path carried them — they were about sanitisation, filenames, perceptual
+hashes, trace ids and idempotency, and they would now assert an empty result for a
+reason that has nothing to do with their subject. Those got a registered sender
+(`KNOWN_SENDER_MAP`, `routed()`, a default `senderMapLoader` in the runner's
+`baseDeps`). Two pinned the behaviour itself and were **replaced**, not fixed:
+`an unknown sender lands Unrouted, never dropped` and `unrouted mail stores under
+w/_unrouted`. Both now assert the discard leaves nothing — no job, no `put`, no
+row — and a new test pins that a registered sender on two workspaces is KEPT.

@@ -35,9 +35,17 @@ const m = defineMessages({
     id: 'pipeline.matching.reasonExactMerchantDiffers',
     defaultMessage: 'Equal totals inside the date window, but the merchant name differs.',
   },
+  // ⚠ THIS SENTENCE MAY NOT ASSERT A MECHANISM THE BRANCH HAS NOT ESTABLISHED.
+  // It read "This payment appears to settle several invoices, including this
+  // one." — and the branch below establishes only that the document is SMALLER
+  // than the payment and the merchant names are close. A £5.13 Costa receipt
+  // was offered against an £8.09 Costa payment under that wording, which is not
+  // a batch settlement by any reading, and the sentence argued FOR the wrong
+  // click on a card whose whole job is to make an accountant doubt it (pipeline
+  // test, 8 Sep 2026). What follows is true every time this branch fires.
   reasonPartial: {
     id: 'pipeline.matching.reasonPartial',
-    defaultMessage: 'This payment appears to settle several invoices, including this one.',
+    defaultMessage: 'The document is smaller than the payment — it may be part of it, or the wrong document.',
   },
   reasonProbable: {
     id: 'pipeline.matching.reasonProbable',

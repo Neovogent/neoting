@@ -78,4 +78,11 @@ test('a code means the server answered — the signal is never blamed for a repl
   // The two the client can act on keep their own sentence.
   expect(faultMessageFor({ code: 'NT-OTP-001', detail: null }).id).toBe('portal.chasePortal.faultOtp');
   expect(faultMessageFor({ code: 'NT-OTP-002', detail: null }).id).toBe('portal.chasePortal.faultSession');
+
+  // WARNING: the two `NT-ING-` codes are the FILE and are PERMANENT, so neither may
+  // fall to `faultRefused` ("try again in a moment") -- that is a loop with no
+  // exit, and it is what an iPhone photograph met until 9 Sep 2026. Each names
+  // what to send instead.
+  expect(faultMessageFor({ code: 'NT-ING-002', detail: null }).id).toBe('portal.chasePortal.faultFileType');
+  expect(faultMessageFor({ code: 'NT-ING-001', detail: null }).id).toBe('portal.chasePortal.faultFileTooBig');
 });

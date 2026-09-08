@@ -64,6 +64,19 @@ const m = defineMessages({
     id: 'portal.portalSendFaultNotice.reasonRefusedNoDetail',
     defaultMessage: 'That was refused. Try a clearer photo, or a different file.',
   },
+  // ⚠ The two `NT-ING-` codes get their own words rather than the server's.
+  // `reasonRefused` renders `detail` verbatim, and the door's detail is written
+  // for an engineer reading a log — "The declared MIME type is not on the
+  // allowlist for this channel" in front of a client who photographed a receipt.
+  // These say the same fact in the words the person can act on.
+  reasonRefusedFileType: {
+    id: 'portal.portalSendFaultNotice.reasonRefusedFileType',
+    defaultMessage: 'We cannot read that kind of file. Take a photo of it instead, or send a PDF or a screenshot.',
+  },
+  reasonRefusedFileTooBig: {
+    id: 'portal.portalSendFaultNotice.reasonRefusedFileTooBig',
+    defaultMessage: 'That file is too big to send. Photographing it is usually much smaller than the original.',
+  },
   reasonServer: {
     id: 'portal.portalSendFaultNotice.reasonServer',
     defaultMessage: 'Something went wrong at our end. Nothing has been lost — try again in a moment.',
@@ -142,9 +155,13 @@ export function PortalSendFaultNotice({
         <div key={`${fault.reason}-${fault.code ?? ''}-${fault.detail ?? ''}`} className="flex flex-col gap-1">
           <p className="text-[12px] text-zinc-300 leading-relaxed">
             {fault.reason === 'refused'
-              ? fault.detail === null
-                ? intl.formatMessage(m.reasonRefusedNoDetail)
-                : intl.formatMessage(m.reasonRefused, { detail: fault.detail })
+              ? fault.code === 'NT-ING-002'
+                ? intl.formatMessage(m.reasonRefusedFileType)
+                : fault.code === 'NT-ING-001'
+                  ? intl.formatMessage(m.reasonRefusedFileTooBig)
+                  : fault.detail === null
+                    ? intl.formatMessage(m.reasonRefusedNoDetail)
+                    : intl.formatMessage(m.reasonRefused, { detail: fault.detail })
               : intl.formatMessage(SEND_REASON[fault.reason])}
           </p>
           {(fault.code !== null || groups.length > 1) && (

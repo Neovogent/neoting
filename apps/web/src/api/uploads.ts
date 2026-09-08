@@ -5,6 +5,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { defineMessages, type IntlShape } from 'react-intl';
 import { z } from 'zod';
 import { commonActions } from '../i18n/common';
+import { mimeTypeFor } from '../lib/uploadMime';
 import type { ConfirmOptions, ConfirmResult } from '../components/DynamicComponents/ConfirmProvider';
 import { unwrapBody } from './envelope';
 import { documentUploadShape, putBytes, sha256Hex } from './upload-transport';
@@ -154,7 +155,11 @@ export async function sendWorkspaceUploads(
   try {
     for (const file of files) {
       try {
-        await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file }, channel);
+        // `mimeTypeFor`, never `file.type` — Chrome on Windows hands over a
+        // `.HEIC` as `application/octet-stream`, which the old `||` fallback
+        // passed straight through to a `415` from the allowlist. Every iPhone
+        // photograph an accountant dragged in was refused (8 Sep 2026).
+        await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: mimeTypeFor(file), bytes: file }, channel);
         sent += 1;
       } catch (error) {
         failures.push(`${file.name} — ${error instanceof Error ? error.message : 'upload failed'}`);

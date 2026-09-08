@@ -3103,3 +3103,104 @@ test clicks the TEXT node, which belongs only to the dialog's own button. ⚠
 `DataTable`'s row tick is a `<button aria-pressed>` with **no accessible
 name**, so the test selects a row by attribute; that is its own a11y defect,
 noted rather than fixed.
+
+## The HEIC door, and three screens that stated what nobody had read (9 Sep 2026)
+
+Found by pushing a 612-document synthetic corpus through the DEPLOYED product as
+a client and as an accountant, and checking every result against the corpus's own
+answer key. Five defects, four of them the shape this file keeps recording: a
+screen asserting something the evidence behind it did not support.
+
+### ⚠ `lib/uploadMime.ts` is the ONE declared-MIME rule, and it is not "is the type present"
+
+**Every iPhone photograph was refused, on every upload surface in the product.**
+HEIC has been on the allowlist all along — server (`ACCEPTED_FORMATS`) and client
+— so the bug was never the list. It was the fallback's condition:
+
+```ts
+if (file.type !== '') return file.type;          // the old rule
+if (ACCEPTED_MIMES.has(file.type)) return file.type;  // the rule
+```
+
+`File.type` comes from the OS, and for HEIC the OS frequently has no answer.
+**iOS Safari says `''`**, which the old guard caught. **Chrome on Windows says
+`application/octet-stream`**, which is *truthy*, sailed straight through, and was
+declared verbatim to a door that answers `415 NT-ING-002`. Captured off the wire:
+`{"filename":"document (149).HEIC","mimeType":"application/octet-stream"}`.
+
+So the question is **"is this a type the door accepts"**, never "did the browser
+say anything" — which also covers whatever a future OS invents.
+
+Three call sites were passing an unusable type and are now the helper's:
+
+| Site | Was |
+|---|---|
+| `api/uploads.ts` (accountant drag-drop) | `file.type \|\| 'application/octet-stream'` — declared it *deliberately* |
+| `usePortalJourney.ts` (chase link) | `page.blob.type` — no fallback at all |
+| `useBusinessPortalSession.ts` (business portal) | `page.blob.type \|\| mimeTypeFor(file)` — short-circuited on the truthy junk |
+
+⚠ **The last two must ask about the PAGE, not the original file.** `compressImage`
+returns the ORIGINAL File untouched whenever it could not decode the picture —
+which is every HEIC outside Safari — so `page.blob.type` is then the OS's
+unusable answer. `mimeTypeFor({ name: page.filename, type: page.blob.type })` is
+right for both outcomes: compressed, it sees `x.jpg` + `image/jpeg` and keeps it;
+untouched, it reads the extension.
+
+The table lives in `lib/` and not in `views/business/portalUploadRules.ts`
+because the accountant's own upload page needs the same answers and was getting
+different ones. That module re-exports it under its original names, so its four
+importers and its test are untouched. **Floor cost: +229 B** (paired A/B,
+closure walk) — `api/uploads.ts` is floor-reachable, so the table is too.
+
+### ⚠ A 415 is the FILE, and telling the client it is the network is a loop with no exit
+
+`sendFaultFor` mapped only `400` to `refused`; the door answers **`415`** for a
+type off the allowlist and **`413`** for a file over the cap. Both fell through
+to `server`, whose sentence is *"try again in a moment"* — advice that can never
+come true. On the chase portal it was worse: the failed screen's lede was
+**hardcoded** to `faultUnreachable` for every fault, so the client read *"We
+could not reach your accountant's system. Check your signal and try again."*
+above a red box saying something different. Both wrong, and contradicting.
+
+- `sendFaultFor` now maps `400`/`413`/`415` to `refused`.
+- `faultMessageFor` gives `NT-ING-002` and `NT-ING-001` their own sentences,
+  which name what to send instead. The file's standing rule is unchanged and is
+  what this restores: **"check your connection" appears only for `code === null`.**
+- The failed screen renders **no lede at all** — `Fault` already says the whole
+  truth plus the reference, and a second sentence could only repeat it or fight
+  it.
+- `PortalSendFaultNotice` gives the same two codes client-readable words rather
+  than `reasonRefused`'s verbatim `{detail}`, which for these is *"The declared
+  MIME type is not on the allowlist for this channel"* in front of somebody who
+  photographed a receipt.
+
+### The pill and the filter now ask the same question
+
+Nine rows wore **"Needs you — 1 candidate"** above a chip reading **"Needs you
+(3)"**. The filter and its count are `isUnexplained && offersCandidates`; the
+pill was `offersCandidates` alone. A `SUGGESTED` line is *not* unexplained — the
+matcher has already attached its answer and it is waiting on Approve — so it
+gets its own words (`suggestedPill`) and the amber "Needs you" means the one
+thing it says.
+
+### Two more sentences that were not true
+
+- **`transactionsEmpty` is the NO-STATEMENT state and may only render there.**
+  One constant served both, so a filter that simply matched nothing told an
+  accountant to *"upload a bank statement to bring them in"* while its own 92
+  lines sat behind the chip they had just pressed.
+- **`reasonPartial` may not assert a mechanism the branch has not established.**
+  It read *"This payment appears to settle several invoices, including this
+  one."* on a branch that establishes only that the document is smaller than the
+  payment and the merchant names are close — offered for a £5.13 Costa receipt
+  against an £8.09 Costa payment, arguing FOR the wrong click on a card whose
+  whole job is to make an accountant doubt it.
+
+### What was NOT changed, deliberately
+
+`InboxesView`'s `d.clientId !== ''` filter. It looks like the cause of a sixth
+defect (documents arriving by email from an unregistered sender are invisible),
+and it is Shakib's own explicit decision — commit `70ac8c1`: *"Restored, with the
+reasoning written down so it is not 'simplified' again."* The real fix was on the
+server and is in `apps/api/src/modules/ingestion-routing/CLAUDE.md`: those
+documents no longer exist to be shown.
