@@ -342,6 +342,18 @@ export function toCodingSuggestion(doc: WireDocument): CodingSuggestionView | nu
 export interface DocumentDetailData {
   fields: LocalExtractedField[];
   lineItems: LocalLineItem[];
+  /**
+   * The document's OWN currency code, carried out so the line-item rows can be
+   * printed in it (8 Sep 2026 — found on a live BDT receipt whose items read
+   * `1 × £257.14`).
+   *
+   * ⚠ This is the same defect `moneyDisplay` exists to prevent, one block
+   * lower down the same panel: the field rows were fixed to read the
+   * extraction's `currency`, and the line items — which are rendered by
+   * `DocumentPreview`, not here — kept calling the £-defaulted helper. The
+   * amounts were right and the symbol was a lie, which is the worse half.
+   */
+  currency: string;
   state: string;
   businessId: string;
   /** The ladder's opinion about an uncoded document, or null. Never a coding. */
@@ -462,7 +474,7 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
     ),
   };
 
-  return { fields, lineItems, state: doc.state, businessId: doc.businessId, codingSuggestion, checkContext };
+  return { fields, lineItems, currency: docCurrency, state: doc.state, businessId: doc.businessId, codingSuggestion, checkContext };
 }
 
 /** The extract stage's recorded rule, if one coded this document. */
@@ -490,7 +502,7 @@ export interface DocumentDetail extends DocumentDetailData {
   events: DetailEvent[];
 }
 
-const EMPTY: DocumentDetailData = { fields: [], lineItems: [], state: '', businessId: '', codingSuggestion: null, checkContext: null };
+const EMPTY: DocumentDetailData = { fields: [], lineItems: [], currency: 'GBP', state: '', businessId: '', codingSuggestion: null, checkContext: null };
 
 const firstIssues = (error: z.ZodError): string =>
   error.issues
