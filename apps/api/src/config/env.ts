@@ -304,7 +304,15 @@ const EnvSchema = z.object({
   // review card showed; a STOP'd recipient refuses the approval (§24.2.3 — a
   // send never argues with an opt-out). Requires SMS_ORIGINATION_IDENTITY
   // (refused empty at boot, below) and the sms-voice:SendTextMessage IAM grant.
-  SMS_SENDER: z.enum(['demo', 'email', 'aws']).default('demo'),
+  // `email+sms` is `email` plus a written `sms_log` row — the owner's 9 Sep
+  // 2026 ruling ("create a box for SMS, like for email, to see what SMS is
+  // going out"). The client still receives the real email; the workspace also
+  // gets the SMS-outbox row showing the text an SMS WOULD carry. It is a
+  // preview of composed bytes, NOT a delivery receipt — no SMS leaves this
+  // configuration, which is still `aws` and still waiting on the UK number.
+  // It is therefore NOT refused under NODE_ENV=production the way `demo` is:
+  // `demo` contacts nobody, this one delivers by email exactly as `email` does.
+  SMS_SENDER: z.enum(['demo', 'email', 'email+sms', 'aws']).default('demo'),
 
   // Where SMS is sent from and through (Phase 3). The identity is the UK
   // dedicated number (or pool id/ARN) the carrier registration activates —

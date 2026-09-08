@@ -186,16 +186,26 @@ locals {
     #                        state: A2 lands otplib enrolment, verify and
     #                        recovery codes behind this same switch.
     #
-    #   SMS_SENDER=email     the A13 chase transport — an approved chase.send
-    #                        delivers by email through the SES sender below,
-    #                        carrying the reviewed body byte-for-byte to the
-    #                        chase's named recipient contact. Flipped from
-    #                        `demo` 1 Sep 2026 together with the production
-    #                        boot gate in config/env.ts that now refuses
-    #                        `demo` (an approved chase that contacts nobody).
-    #                        No SMS leaves the account — `email` is email;
-    #                        the AWS End User Messaging transport lands behind
-    #                        the same seam as a third value.
+    #   SMS_SENDER=email+sms the A13 chase transport, PLUS the SMS-outbox row.
+    #                        An approved chase.send delivers by email through
+    #                        the SES sender below, carrying the reviewed body
+    #                        byte-for-byte to the chase's named recipient
+    #                        contact — exactly as plain `email` did, which this
+    #                        replaced on 9 Sep 2026 at the owner's instruction
+    #                        ("create a box for SMS, like for email, to see
+    #                        what SMS is going out"). The addition is a written
+    #                        `sms_log` row per chase whose contact registered a
+    #                        mobile, which is the only thing the SMS-outbox
+    #                        screen reads.
+    #
+    #                        ⚠ STILL NO SMS LEAVES THE ACCOUNT. The outbox row
+    #                        is a record of the text that WOULD be sent, not a
+    #                        delivery receipt, and the screen must not be read
+    #                        as proof a client's phone rang. Real SMS is
+    #                        `SMS_SENDER=aws`, behind the same seam, waiting on
+    #                        the UK dedicated number's carrier registration.
+    #                        A contact with no mobile is skipped by the outbox
+    #                        half and still emailed by the email half.
     #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
     #                        reachable from this environment — and under D42
     #                        there is no ledger API in Initial Delivery at all,
@@ -257,7 +267,7 @@ locals {
     # ------------------------------------------------------------------------
     { name = "STATEMENT_READER", value = "textract" },
 
-    { name = "SMS_SENDER", value = "email" },
+    { name = "SMS_SENDER", value = "email+sms" },
     # WhatsApp media fetch (Phase 2). `fixture` until the real System User
     # token replaces the placeholder in the whatsapp secret — env.ts refuses
     # `graph` with an empty token, and a fixture fetcher on a real message

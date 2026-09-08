@@ -8,6 +8,8 @@ The five detection engines, chase composition, delivery with OTP secure links, t
 
 ⚠ **Since launch stage A13 the chase has a real transport, and it is EMAIL.** SMS was cut for Initial Delivery and `DemoSmsSender` only ever wrote an outbox row, so until A13 nothing this module composed could reach a client. `EmailChaseSender` sits behind the SAME `SmsSender` seam, selected by `SMS_SENDER=email`, and carries the reviewed body byte-for-byte. Read "The email transport" below before touching anything in the send path.
 
+⚠ **Staging runs `SMS_SENDER=email+sms` since 9 Sep 2026** (the owner: *"create a box for SMS, like for email, to see what SMS is going out"*). `EmailAndOutboxChaseSender` composes the two halves — `DemoSmsSender` writes the `sms_log` row FIRST, `EmailChaseSender` really delivers and stamps `chase_messages` LAST. **The order is load-bearing**: only the email half sets `channel`, so running it last is what keeps the audit row naming the transport that actually carried the message. A contact with no mobile is skipped by the outbox half (its `to_e164` is NOT NULL) and still emailed. The outbox row is composed bytes, not a delivery receipt — no SMS leaves this configuration.
+
 ## ⚠ Initial Delivery (ID) — read this before the sections below
 
 **ID ships THREE of the five detection engines** (SoT §24.2 Stage 8), and the omissions are worth knowing rather than guessing at:

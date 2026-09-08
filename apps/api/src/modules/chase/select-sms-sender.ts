@@ -1,6 +1,7 @@
 import type { Env } from '../../config/env.js';
 import { AwsSmsSender } from './aws-sms-sender.js';
 import { createAwsSmsTransport } from './aws-sms-transport.js';
+import { EmailAndOutboxChaseSender } from './email-and-outbox-chase-sender.js';
 import { EmailChaseSender } from './email-chase-sender.js';
 import { DemoSmsSender, type SmsSender } from './sms-sender.js';
 
@@ -68,32 +69,49 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
           limiter: selectEmailRateLimiter(env),
         };
       });
+    case 'email+sms':
+      // The owner's 9 Sep 2026 ruling: the client still gets the real email,
+      // and the workspace gets a row on the SMS-outbox screen showing the text
+      // an SMS would carry. See `email-and-outbox-chase-sender.ts` — the order
+      // of the two halves is load-bearing.
+      return new EmailAndOutboxChaseSender(new DemoSmsSender(), makeEmailSender(env));
     case 'email':
-      // ⚠ The import is DYNAMIC, and that is load-bearing rather than lazy for
-      // its own sake. `notifications/email-copy.ts` imports `chase/index.ts`
-      // (for `formatGbp` and `formatDay` — money and dates come from one
-      // implementation), and `chase/index.ts` re-exports this function, so a
-      // STATIC value import of the notifications seam here would close a
-      // runtime cycle between two public seams. That is the hazard
-      // `publish-batch.ts` and `revoke-link.ts` each record refusing to create.
-      // Deferring the import past module evaluation makes the cycle inert.
-      //
-      // It also pays for itself: a process configured for email that never
-      // sends a chase constructs no SES client and opens no Redis connection.
-      // `EmailChaseSender` memoises the result after the first send.
-      return new EmailChaseSender(async () => {
-        const { parseEmailAddress, renderEmailHtml, selectEmailRateLimiter, selectEmailSender } = await import(
-          '../notifications/index.js'
-        );
-        return {
-          sender: selectEmailSender(env),
-          limiter: selectEmailRateLimiter(env),
-          parseAddress: parseEmailAddress,
-          renderHtml: renderEmailHtml,
-        };
-      });
+      return makeEmailSender(env);
     case 'demo':
     default:
       return new DemoSmsSender();
   }
+}
+
+/**
+ * Build the email chase transport.
+ *
+ * ⚠ The import is DYNAMIC, and that is load-bearing rather than lazy for its
+ * own sake. `notifications/email-copy.ts` imports `chase/index.ts` (for
+ * `formatGbp` and `formatDay` — money and dates come from one implementation),
+ * and `chase/index.ts` re-exports `selectSmsSender`, so a STATIC value import
+ * of the notifications seam here would close a runtime cycle between two public
+ * seams. That is the hazard `publish-batch.ts` and `revoke-link.ts` each record
+ * refusing to create. Deferring the import past module evaluation makes the
+ * cycle inert.
+ *
+ * It also pays for itself: a process configured for email that never sends a
+ * chase constructs no SES client and opens no Redis connection.
+ * `EmailChaseSender` memoises the result after the first send.
+ *
+ * Shared by `email` and `email+sms` so the two cannot drift into two different
+ * opinions about what a chase email is.
+ */
+function makeEmailSender(env: ChaseSenderEnv): EmailChaseSender {
+  return new EmailChaseSender(async () => {
+    const { parseEmailAddress, renderEmailHtml, selectEmailRateLimiter, selectEmailSender } = await import(
+      '../notifications/index.js'
+    );
+    return {
+      sender: selectEmailSender(env),
+      limiter: selectEmailRateLimiter(env),
+      parseAddress: parseEmailAddress,
+      renderHtml: renderEmailHtml,
+    };
+  });
 }
