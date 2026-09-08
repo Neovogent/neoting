@@ -155,6 +155,25 @@ test('the HTML part is the SAME WORDS in the shell, with the link as a button (i
   expect(html).toContain('Wright Cleaning Accounts');
 });
 
+test("the call to action is said ONCE — the button does not echo the sentence", async () => {
+  // ⚠ The delivered email of 8 Sep 2026 read: "…on 31 Aug. Upload securely: /
+  // [ Upload securely ] / https://…". The SMS needs that clause — inline,
+  // before a bare URL, it is the whole call to action — and the HTML does not,
+  // because the button IS the call to action. So the clause is dropped from the
+  // HTML rendering ONLY: the text part keeps the approved sentence whole.
+  const t = transport();
+  const { db } = harness({ ch_1: CONTACT });
+  const body = 'Wright Cleaning Accounts: we need the Currys receipt. Upload securely: https://portal.test/p/tok';
+  await sender(t).send(db, [message({ body })]);
+
+  const [outbox] = t.email.readOutbox();
+  expect(outbox?.html ?? '').not.toContain('Upload securely:');
+  expect(outbox?.html ?? '').toContain('we need the Currys receipt.');
+  expect(outbox?.html ?? '').toContain('Upload securely'); // still on the button
+  // The reviewed bytes are untouched — the clause is a rendering choice.
+  expect(outbox?.body).toBe(body);
+});
+
 test('a body with NO trailing link still renders — nothing is dropped', async () => {
   const t = transport();
   const { db } = harness({ ch_1: CONTACT });
