@@ -1,6 +1,6 @@
 {
   "key": "8201c51492a61acf",
-  "recordedAt": "2026-09-06",
+  "recordedAt": "2026-09-08",
   "modelId": "anthropic.claude-sonnet-4-6",
   "synthetic": false,
   "description": "extraction · OCR text path · happy read",
@@ -15,12 +15,12 @@
           "docType": "INVOICE",
           "supplierName": "Bidfood Wholesale Ltd",
           "documentDate": "2026-08-04",
-          "totalPence": 28296,
-          "taxPence": 4716,
-          "netPence": 23580,
-          "currency": "GBP",
           "reference": "BF-2026-118374",
           "vatNumber": "GB 412 8836 21",
+          "currency": "GBP",
+          "netPence": 23580,
+          "taxPence": 4716,
+          "totalPence": 28296,
           "lineItems": [
             {
               "description": "12 x Beef patties 6oz (case)",
