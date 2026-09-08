@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState } from 'react';
-import { AlertTriangle, Check, ExternalLink, FileText, Lock, PencilLine, X } from 'lucide-react';
+import { AlertTriangle, Check, ExternalLink, FileText, Lock, PencilLine, Sparkles, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
@@ -163,6 +163,12 @@ const m = defineMessages({
     id: 'documents.documentPreview.provenancePositioned',
     defaultMessage: 'Read from the document by extraction — highlighted where it was read.',
   },
+  // The suggestion, said ON the Category row (owner, 8 Sep 2026). Short by
+  // necessity — it sits inline beside a value — and it never claims the
+  // document is coded: "suggested" is the whole point of the word.
+  rowSuggested: { id: 'documents.documentPreview.rowSuggested', defaultMessage: 'Suggested: {category}' },
+  rowAcceptSuggestion: { id: 'documents.documentPreview.rowAcceptSuggestion', defaultMessage: 'Accept' },
+  rowEditInstead: { id: 'documents.documentPreview.rowEditInstead', defaultMessage: 'Edit' },
   readyHeading: { id: 'documents.documentPreview.readyHeading', defaultMessage: 'Path to Ready' },
   /**
    * A STATEMENT's own panel (owner, 8 Sep 2026): *"a bank statement doesn't
@@ -798,6 +804,49 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                       <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-400 font-semibold leading-snug">
                         <AlertTriangle size={12} className="mt-px shrink-0" />
                         <span>{intl.formatMessage(m.billedToMismatch, { billedTo, client: doc.clientName })}</span>
+                      </div>
+                    )}
+                    {/* ⚠ **The suggestion belongs ON the row it is about**
+                        (owner, 8 Sep 2026: *"instead of from the bottom,
+                        suggest here directly and give accept or edit option
+                        from there"*). It was only in a card two panels down,
+                        so the accountant read an em dash, scrolled past Path
+                        to Ready and a bank-match block, and only then met the
+                        answer — for the one field that is missing on nearly
+                        every document.
+                        
+                        ⚠ **The row's VALUE still reads "—", and that is not an
+                        oversight.** `missingForReady` decides what a document
+                        still needs by testing `value === '—'`; writing the
+                        suggested code into the value would make this screen
+                        say the document is one field from Ready when nothing
+                        has coded it. So the suggestion sits BESIDE the value,
+                        marked as not applied, and accepting it goes through
+                        the same Review → Approve correction as typing it. */}
+                    {f.label === CATEGORY_LABEL && suggestion?.outcome === 'SUGGEST' && suggestion.categoryCode !== null && editing !== f.label && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-brand/25 bg-brand/[0.07] text-[11px] font-bold text-brand">
+                          <Sparkles size={11} className="shrink-0" />
+                          {intl.formatMessage(m.rowSuggested, {
+                            category: suggestion.analysisAccount ?? suggestion.categoryCode,
+                          })}
+                        </span>
+                        {canEdit(CATEGORY_LABEL) && (
+                          <>
+                            <button
+                              onClick={acceptSuggestion}
+                              className="px-3 py-1 rounded-full text-[11px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors"
+                            >
+                              {intl.formatMessage(m.rowAcceptSuggestion)}
+                            </button>
+                            <button
+                              onClick={() => startEdit(f)}
+                              className="px-3 py-1 rounded-full text-[11px] font-bold text-zinc-300 bg-raised hover:bg-white/10 border border-white/5 transition-colors"
+                            >
+                              {intl.formatMessage(m.rowEditInstead)}
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
