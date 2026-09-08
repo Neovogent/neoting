@@ -22,6 +22,7 @@ export const commonActions = defineMessages({
   close: { id: 'common.action.close', defaultMessage: 'Close' },
   exportCsv: { id: 'common.action.exportCsv', defaultMessage: 'Export CSV' },
   retry: { id: 'common.action.retry', defaultMessage: 'Retry' },
+  save: { id: 'common.action.save', defaultMessage: 'Save' },
 });
 
 export const commonLabels = defineMessages({
@@ -46,4 +47,5 @@ export const commonLabels = defineMessages({
 export const commonPlaceholders = defineMessages({
   ukMobile: { id: 'common.placeholder.ukMobile', defaultMessage: '+44 7700 900123' },
   personName: { id: 'common.placeholder.personName', defaultMessage: 'John Doe' },
+  email: { id: 'common.placeholder.email', defaultMessage: 'name@company.co.uk' },
 });

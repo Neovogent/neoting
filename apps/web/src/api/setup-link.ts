@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { inviteBusinessMember } from '@neoting/contracts/client';
+import { inviteBusinessMember, updateBusinessPrimaryContact } from '@neoting/contracts/client';
 import { unwrapBody } from './envelope';
 
 /**
@@ -40,4 +40,22 @@ export async function resendClientSetupLink(businessId: string, email: string): 
     throw new Error('inviteBusinessMember answered off-contract — createdAt missing');
   }
   return { sentAt: parsed.data.createdAt };
+}
+
+/**
+ * Correct the address every chase for this client goes to.
+ *
+ * ⚠ **The operation this file's own header said did not exist.** Until 8 Sep
+ * 2026 `contacts.email` was written at intake and by nothing else, which is
+ * why the Settings panel showed it read-only — and why "re-send the setup
+ * link" had to be built out of `inviteBusinessMember` above. A typo at intake,
+ * or a client who changed their email, ended the chase lane for that client
+ * with no route back.
+ *
+ * `PATCH …/primary-contact` edits the existing primary contact in place. It
+ * answers `204`, so there is nothing to parse: the caller refetches
+ * `GET /businesses`, which already serves `primaryContactEmail`.
+ */
+export async function updateClientContactEmail(businessId: string, email: string): Promise<void> {
+  await updateBusinessPrimaryContact(businessId, { email });
 }

@@ -3591,6 +3591,64 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /businesses/{businessId}/primary-contact:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+    patch:
+      operationId: updateBusinessPrimaryContact
+      summary: Correct the client's registered contact
+      description: |
+        The address and details of the ONE contact a chase goes to.
+
+        ⚠ **This did not exist until 8 Sep 2026, and its absence was the
+        defect.** The client's Settings panel showed the contact's email as
+        read-only and said in its own source that changing it "needs a contract
+        operation that does not exist yet". Every other door creates a NEW
+        contact marked `receives_chases: false` on purpose — inviting a client's
+        team member, the client adding their own staff — so the address a chase
+        actually goes to was fixed at intake and unchangeable by anyone, in a
+        product whose entire chase lane delivers by email. A typo at intake, or
+        a client who changes their email, ended the relationship's automation
+        with no route back.
+
+        It edits the EXISTING primary contact rather than promoting another one:
+        `contacts.is_primary` is written at intake and by nothing else, and a
+        second writer would make "who does a chase go to" a question with two
+        answers.
+
+        `x-nt-side-effect: ingest`, not a proposal. Correcting a contact detail
+        is the same class of act as client intake itself (Governance §10.6) —
+        it changes no figure, releases nothing and reaches no client until the
+        NEXT chase, which is itself reviewed and approved.
+
+        Every field is optional and an omitted one is left alone. `email: null`
+        is refused rather than honoured: a client with no address cannot be
+        chased at all, and silently disabling the lane is not an edit.
+      tags: [businesses]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrimaryContactUpdateRequest' }
+      responses:
+        '204':
+          description: |
+            Updated. The new values are served by `GET /businesses` —
+            `primaryContactEmail`, `primaryContactName`, `primaryContactMobile`
+            — which the caller refetches rather than trusting a body here.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /businesses/{businessId}/members:
     parameters:
       - $ref: '#/components/parameters/BusinessId'
@@ -10030,6 +10088,27 @@ components:
           type: boolean
           default: false
           description: For a non-finance submitter who should see their submission but not its coding (SoT §3.3).
+
+    PrimaryContactUpdateRequest:
+      type: object
+      description: |
+        Every field optional; an omitted one is left alone. At least one must be
+        present, or there is nothing to correct.
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: |
+            Where this client's chases go. NOT nullable — see the operation
+            description: a contact with no address cannot be chased, and an
+            edit that silently ends the lane is not an edit.
+        firstName: { type: [string, 'null'], maxLength: 100 }
+        lastName: { type: [string, 'null'], maxLength: 100 }
+        mobileE164:
+          type: [string, 'null']
+          pattern: '^\+[1-9][0-9]{6,14}$'
+          description: Null clears it — a mobile is optional in ID, where the transport is email.
 
     Invite:
       type: object

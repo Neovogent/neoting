@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 
 import type { Business, Invite } from '@neoting/contracts/model';
 import {
@@ -9,6 +9,9 @@ import {
   inviteBusinessMemberParams,
   listBusinessMembersParams,
   listBusinessMembersQueryParams,
+  updateBusinessPrimaryContactBody,
+  updateBusinessPrimaryContactHeader,
+  updateBusinessPrimaryContactParams,
 } from '@neoting/contracts/zod';
 
 import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
@@ -72,6 +75,24 @@ export class ClientsTeamSettingsController {
       'query parameters',
     );
     return this.team.listMembers(await this.context.require(), params.businessId, parsed);
+  }
+
+  /**
+   * Correct the client's registered contact — the address a chase goes to.
+   * `204`: the new values are served by `GET /businesses`, which the caller
+   * refetches rather than trusting a body written here.
+   */
+  @Patch(':businessId/primary-contact')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async updatePrimaryContact(
+    @Param('businessId') businessId: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<void> {
+    const key = parseIdempotencyKey(updateBusinessPrimaryContactHeader, idempotencyKey);
+    const params = parseBoundary(updateBusinessPrimaryContactParams, { businessId }, 'businessId');
+    const request = parseBoundary(updateBusinessPrimaryContactBody, body, 'request body');
+    await this.team.updatePrimaryContact(await this.context.require(), params.businessId, request, key);
   }
 
   /** Invite someone into this client workspace. The token is never in the response. */
