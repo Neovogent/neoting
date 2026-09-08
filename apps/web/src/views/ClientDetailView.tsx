@@ -1078,6 +1078,18 @@ export function ClientDetailView() {
 
   /** The header button and the Missing tile — everything outstanding. */
   const chaseClient = () => setChasing(miss.filter((m) => !m.chased).map((m) => m.id));
+  /**
+   * How many things this client can actually be chased for — the number on the
+   * header button and the reason it is enabled.
+   *
+   * Live that is the bank lines with no evidence (`counts.unmatched`, the same
+   * figure the Bank tab prints as "N without evidence"); synthetic it is the
+   * seeded missing items, which is what that button always meant on seed data.
+   * `s.missing` is neither: it is the server's chase-derived count, zero for a
+   * client nobody has chased, which is why the button was dead on every live
+   * client until 8 Sep 2026.
+   */
+  const chaseable = businessesLive ? s.unmatched : miss.filter((mi) => !mi.chased).length;
 
   const docColumns: Column<Document>[] = [
     // Title: the generated channel-based name for an unextracted supplier —
@@ -1164,14 +1176,33 @@ export function ClientDetailView() {
               <Sparkles size={16} />
               {intl.formatMessage(m.askAi)}
             </button>
+            {/* ⚠ **The header Chase was dead on every live client** (8 Sep 2026,
+                reported with a screenshot of a client whose Bank tab read "55
+                without evidence" beside a greyed-out Chase button).
+                
+                Two faults, and they compounded. It gated on `s.missing`, which
+                live is the SERVER's `counts.missing` — chase-derived, and zero
+                for a client nobody has chased yet — while the thing an
+                accountant means by "what is missing" is the bank lines with no
+                evidence, `counts.unmatched`. And `chaseClient` opens the
+                seeded `missing` array, which is EMPTY with the API on, so even
+                enabled it would have opened a modal listing nothing.
+                
+                The flow now has ONE destination. The button counts what can
+                actually be chased and takes you to the client's Chases tab —
+                the screen built for exactly this (item 63): every line without
+                evidence, chase one or chase a selection. It deliberately does
+                NOT fire 55 chases from a header press; picking is the point,
+                and the Bank tab's own "Chase for evidence" is the other door
+                into the same act. */}
             <button
-              disabled={s.missing === 0}
-              onClick={chaseClient}
+              disabled={chaseable === 0}
+              onClick={() => (businessesLive ? setTab('Chases') : chaseClient())}
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft disabled:opacity-40"
             >
               <Send size={16} />
-              {s.missing > 0
-                ? intl.formatMessage(m.chaseActionCount, { count: s.missing })
+              {chaseable > 0
+                ? intl.formatMessage(m.chaseActionCount, { count: chaseable })
                 : intl.formatMessage(m.chaseAction)}
             </button>
           </div>
