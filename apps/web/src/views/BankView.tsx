@@ -89,6 +89,13 @@ const EVIDENCE_FILTER_LABELS = defineMessages({
   credits: { id: 'bank.evidenceFilter.credits', defaultMessage: 'Credit notes' },
 });
 
+/**
+ * How long the SENT dialog stays before closing itself (owner, 8 Sep 2026:
+ * *"automatic 3s closing"*). Long enough to read one sentence, short enough
+ * that nobody reaches for the close button. A FAILURE ignores it entirely.
+ */
+const CHASE_DIALOG_DWELL_MS = 3_000;
+
 const m = defineMessages({
   heading: { id: 'bank.bankView.heading', defaultMessage: 'Bank' },
   bankLoading: { id: 'bank.bankView.loading', defaultMessage: 'Loading the bank feed…' },
@@ -156,6 +163,13 @@ const m = defineMessages({
     id: 'bank.bankView.chaseSending',
     defaultMessage: 'Sending the chase…',
   },
+  chaseSendingBody: {
+    id: 'bank.bankView.chaseSendingBody',
+    defaultMessage: 'This takes a couple of seconds. Keep this open.',
+  },
+  chaseSentTitle: { id: 'bank.bankView.chaseSentTitle', defaultMessage: 'Chase sent' },
+  chaseFailedTitle: { id: 'bank.bankView.chaseFailedTitle', defaultMessage: 'The chase did not send' },
+  chaseDialogLabel: { id: 'bank.bankView.chaseDialogLabel', defaultMessage: 'Chase outcome' },
   chaseQueued: {
     id: 'bank.bankView.chaseQueued',
     defaultMessage:
@@ -459,21 +473,29 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     { kind: 'sending' } | { kind: 'queued'; count: number } | { kind: 'failed'; label: string } | null
   >(null);
   /**
-   * ⚠ **The outcome has to find the person who caused it** (owner, 8 Sep 2026:
-   * *"clicking on the bottom chase for evidence button not working"* — it was
-   * working; create → review → approve all answered 201/200/200 and the email
-   * went out). The bulk bar sits UNDER the table and this banner sat OVER it,
-   * so on a 92-row feed the only sign of success was 55 rows above the button
-   * that had just been pressed. Silence is indistinguishable from a dead
-   * button, so the accountant presses it again.
+   * ⚠ **The outcome is a DIALOG, and it has been three different things in one
+   * day.** It began above the table, where a 92-row feed put it 55 rows from
+   * the bulk bar that raised it — the owner read that as a dead button
+   * (*"clicking on the bottom chase for evidence button not working"*; it was
+   * working, create → review → approve answered 201/200/200 and the email
+   * left). Moving it under the table fixed the distance and not the class of
+   * problem: a line of text in a scrolling page is still something a person
+   * has to go and find. The owner's ruling is the right one — *"it should show
+   * me a dialog that it has been sent, with a automatic 3s closing and a manual
+   * close button"* — because a dialog cannot be scrolled past.
    *
-   * The banner now renders directly beneath the table — inches from the bulk
-   * bar — and scrolls itself into view for the other caller, the match
-   * dialog's "Chase for it", which closes over whatever row was mid-screen.
+   * ⚠ **Only the SUCCESS closes itself.** A failure names something the
+   * accountant has to act on, and a message that removes itself after three
+   * seconds is how the one that mattered gets missed. It waits to be
+   * dismissed. Same reason `ApprovalsLiveQueue` keeps decided cards mounted.
    */
-  const outcomeRef = useRef<HTMLParagraphElement>(null);
+  const dwell = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (chaseOutcome !== null) outcomeRef.current?.scrollIntoView({ block: 'nearest' });
+    if (chaseOutcome?.kind !== 'queued') return;
+    dwell.current = setTimeout(() => setChaseOutcome(null), CHASE_DIALOG_DWELL_MS);
+    return () => {
+      if (dwell.current !== null) clearTimeout(dwell.current);
+    };
   }, [chaseOutcome]);
   const stageLiveChase = async (sel: readonly BankTransaction[]) => {
     const chaseable = sel.filter((t) => isUnexplained(t));
@@ -1080,19 +1102,6 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 ]}
                 footer={intl.formatMessage(m.transactionsFooter, { count: scopedTxns.length, unmatched: unmatchedCount })}
               />
-              {chaseOutcome !== null && (
-                <p
-                  ref={outcomeRef}
-                  role={chaseOutcome.kind === 'failed' ? 'alert' : 'status'}
-                  className={`text-[12px] font-semibold mt-3 ${chaseOutcome.kind === 'failed' ? 'text-amber-400' : 'text-brand'}`}
-                >
-                  {chaseOutcome.kind === 'sending'
-                    ? intl.formatMessage(m.chaseSending)
-                    : chaseOutcome.kind === 'queued'
-                      ? intl.formatMessage(m.chaseQueued, { count: chaseOutcome.count })
-                      : chaseOutcome.label}
-                </p>
-              )}
             </>
           )}
 
@@ -1476,6 +1485,57 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       {/* Candidate preview — stacks above the picker so closing it returns you
           to the same shortlist rather than losing your place. */}
       <AnimatePresence>
+        {chaseOutcome !== null && (
+          <Modal
+            onClose={() => setChaseOutcome(null)}
+            width="max-w-md"
+            label={intl.formatMessage(m.chaseDialogLabel)}
+          >
+            <div className="bg-card border border-white/5 rounded-[28px] p-6 md:p-8 shadow-2xl text-center">
+              <div
+                className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center ${
+                  chaseOutcome.kind === 'failed' ? 'bg-amber-500/10 text-amber-400' : 'bg-brand/10 text-brand'
+                }`}
+              >
+                {chaseOutcome.kind === 'sending' ? (
+                  <Send size={20} className="animate-pulse" />
+                ) : chaseOutcome.kind === 'queued' ? (
+                  <Check size={22} strokeWidth={3} />
+                ) : (
+                  <AlertTriangle size={20} />
+                )}
+              </div>
+              {/* `alert` interrupts, `status` waits its turn — a refusal has to
+                  reach a screen reader now, a confirmation does not. */}
+              <div role={chaseOutcome.kind === 'failed' ? 'alert' : 'status'}>
+                <h3 className="mt-4 text-[15px] font-bold text-zinc-100">
+                  {chaseOutcome.kind === 'sending'
+                    ? intl.formatMessage(m.chaseSending)
+                    : chaseOutcome.kind === 'queued'
+                      ? intl.formatMessage(m.chaseSentTitle)
+                      : intl.formatMessage(m.chaseFailedTitle)}
+                </h3>
+                <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">
+                  {chaseOutcome.kind === 'sending'
+                    ? intl.formatMessage(m.chaseSendingBody)
+                    : chaseOutcome.kind === 'queued'
+                      ? intl.formatMessage(m.chaseQueued, { count: chaseOutcome.count })
+                      : chaseOutcome.label}
+                </p>
+              </div>
+              {/* ⚠ Present in EVERY state, including while sending — a dialog a
+                  person cannot dismiss is a worse trap than the banner it
+                  replaced, and closing it abandons nothing: the send belongs to
+                  the server and finishes either way. */}
+              <button
+                onClick={() => setChaseOutcome(null)}
+                className="mt-6 px-5 py-2 rounded-full text-[12px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors"
+              >
+                {intl.formatMessage(commonActions.close)}
+              </button>
+            </div>
+          </Modal>
+        )}
         {chasing && (
           <ChaseModal
             clientIds={chasing}

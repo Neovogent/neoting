@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BankView, csvAmount, txnAmountLabel } from './BankView';
@@ -201,28 +201,24 @@ describe('the CSV export', () => {
 });
 
 /**
- * ⚠ **The outcome has to be where the button is** (owner, 8 Sep 2026:
- * *"clicking on the bottom chase for evidence button not working"*).
+ * ⚠ **The chase outcome is a DIALOG, and it has been three things in one day.**
  *
- * It WAS working — create → review → approve all answered and the email went
- * out. The bulk bar sits under the table and the banner sat over it, so on a
- * 92-row feed the only sign of success was 55 rows above the button that had
- * just been pressed. An accountant reads that as a dead button and presses it
- * again, which is a second chase to a real client.
+ * It began above the table, where a 92-row feed put it 55 rows from the bulk
+ * bar that raised it — the owner read that as a dead button (*"clicking on the
+ * bottom chase for evidence button not working"*). It was not: create → review
+ * → approve answered 201/200/200 and the email left. Moving it under the table
+ * fixed the distance and not the CLASS of problem — a line of text in a
+ * scrolling page is still something a person has to go and find. The ruling is
+ * the right one: *"it should show me a dialog that it has been sent, with a
+ * automatic 3s closing and a manual close button"*.
  *
- * So this pins the two things that fix it, and neither is about the send: the
- * banner comes AFTER the table in document order, and the seconds the three
- * calls take are narrated rather than looking inert.
+ * What is pinned here is the asymmetry, which is the part that is easy to
+ * "tidy" into a bug later: **the success closes itself, the failure does not.**
+ * A refusal names something the accountant has to act on, and a message that
+ * removes itself after three seconds is how the one that mattered gets missed.
  */
-describe('the chase outcome reaches the person who pressed the button', () => {
-  it('narrates the send and renders the result BELOW the table, next to the bulk bar', async () => {
-    sendChaseNow.mockClear();
-    let release!: () => void;
-    sendChaseNow.mockImplementationOnce(
-      () => new Promise<Record<string, never>>((resolve) => { release = () => resolve({}); }),
-    );
-
-    const { container } = renderView();
+describe('the chase outcome is confirmed in a dialog', () => {
+  function selectAndChase(container: HTMLElement) {
     // ⚠ `DataTable`'s tick is a `<button aria-pressed>` with NO accessible
     // name, so there is no role or label to query it by — hence the attribute.
     // (That is its own a11y defect, noted rather than fixed here.) Index 0 is
@@ -230,17 +226,58 @@ describe('the chase outcome reaches the person who pressed the button', () => {
     // unexplained line and therefore chaseable.
     fireEvent.click(container.querySelectorAll('[aria-pressed]')[1]!);
     fireEvent.click(screen.getByRole('button', { name: /Chase for evidence/i }));
+  }
 
-    // While the three calls are in flight the screen says so.
-    const sending = await screen.findByText(/Sending the chase/i);
-    // ⚠ AFTER the table, not before it — the whole point.
-    const table = container.querySelector('table')!;
-    expect(table.compareDocumentPosition(sending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it('narrates the wait, confirms the send, and closes itself after the dwell', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      sendChaseNow.mockClear();
+      let release!: () => void;
+      sendChaseNow.mockImplementationOnce(
+        () => new Promise<Record<string, never>>((resolve) => { release = () => resolve({}); }),
+      );
 
-    release();
-    await waitFor(() => expect(screen.getByText(/Chase sent for/i)).toBeTruthy());
-    const settled = screen.getByText(/Chase sent for/i);
-    expect(table.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(sendChaseNow).toHaveBeenCalledTimes(1);
+      const { container } = renderView();
+      selectAndChase(container);
+
+      // The three calls take a couple of seconds against a real API; an inert
+      // button for that long is what "not working" looked like.
+      await screen.findByText(/Sending the chase/i);
+
+      release();
+      await screen.findByText(/^Chase sent$/i);
+      expect(screen.getByText(/the client has been emailed their secure upload link/i)).toBeTruthy();
+
+      await act(async () => { vi.advanceTimersByTime(3_000); });
+      await waitFor(() => expect(screen.queryByText(/^Chase sent$/i)).toBeNull());
+      expect(sendChaseNow).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves a REFUSAL on screen until it is dismissed by hand', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      sendChaseNow.mockClear();
+      sendChaseNow.mockRejectedValueOnce(new Error('nope'));
+
+      const { container } = renderView();
+      selectAndChase(container);
+
+      await screen.findByText(/The chase did not send/i);
+      // Ten times the success dwell, and it is still there.
+      await act(async () => { vi.advanceTimersByTime(30_000); });
+      expect(screen.getByText(/The chase did not send/i)).toBeTruthy();
+
+      // ⚠ Two things answer to "Close": the Modal frame's own corner X (which
+      // carries it as an `aria-label`) and this dialog's explicit button. The
+      // TEXT node belongs only to the second, which is the one the owner asked
+      // for — *"a manual close button"* — so that is what this clicks.
+      fireEvent.click(screen.getByText('Close'));
+      await waitFor(() => expect(screen.queryByText(/The chase did not send/i)).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
