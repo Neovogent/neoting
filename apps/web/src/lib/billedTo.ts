@@ -1,3 +1,4 @@
+import { BILLED_TO_LABELS } from '../api/document-detail';
 import type { Document, ExtractedField } from './types';
 
 /**
@@ -48,7 +49,10 @@ export function billedToMismatch(
   // definition, and flagging every invoice a client issues would be noise.
   if (doc.kind !== 'cost') return null;
 
-  const billedTo = fields.find((f) => f.label === 'Customer')?.value?.trim();
+  // ⚠ EVERY label that row goes by, never the one word "Customer" — a bank
+  // statement calls it "Account holder", and matching one string is how this
+  // check silently stopped firing on statements for a few hours on 8 Sep 2026.
+  const billedTo = fields.find((f) => BILLED_TO_LABELS.includes(f.label))?.value?.trim();
   if (billedTo === undefined || billedTo === '' || billedTo === '—') return null;
 
   const paper = normaliseParty(billedTo);

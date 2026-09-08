@@ -1,42 +1,57 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { billedToMismatch, normaliseParty } from './billedTo';
-import type { ExtractedField } from './types';
+import type { Document, ExtractedField } from './types';
 
-const f = (label: string, value: string): ExtractedField => ({
-  label,
-  value,
-  confidence: 0.97,
-  provenance: 'bill-to block',
-});
+/**
+ * The flag that says "this document is for somebody else".
+ *
+ * ⚠ **The case that earned this file** (8 Sep 2026): a bank statement for
+ * MERIDIAN SOFTWARE SOLUTIONS LTD sitting in Neovogent UK LTD's register with
+ * nothing saying so. The check itself was right and had been working — what
+ * broke it was a RENAME: the statement field table started calling that row
+ * "Account holder" instead of "Customer", and this function looked the row up
+ * by its label. A pure-function test costs nothing and is the only thing that
+ * would have caught it.
+ */
 
-const cost = (clientName: string) => ({ kind: 'cost' as const, clientName });
+const doc = (over: Partial<Pick<Document, 'kind' | 'clientName'>> = {}) =>
+  ({ kind: 'cost', clientName: 'Neovogent UK LTD', ...over }) as Pick<Document, 'kind' | 'clientName'>;
 
-test('the live case: a cost addressed to another company is named', () => {
-  // The Wolseley invoice that sat in Aldgate Kitchen's inbox on 7 Sep 2026.
-  expect(billedToMismatch(cost('Aldgate Kitchen Ltd'), [f('Customer', 'American Burger Ltd')])).toBe(
-    'American Burger Ltd',
-  );
-});
+const field = (label: string, value: string): ExtractedField =>
+  ({ label, value, confidence: 0.95, provenance: 'AI suggested' }) as ExtractedField;
 
-test('a suffix or punctuation difference is NOT a mismatch', () => {
-  for (const paper of ['Aldgate Kitchen', 'ALDGATE KITCHEN LIMITED', 'Aldgate Kitchen Ltd.', 'The Aldgate Kitchen Co']) {
-    expect(billedToMismatch(cost('Aldgate Kitchen Ltd'), [f('Customer', paper)])).toBeNull();
-  }
-});
+describe('who the document is for', () => {
+  test('an invoice addressed to another company is flagged', () => {
+    expect(billedToMismatch(doc(), [field('Customer', 'MERIDIAN SOFTWARE SOLUTIONS LTD')])).toBe(
+      'MERIDIAN SOFTWARE SOLUTIONS LTD',
+    );
+  });
 
-test('silence when there is nothing to compare', () => {
-  expect(billedToMismatch(cost('Aldgate Kitchen Ltd'), [])).toBeNull();
-  expect(billedToMismatch(cost('Aldgate Kitchen Ltd'), [f('Customer', '—')])).toBeNull();
-  expect(billedToMismatch(cost('Aldgate Kitchen Ltd'), [f('Customer', '  ')])).toBeNull();
-  // A name that is nothing BUT noise words normalises to empty — say nothing.
-  expect(billedToMismatch(cost('Ltd'), [f('Customer', 'American Burger Ltd')])).toBeNull();
-});
+  test('a STATEMENT is flagged too — the row is called "Account holder" there', () => {
+    // The regression. Before the label set, this returned null and a bank
+    // statement for another company looked exactly like one of the client's own.
+    expect(billedToMismatch(doc(), [field('Account holder', 'MERIDIAN SOFTWARE SOLUTIONS LTD')])).toBe(
+      'MERIDIAN SOFTWARE SOLUTIONS LTD',
+    );
+  });
 
-test('sales documents are never flagged — the customer is somebody else by definition', () => {
-  expect(billedToMismatch({ kind: 'sales', clientName: 'Aldgate Kitchen Ltd' }, [f('Customer', 'Deliveroo')])).toBeNull();
-});
+  test('the client under its own name, however it is punctuated, is silence', () => {
+    expect(billedToMismatch(doc(), [field('Account holder', 'Neovogent UK Ltd.')])).toBeNull();
+    expect(billedToMismatch(doc(), [field('Customer', 'NEOVOGENT')])).toBeNull();
+  });
 
-test('normalisation strips company noise, not the name', () => {
-  expect(normaliseParty('The Aldgate Kitchen Co. Ltd')).toBe('aldgate kitchen');
+  test('nothing to compare is silence, never a guess', () => {
+    expect(billedToMismatch(doc(), [])).toBeNull();
+    expect(billedToMismatch(doc(), [field('Account holder', '—')])).toBeNull();
+    expect(billedToMismatch(doc(), [field('Account holder', '  ')])).toBeNull();
+  });
+
+  test('a SALES document is never flagged — the customer is somebody else by definition', () => {
+    expect(billedToMismatch(doc({ kind: 'sales' }), [field('Customer', 'Anyone Else Ltd')])).toBeNull();
+  });
+
+  test('normaliseParty drops the suffixes that carry no identity', () => {
+    expect(normaliseParty('Neovogent UK Ltd.')).toBe(normaliseParty('NEOVOGENT'));
+  });
 });

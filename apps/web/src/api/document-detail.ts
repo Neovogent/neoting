@@ -177,6 +177,27 @@ const PRESENTATION_BY_LABEL = new Map(
 );
 
 /**
+ * Every label the "who is this document FOR" row goes by — `Customer` on an
+ * invoice, `Account holder` on a statement.
+ *
+ * ⚠ **`lib/billedTo.ts` finds that row by LABEL, so a rename silently disables
+ * the mismatch flag** — which is exactly what happened on 8 Sep 2026: the
+ * statement table renamed `customerName` to "Account holder" for item 8, and
+ * the warning that had been telling accountants *"this document is addressed
+ * to MERIDIAN SOFTWARE SOLUTIONS LTD, not Neovogent UK LTD"* stopped firing on
+ * the one document type where the money is most likely to land in the wrong
+ * client's books. Derived from the tables rather than typed out, so the next
+ * rename brings the check with it.
+ */
+export const BILLED_TO_LABELS: readonly string[] = [
+  ...new Set(
+    [...FIELD_PRESENTATION, ...STATEMENT_PRESENTATION]
+      .filter((p) => p.key === 'customerName')
+      .map((p) => p.label),
+  ),
+];
+
+/**
  * Which table this document is read through. Only `STATEMENT` diverges — every
  * other type on the wire (invoice, receipt, credit note, OTHER) is the
  * supplier-and-total shape the invoice table describes.
