@@ -71,7 +71,7 @@ const m = defineMessages({
   },
   itemsExpiry: {
     id: 'portal.chasePortal.itemsExpiry',
-    defaultMessage: 'This page signs you out at {time} on {date}. The link keeps working — ask for a new code any time.',
+    defaultMessage: 'This page signs you out at {time} on {date}. Your link keeps working — open it again any time.',
   },
 
   captureTitle: { id: 'portal.chasePortal.captureTitle', defaultMessage: 'Send the paperwork' },

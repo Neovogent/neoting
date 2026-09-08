@@ -80,7 +80,11 @@ const m = defineMessages({
   // what will be asked for, in words, which is what the accountant is about to
   // put their name to.
   monthChosen: { id: 'bank.requestStatement.monthChosen', defaultMessage: 'Asking for the {month} statement.' },
-  confirm: { id: 'bank.requestStatement.confirm', defaultMessage: 'Queue the request' },
+  // ⚠ The BUTTON has to move with the behaviour (found on the live walk, 8 Sep
+  // 2026): the paragraph above it said "Confirming sends the request" while
+  // this still said "Queue" — the exact ceremony item 3 removed, restated on
+  // the one control the accountant actually presses.
+  confirm: { id: 'bank.requestStatement.confirm', defaultMessage: 'Send the request' },
   cancel: { id: 'bank.requestStatement.cancel', defaultMessage: 'Cancel' },
   // ⚠ "Sent", not "queued", since 8 Sep 2026 (item 3): the owner took the
   // chase out of the release tier, so this act finishes where it is performed
