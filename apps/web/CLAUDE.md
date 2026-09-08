@@ -3057,9 +3057,11 @@ accountant wants to see; these three are the ones where the selection IS the
 form and a queue was pure ceremony.
 
 
-### The chase outcome moved to where the button is (8 Sep 2026)
+### The chase outcome is a dialog (8 Sep 2026)
 
-> *"clicking on the bottom chase for evidence button not working"* — the owner
+> *"clicking on the bottom chase for evidence button not working"* … *"instead
+> it should show me a dialog that it has been sent, with a automatic 3s closing
+> and a manual close button"* — the owner
 
 **It was working.** Driven live on a 92-row feed: `POST /action-proposals`
 201, `…/review` 200, `…/approval` 200, and the email left. What did not work
@@ -3072,17 +3074,32 @@ Silence is indistinguishable from a dead button, and the recovery an
 accountant reaches for is pressing it again, which is a second real chase to a
 real client.
 
-Two changes, neither of them about the send:
+⚠ **Moving the banner under the table was the first fix and it was not
+enough** — it closed the distance and not the class of problem, because a line
+of text in a scrolling page is still something a person has to go and find.
+The owner's ruling replaced it within the hour, and the dialog is what shipped.
 
-- **the banner renders after `<DataTable>`**, inches from the bulk bar, and
-  `outcomeRef.scrollIntoView({ block: 'nearest' })` fires when an outcome
-  appears — for the OTHER caller, the match dialog's "Chase for it", which
-  closes over whatever row was mid-screen;
-- **`{ kind: 'sending' }` joined the outcome union** so the wait is narrated
-  rather than looking inert.
+- **One `<Modal>`, three states.** `chaseOutcome` gained `{ kind: 'sending' }`,
+  so the dialog opens on the CLICK and narrates the wait rather than appearing
+  after it.
+- **⚠ Only the success closes itself.** `CHASE_DIALOG_DWELL_MS` is 3,000 and
+  the effect is armed for `kind === 'queued'` alone. A refusal names something
+  the accountant has to act on, and a message that removes itself after three
+  seconds is how the one that mattered gets missed — the same reasoning that
+  keeps `ApprovalsLiveQueue`'s decided cards mounted, and the mirror of
+  `CodingProposalModal`'s dwell, which fires on the SERVER SETTLE and never on
+  the click.
+- **The close button is present in every state, including while sending.** A
+  dialog a person cannot dismiss is a worse trap than the banner it replaced,
+  and dismissing abandons nothing: the send belongs to the server.
+- `role="alert"` for the refusal, `role="status"` for the rest — a refusal has
+  to interrupt a screen reader, a confirmation does not.
 
-`BankView.test.tsx` pins both, and the placement assertion is
-`compareDocumentPosition` against the table — jsdom computes no layout, so
-document order is the only honest thing to assert. ⚠ The row tick is a
-`<button aria-pressed>` with **no accessible name**, so the test queries it by
-attribute; that is its own a11y defect, noted rather than fixed.
+`BankView.test.tsx` pins the asymmetry, which is the part that is easy to
+"tidy" into a bug later: the success is gone after the dwell, the refusal
+survives ten times it and waits to be clicked. ⚠ Two elements answer to
+"Close" — the `Modal` frame's corner X carries it as an `aria-label` — so the
+test clicks the TEXT node, which belongs only to the dialog's own button. ⚠
+`DataTable`'s row tick is a `<button aria-pressed>` with **no accessible
+name**, so the test selects a row by attribute; that is its own a11y defect,
+noted rather than fixed.
