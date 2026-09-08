@@ -86,6 +86,21 @@ describe('sendFaultFor — the four causes, told apart', () => {
     expect(sendFaultFor(new NtTransportError('Network request failed')).reason).toBe('api-unreachable');
   });
 
+  // WARNING: THE REGRESSION. The door answers 415 for a type off the allowlist and
+  // 413 for a file over the cap. Both are the FILE, both are permanent, and both
+  // used to fall through to `server`, whose sentence is "try again in a moment"
+  // -- advice that can never come true. An iPhone photograph got it every time
+  // (pipeline test, 8 Sep 2026).
+  it('names a 415 as the file, not the server -- the type is off the allowlist', () => {
+    const fault = sendFaultFor(problem(415, 'NT-ING-002', 'The declared MIME type is not on the allowlist.'));
+    expect(fault.reason).toBe('refused');
+    expect(fault.code).toBe('NT-ING-002');
+  });
+
+  it('names a 413 as the file, not the server -- it is over the channel cap', () => {
+    expect(sendFaultFor(problem(413, 'NT-ING-001', 'Declared size exceeds the cap.')).reason).toBe('refused');
+  });
+
   it('falls back to a reportable server fault for anything unrecognised', () => {
     expect(sendFaultFor(new Error('boom')).reason).toBe('server');
     expect(sendFaultFor(problem(500, 'NT-SRV-001')).reason).toBe('server');
