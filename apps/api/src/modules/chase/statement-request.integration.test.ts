@@ -182,10 +182,20 @@ describe.skipIf(!enabled)('the statement-request chase, end to end', () => {
     const portal = new PortalContextService(app);
     const before = await portal.getContext(factsFor(chase?.id ?? ''));
     expect(before.items).toEqual([]);
-    expect(before.statementRequests).toEqual([{ period: '2026-07', received: false }]);
+    // `refusedMessage` is null in the ordinary case and stays pinned here: it is
+    // set only when the client uploads something that is not a statement against
+    // this request (the 9 Sep 2026 refusal), and a silent drift to undefined
+    // would take the client's explanation off the screen without failing a test.
+    expect(before.statementRequests).toEqual([{ period: '2026-07', received: false, refusedMessage: null }]);
 
     // The own-portal session lists the same ask.
     const own = await portal.getContext(factsFor(null));
+    // ⚠ No `refusedMessage` on THIS branch, and that is the shape, not a gap.
+    // A refusal is a fact about one chase-link upload — "the thing you sent
+    // against this request was not a statement" — and an own-portal session
+    // has no chase, so there is no upload for it to be about. It lists every
+    // open request on the workspace; the refusal belongs on the link the
+    // client actually sent through, which is where they are shown it.
     expect(own.statementRequests).toEqual([{ period: '2026-07', received: false }]);
     expect(own.summary?.awaitingYou).toBe(1);
 
@@ -222,7 +232,7 @@ describe.skipIf(!enabled)('the statement-request chase, end to end', () => {
 
     // The portal now reads received — the SAME predicate the close ran.
     const settled = await portal.getContext(factsFor(chase?.id ?? ''));
-    expect(settled.statementRequests).toEqual([{ period: '2026-07', received: true }]);
+    expect(settled.statementRequests).toEqual([{ period: '2026-07', received: true, refusedMessage: null }]);
 
     // Idempotent: a second close finds nothing open and writes nothing new.
     const again = await scopedDb(app, systemContext(P, SYSTEM_USER), (db) =>
