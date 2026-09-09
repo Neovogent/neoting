@@ -173,6 +173,12 @@ export interface PortalStatementRequest {
   /** `YYYY-MM` — the view formats it into the client's own month name. */
   period: string;
   received: boolean;
+  /**
+   * Why the last document sent against this request was refused, in the words
+   * the client is shown — set when they uploaded something that is not a bank
+   * statement (owner ruling, 9 Sep 2026). Null in the ordinary case.
+   */
+  refusedMessage: string | null;
 }
 
 export interface PortalView {
@@ -202,7 +208,11 @@ export async function fetchPortalView(token: string): Promise<PortalView> {
   return {
     businessName: parsed.businessName,
     items: parsed.items.map(toPortalItem),
-    statementRequests: (parsed.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
+    statementRequests: (parsed.statementRequests ?? []).map((r) => ({
+      period: r.period,
+      received: r.received,
+      refusedMessage: r.refusedMessage ?? null,
+    })),
     expiresAt: parsed.expiresAt,
   };
 }

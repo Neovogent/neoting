@@ -2,7 +2,7 @@ import { NO_MATCH_SUGGESTER, NO_STATEMENT_STEP } from '../../../banking-matching
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { RecordingChaseAutoClose } from '../../../chase/index.js';
+import { RecordingChaseAutoClose, RecordingStatementRequestRefusal } from '../../../chase/index.js';
 import { RecordingExtractionStep } from '../../../extraction/index.js';
 import { documentIdFor, PrismaDocumentSink } from '../../queue/document-sink.js';
 import { InMemoryDuplicateDetector } from '../../queue/duplicate-detector.js';
@@ -141,6 +141,7 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
       extractor: new RecordingExtractionStep(),
       // No-op: extraction returns null here, so auto-close is never triggered.
       autoClose: new RecordingChaseAutoClose(),
+      statementRefusal: new RecordingStatementRequestRefusal(),
       // Not a statement test: declared, and does nothing.
       statements: NO_STATEMENT_STEP,
       matchSuggester: NO_MATCH_SUGGESTER,

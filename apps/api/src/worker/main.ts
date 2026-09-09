@@ -7,7 +7,7 @@ import { type Job, UnrecoverableError, Worker } from 'bullmq';
 import { selectAiBudget } from '../common/ai-budget.js';
 import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
-import { PrismaChaseAutoClose } from '../modules/chase/index.js';
+import { PrismaChaseAutoClose, PrismaStatementRequestRefusal } from '../modules/chase/index.js';
 import { PrismaExtractionStep, selectExtractor } from '../modules/extraction/index.js';
 import { createSharpPerceptualHasher } from '../modules/ingestion-routing/lib/dedupe/perceptual-hash.js';
 import {
@@ -119,6 +119,10 @@ function bootstrap(): void {
   // a routed document; closes an open chase whose transaction the document
   // matches, writes the chase event + the accountant's notification.
   const autoClose = new PrismaChaseAutoClose(getPrismaClient());
+  // Refuse the wrong document type against a statement REQUEST (owner ruling,
+  // 9 Sep 2026) — runs after extraction, before the statement importer, so a
+  // refused document never reaches it.
+  const statementRefusal = new PrismaStatementRequestRefusal(getPrismaClient());
 
   // WhatsApp media (#79). This is the FIRST real call site for the four
   // config-selected seams below — `selectDocumentStore`, `selectImageNormaliser`,
@@ -173,6 +177,7 @@ function bootstrap(): void {
           uploadSanitiser,
           extractor,
           autoClose,
+          statementRefusal,
           statements,
           matchSuggester,
           // WhatsApp routing anchors (Phase 2): the sender map routes a

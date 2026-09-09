@@ -131,3 +131,17 @@ export {
   PrismaChaseAutoClose,
   RecordingChaseAutoClose,
 } from './auto-close.js';
+
+// Refuse a document that answers a STATEMENT request but is not a statement
+// (owner ruling, 9 Sep 2026). Same seam shape and same failure posture as
+// auto-close above: the ingest hook calls `run` through here, the worker wires
+// the Prisma implementation, and the processor's unit tests use the recorder.
+export {
+  PrismaStatementRequestRefusal,
+  RecordingStatementRequestRefusal,
+  STATEMENT_REQUEST_REFUSAL_CODE,
+  type StatementRequestRefusal,
+  type StatementRequestRefusalInput,
+  type StatementRequestRefusalResult,
+  statementRefusalMessage,
+} from './statement-request-refusal.js';

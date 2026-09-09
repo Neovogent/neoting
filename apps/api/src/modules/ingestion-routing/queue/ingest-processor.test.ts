@@ -1,7 +1,7 @@
 import { NO_MATCH_SUGGESTER, NO_STATEMENT_STEP, RecordingMatchSuggester } from '../../banking-matching/index.js';
 import { expect, test } from 'vitest';
 
-import { RecordingChaseAutoClose } from '../../chase/index.js';
+import { RecordingChaseAutoClose, RecordingStatementRequestRefusal } from '../../chase/index.js';
 import { type ExtractionCompletion, RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import {
@@ -31,6 +31,7 @@ function harness(
   store: InMemoryDocumentStore;
   extractor: RecordingExtractionStep;
   autoClose: RecordingChaseAutoClose;
+  statementRefusal: RecordingStatementRequestRefusal;
   uploadSanitiser: RecordingUploadSanitisation;
   deps: Parameters<typeof processIngestJob>[1];
 } {
@@ -43,6 +44,7 @@ function harness(
   const store = new InMemoryDocumentStore();
   const extractor = new RecordingExtractionStep(completion);
   const autoClose = new RecordingChaseAutoClose();
+  const statementRefusal = new RecordingStatementRequestRefusal();
   const uploadSanitiser =
     sanitisation === undefined ? new RecordingUploadSanitisation() : new RecordingUploadSanitisation(sanitisation);
   return {
@@ -55,6 +57,7 @@ function harness(
     store,
     extractor,
     autoClose,
+    statementRefusal,
     uploadSanitiser,
     deps: {
       processed,
@@ -65,6 +68,7 @@ function harness(
       uploadSanitiser,
       extractor,
       autoClose,
+      statementRefusal,
       // Not a statement test: the step is declared and does nothing. Declaring
       // it is the point — `statements` is required precisely so a composition
       // root cannot forget it by accident.

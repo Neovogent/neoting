@@ -5,12 +5,13 @@ import type { SubscriptionStatus } from '@prisma/client';
 import type { BusinessSubscription, PortalContext } from '@neoting/contracts/model';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
-import { scopedDb } from '../../common/db/scoped-db.js';
+import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { notDeleted } from '../../common/documents/deleted-documents.js';
 import { AppException } from '../../common/problem/problem.js';
 import {
   chaseItemRefs,
   isChaseReceivedClose,
+  STATEMENT_REQUEST_REFUSAL_CODE,
   statementCoversPeriod,
   statementPeriodOf,
   toChaseItem,
@@ -100,7 +101,18 @@ export class PortalContextService {
       const statementRequests =
         statementPeriod === null
           ? []
-          : [{ period: statementPeriod, received: await statementCoversPeriod(db, facts.businessId, statementPeriod) }];
+          : [
+              {
+                period: statementPeriod,
+                received: await statementCoversPeriod(db, facts.businessId, statementPeriod),
+                // Why the last thing this client sent was refused, if it was
+                // (owner ruling, 9 Sep 2026). Read from the document's own
+                // `failure_message` — the column the refusal wrote — so the
+                // client and the accountant read the SAME sentence, and this
+                // service composes no second copy of it.
+                refusedMessage: await lastRefusalMessage(db, facts.grantedItemIds),
+              },
+            ];
 
       const byId = new Map(transactions.map((txn) => [txn.id, txn]));
       // ⚠ A CLOSED_RECEIVED chase says ONE line arrived, not all of them.
@@ -382,4 +394,31 @@ function contextUnavailable(): AppException {
     'Portal context unavailable',
     'We could not load what we are missing from you. Ask your accountant to send the link again.',
   );
+}
+
+/**
+ * The refusal the client is owed an explanation for: the most recent document
+ * THIS session uploaded that the statement-request refusal turned down
+ * (`STATEMENT_REQUEST_REFUSAL_CODE`, owner ruling 9 Sep 2026).
+ *
+ * Scoped to the session's own grant, so it can only ever surface a refusal of
+ * something this client actually sent — never another session's. Null is the
+ * ordinary case and means nothing was refused.
+ *
+ * The sentence is the document row's own `failureMessage`, verbatim. It is
+ * composed once, by the refusal step, from our own enum words; re-composing it
+ * here would be a second wording to drift.
+ */
+async function lastRefusalMessage(db: ScopedClient, grantedItemIds: readonly string[]): Promise<string | null> {
+  if (grantedItemIds.length === 0) return null;
+  const refused = await db.document.findFirst({
+    where: {
+      id: { in: [...grantedItemIds] },
+      state: 'REJECTED',
+      failureCode: STATEMENT_REQUEST_REFUSAL_CODE,
+    },
+    select: { failureMessage: true },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return refused?.failureMessage ?? null;
 }

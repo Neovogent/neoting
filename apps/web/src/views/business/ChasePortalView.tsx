@@ -113,6 +113,10 @@ const m = defineMessages({
   // The honest title when the pipeline has not answered yet — never
   // `unmatchedTitle`, which asserts a verdict the server did not give.
   pendingTitle: { id: 'portal.chasePortal.pendingTitle', defaultMessage: 'Sent — we are still reading it' },
+  // A REFUSAL, which is neither of the two above: the server has actually said
+  // "not that". It gets its own title so the screen never borrows the hedged
+  // pending copy for a verdict that is certain (owner ruling, 9 Sep 2026).
+  refusedTitle: { id: 'portal.chasePortal.refusedTitle', defaultMessage: 'That is not what we asked for' },
   failedTitle: { id: 'portal.chasePortal.failedTitle', defaultMessage: 'That did not send' },
   unmatchedDetail: {
     id: 'portal.chasePortal.unmatchedDetail',
@@ -675,14 +679,17 @@ function Result({
   // `pending` means the server has not answered — it must never borrow the
   // mismatch copy, which asserts this is the wrong document.
   const pending = outcome.kind === 'pending';
-  const item = outcome.kind === 'failed' ? null : outcome.item;
+  const refused = outcome.kind === 'refused';
+  const item = outcome.kind === 'failed' || refused ? null : outcome.item;
   const title = outcome.kind === 'failed'
     ? m.failedTitle
     : matched
       ? m.matchedTitle
-      : pending
-        ? m.pendingTitle
-        : m.unmatchedTitle;
+      : refused
+        ? m.refusedTitle
+        : pending
+          ? m.pendingTitle
+          : m.unmatchedTitle;
 
   return (
     <Shell title={intl.formatMessage(title)}>
@@ -709,13 +716,18 @@ function Result({
               truthfully say ("we have it, it is not matched yet") is in
               `unmatchedDetailNoItem`, and naming the item here would read as
               the verdict we do not have. */}
-          {item && !pending
-            ? intl.formatMessage(matched ? m.matchedDetail : m.unmatchedDetail, {
-                merchant: item.label ?? intl.formatMessage(m.itemUnnamed),
-                amount: currency(Math.abs(item.amount)),
-                date: item.date,
-              })
-            : intl.formatMessage(m.unmatchedDetailNoItem)}
+          {/* A refusal shows the SERVER's sentence verbatim — the same words
+              written onto the document, so the client and the accountant read
+              one wording rather than two that can drift. */}
+          {outcome.kind === 'refused'
+            ? outcome.message
+            : item && !pending
+              ? intl.formatMessage(matched ? m.matchedDetail : m.unmatchedDetail, {
+                  merchant: item.label ?? intl.formatMessage(m.itemUnnamed),
+                  amount: currency(Math.abs(item.amount)),
+                  date: item.date,
+                })
+              : intl.formatMessage(m.unmatchedDetailNoItem)}
         </p>
       )}
 

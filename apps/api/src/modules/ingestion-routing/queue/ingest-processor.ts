@@ -1,5 +1,5 @@
 import type { MatchSuggester, StatementStep } from '../../banking-matching/index.js';
-import type { ChaseAutoClose } from '../../chase/index.js';
+import type { ChaseAutoClose, StatementRequestRefusal } from '../../chase/index.js';
 import type { ExtractionCompletion, ExtractionStep } from '../../extraction/index.js';
 import type { SenderMapLoader } from '../email/inbound/sender-map.js';
 import { decideRouting } from '../webhooks/whatsapp/routing.js';
@@ -58,6 +58,15 @@ export interface ProcessorDeps {
    * unit tests offline; `PrismaChaseAutoClose` is wired in `worker/main.ts`.
    */
   readonly autoClose: ChaseAutoClose;
+  /**
+   * Refuse a document that answers a STATEMENT request but is not a statement
+   * (owner ruling, 9 Sep 2026). Runs AFTER extraction and BEFORE the statement
+   * import, so a refused document never reaches the importer. REQUIRED for the
+   * same reason as every dep above it: an optional dep is a dep a composition
+   * root forgets. A root with no chase concern passes
+   * `RecordingStatementRequestRefusal` and says so out loud.
+   */
+  readonly statementRefusal: StatementRequestRefusal;
   /**
    * Statement import (D40/D41). Runs after extraction for a document the
    * extractor classified STATEMENT, turning it into `Statement` +
@@ -269,6 +278,7 @@ async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promis
     });
     await runMatchSuggestion(completion, payload.practiceId, payload.traceId, deps);
     await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
+    await runStatementRefusal(completion, payload.practiceId, payload.traceId, deps);
     await deps.statements.run({
       documentId: payload.documentId,
       practiceId: payload.practiceId,
@@ -302,6 +312,7 @@ async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promis
   // deterministic compare, and neither may fail the job.
   await runMatchSuggestion(completion, materialised.practiceId, payload.traceId, deps);
   await runAutoClose(completion, materialised.practiceId, payload.traceId, deps);
+  await runStatementRefusal(completion, materialised.practiceId, payload.traceId, deps);
 
   // Statement import (D40/D41) — last, because it is the only step that creates
   // rows OTHER than the document's own, and it must not run before the document
@@ -463,6 +474,45 @@ async function runAutoClose(
   } catch (error) {
     deps.logger.warn(
       `auto-close ${completion.documentId} failed (chase left open, document is safe): ${String(error)} trace=${traceId}`,
+    );
+  }
+}
+
+/**
+ * Refuse a document that answers a statement REQUEST but is not a statement
+ * (owner ruling, 9 Sep 2026 — the PM's "they send some other document instead
+ * of a bank statement, that will be rejected").
+ *
+ * Guarded and swallowed exactly like auto-close above, and for the same
+ * reason: the document is already persisted and extracted by the time this
+ * runs, and losing that to a refusal error would invert "nothing is ever
+ * silently dropped". A failure leaves the document where extraction put it,
+ * which is the safe direction — an accountant seeing a wrong document beats a
+ * client seeing a wrong refusal.
+ */
+async function runStatementRefusal(
+  completion: ExtractionCompletion | null,
+  practiceId: string,
+  traceId: string,
+  deps: ProcessorDeps,
+): Promise<void> {
+  if (completion === null || completion.businessId === null) return;
+
+  try {
+    const { refused } = await deps.statementRefusal.run({
+      documentId: completion.documentId,
+      businessId: completion.businessId,
+      practiceId,
+      traceId,
+    });
+    if (refused) {
+      deps.logger.log(
+        `statement-refusal ${completion.documentId}: refused — a statement was requested and another type arrived trace=${traceId}`,
+      );
+    }
+  } catch (error) {
+    deps.logger.warn(
+      `statement-refusal ${completion.documentId} failed (document left as extracted): ${String(error)} trace=${traceId}`,
     );
   }
 }

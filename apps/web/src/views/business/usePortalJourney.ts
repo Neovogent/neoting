@@ -48,6 +48,16 @@ export type UploadOutcome =
    * accountant has it, nothing is lost") is said; the verdict is not invented.
    */
   | { kind: 'pending'; item: PortalItem | null }
+  /**
+   * The server REFUSED it — the client was asked for a bank statement and sent
+   * something else (owner ruling, 9 Sep 2026).
+   *
+   * Distinct from `unmatched` and `pending` on purpose: this is the one case
+   * where the server has actually said "no, not that", so the screen may say it
+   * plainly. `message` is the server's own sentence, shown verbatim — the same
+   * words the accountant sees on the document — so the two never drift.
+   */
+  | { kind: 'refused'; message: string }
   | { kind: 'failed'; fault: PortalFault };
 
 export interface PortalJourney {
@@ -182,6 +192,13 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
             if (!alive.current) return { kind: 'pending', item: null };
             latest = await fetchPortalView(token);
             setView(latest);
+            // A refusal is the server SAYING no, so it is checked before the
+            // match: it is the one verdict that is certain, and a client who
+            // sent an invoice against a statement request should be told on
+            // the poll that carries the answer rather than after the budget
+            // runs out and the copy falls back to "we have it".
+            const refused = latest.statementRequests.find((r) => r.refusedMessage !== null);
+            if (refused?.refusedMessage != null) return { kind: 'refused', message: refused.refusedMessage };
             const matched = latest.items.find((i) => i.transactionId === transactionId && i.received);
             if (matched) return { kind: 'matched', item: matched };
           }

@@ -9464,6 +9464,23 @@ components:
                 pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
                 description: The calendar month wanted, `YYYY-MM`.
               received: { type: boolean }
+              refusedMessage:
+                description: |
+                  Why the last document sent against THIS request was refused,
+                  in the words shown to the client — set when the client
+                  uploaded something that is not a bank statement against a
+                  statement request (owner ruling, 9 Sep 2026). Null in the
+                  ordinary case.
+
+                  It rides the request rather than a list of its own because
+                  the refusal is a fact ABOUT the request: the request is still
+                  open, still owed, and the client is being told why what they
+                  just sent did not close it. The portal is already polling
+                  this object while it waits for `received`, so the refusal
+                  arrives on the loop that is already running.
+                oneOf:
+                  - type: string
+                  - type: 'null'
         summary:
           description: |
             What is waiting in this client's own workspace, for the portal home
