@@ -259,7 +259,11 @@ test('the Ready panel names the missing mandatory field and its edit stages the 
   // The server rule is Total + Supplier + Category; only Category is missing.
   expect(screen.getByText('Path to Ready')).toBeTruthy();
   expect(screen.getByText(/Ready needs a value for Category/)).toBeTruthy();
-  expect(screen.getByText(/approving the correction that completes the set makes this document Ready/)).toBeTruthy();
+  // The sentence promised an approval step that does not happen: verified on
+  // the live stack 9 Sep 2026 — pressing Accept on the suggested category
+  // applied it and moved the document TO_REVIEW -> READY with nothing to
+  // approve. Pinned to the honest wording so it cannot drift back.
+  expect(screen.getByText(/each one applies as soon as you press it, and the last one makes this document Ready/)).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: 'Add Category' }));
   const input = screen.getByRole('textbox');

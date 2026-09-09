@@ -197,13 +197,13 @@ const m = defineMessages({
   readyMissing: {
     id: 'documents.documentPreview.readyMissing',
     defaultMessage:
-      'Ready needs a value for {fields}. Add {count, plural, one {it} other {each one}} below — a correction stages a Review → Approve proposal, and approving the correction that completes the set makes this document Ready.',
+      'Ready needs a value for {fields}. Add {count, plural, one {it} other {each one}} below — each one applies as soon as you press it, and the last one makes this document Ready.',
   },
   readyAddField: { id: 'documents.documentPreview.readyAddField', defaultMessage: 'Add {field}' },
   readyComplete: {
     id: 'documents.documentPreview.readyComplete',
     defaultMessage:
-      'Every field Ready requires ({fields}) is present. Confirming the coding without changing a value has no proposal path yet — correcting any value re-checks readiness through Review → Approve.',
+      'Every field Ready requires ({fields}) is present. Confirming the coding without changing a value has no proposal path yet — correcting any value applies straight away and re-checks readiness.',
   },
   matchSuggestedHeading: {
     id: 'documents.documentPreview.matchSuggestedHeading',
@@ -220,7 +220,7 @@ const m = defineMessages({
   matchConfirm: { id: 'documents.documentPreview.matchConfirm', defaultMessage: 'Confirm match' },
   matchConfirmNote: {
     id: 'documents.documentPreview.matchConfirmNote',
-    defaultMessage: 'Goes through Review → Approve, like every state change.',
+    defaultMessage: 'Applies as soon as you press it. Recorded in Approvals with your name on it.',
   },
   matchFailed: {
     id: 'documents.documentPreview.matchFailed',
