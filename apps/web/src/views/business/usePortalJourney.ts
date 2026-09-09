@@ -81,15 +81,32 @@ export interface PortalJourney {
 /**
  * How long the portal waits for the pipeline to have an opinion.
  *
- * Extraction is a queued job, never inline (Governance §7), and the demo
- * extractor is deliberately latency-honest at 2–4 s. Eight polls at 1.5 s gives
- * it twelve seconds before the screen stops waiting — after which the outcome
- * is `pending` and the client is told the document is with their accountant,
- * which is true, rather than being shown a spinner that never resolves OR a
- * verdict the server never gave.
+ * Extraction is a queued job, never inline (Governance §7). This was eight
+ * polls at 1.5 s — twelve seconds — sized against the demo extractor's
+ * latency-honest 2–4 s.
+ *
+ * ⚠ **Twelve seconds was under the real number, so NO verdict was ever
+ * reachable.** Measured on the live stack, 9 Sep 2026: a one-page PDF took
+ * **22.5 s** from upload to a decided state (`sanitise` at +0.5 s, `extract`
+ * at +22 s, the state write at +22.5 s) — the OCR rung plus a model call, not
+ * the fixture. Every real upload therefore ran the budget out and fell through
+ * to `pending`, so a client was told "we are still reading it" even when the
+ * server had already matched their receipt or REFUSED it. The verdict screen
+ * was, in practice, dead code on anything but a fixture.
+ *
+ * Sixty seconds is the ceiling now, and it costs nothing in the ordinary case:
+ * the loop returns the moment a verdict appears, so a fast read still answers
+ * in a few seconds. It only spends the budget when there is genuinely no
+ * answer yet — which is exactly when waiting is the right thing to do. Two
+ * seconds between polls rather than 1.5 keeps the request count over the
+ * longer window roughly where it was.
+ *
+ * After the ceiling the outcome is still `pending`, and the client is still
+ * told the document is with their accountant — true, rather than a spinner
+ * that never resolves or a verdict the server never gave.
  */
-const SETTLE_POLL_MS = 1_500;
-const SETTLE_ATTEMPTS = 8;
+const SETTLE_POLL_MS = 2_000;
+const SETTLE_ATTEMPTS = 30;
 
 const faultFrom = (error: unknown): PortalFault =>
   error instanceof NtProblemError

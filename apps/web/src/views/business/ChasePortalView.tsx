@@ -426,7 +426,16 @@ function ItemList({
               <span className="block text-[15px] font-bold text-white truncate">
                 {intl.formatMessage(m.statementLabel, { month: monthLabel(intl, request.period) })}
               </span>
-              <span className="block text-[12.5px] text-zinc-500 mt-1">{intl.formatMessage(m.statementHint)}</span>
+              {/* A refusal outlives the upload screen. A client who sent the
+                  wrong thing and closed the tab comes back to this list, and
+                  without the reason here the row just says "send your
+                  statement" again with no hint that they already tried. The
+                  server's own sentence, verbatim. */}
+              {request.refusedMessage !== null ? (
+                <span className="block text-[12.5px] text-amber-400 mt-1">{request.refusedMessage}</span>
+              ) : (
+                <span className="block text-[12.5px] text-zinc-500 mt-1">{intl.formatMessage(m.statementHint)}</span>
+              )}
             </span>
             <span className="shrink-0 text-[12px] font-bold">
               {request.received ? (
