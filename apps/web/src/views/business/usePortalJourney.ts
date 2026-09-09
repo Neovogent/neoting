@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NtProblemError } from '@neoting/contracts';
 import { API_ENABLED } from '../../api/config';
-import { fetchPortalView, openPortalSession, sendPortalUpload } from '../../api/portal';
+import { fetchPortalView, openPortalSession, requestPortalCode, sendPortalUpload } from '../../api/portal';
 import type { PortalItem, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
@@ -74,7 +74,13 @@ export interface PortalJourney {
     * did. The name is unchanged because what it does is unchanged: it turns a
     * link into a session or reports why it could not.
     */
-  verify: () => Promise<boolean>;
+  /**
+   * True when the server has said this link needs a six-digit code as well —
+   * it was delivered by SMS (`NT-OTP-003`). A code has been requested by the
+   * time this flips, so the screen asks for it rather than for a retry.
+   */
+  needsCode: boolean;
+  verify: (code?: string) => Promise<boolean>;
   upload: (page: CapturedPage, transactionId: string | null) => Promise<UploadOutcome>;
 }
 
@@ -135,15 +141,17 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
 
   const clearFault = useCallback(() => setFault(null), []);
 
-  // ⚠ `requestCode` LIVED HERE and is gone (item 4, 8 Sep 2026). It asked the
-  // server to email a six-digit code to the chase's registered contact — the
-  // same inbox the link itself arrived in. The link is the credential now, so
-  // there is nothing to request. `POST /portal/sign-in-codes` is untouched and
-  // still serves the BUSINESS portal, whose session is a whole workspace
-  // rather than one chase's items.
+  // ⚠ A code step LIVED HERE, was removed on 8 Sep 2026 (item 4) because the
+  // link and the code both travelled by email — a second factor down the same
+  // pipe as the first — and is BACK for one lane only (9 Sep 2026, the PM's
+  // rule): a chase delivered by SMS. The server decides, not this screen. It
+  // answers `NT-OTP-003` when the link needs a code, and that is the only
+  // thing that puts the portal into `needsCode`; the email lane still opens on
+  // the link alone and never sees this state.
+  const [needsCode, setNeedsCode] = useState(false);
 
   const verify = useCallback(
-    async (): Promise<boolean> => {
+    async (code?: string): Promise<boolean> => {
       if (!linkToken) return false;
       setBusy(true);
       setFault(null);
@@ -154,13 +162,28 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
           setView(seeded);
           return true;
         }
-        const session = await openPortalSession(linkToken);
+        const session = await openPortalSession(linkToken, code);
         const opened = await fetchPortalView(session.token);
         if (!alive.current) return false;
         setToken(session.token);
         setView(opened);
+        setNeedsCode(false);
         return true;
       } catch (error) {
+        // The SMS lane's "you need a code too". Ask for one and show the code
+        // step — this is NOT a fault, so the screen must not show a fault box:
+        // nothing has gone wrong, there is simply one more thing to type.
+        if (error instanceof NtProblemError && error.code === 'NT-OTP-003') {
+          try {
+            await requestPortalCode(linkToken);
+          } catch {
+            // The send failed, not the link. The code step still stands and
+            // offers to send again; saying "we could not text you" here would
+            // be a guess about which half broke.
+          }
+          if (alive.current) setNeedsCode(true);
+          return false;
+        }
         if (alive.current) setFault(faultFrom(error));
         return false;
       } finally {
@@ -245,7 +268,7 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
     [synthetic, token],
   );
 
-  return { live: API_ENABLED, view, busy, fault, clearFault, verify, upload };
+  return { live: API_ENABLED, view, busy, fault, needsCode, clearFault, verify, upload };
 }
 
 /* ── the seed-data implementation ─────────────────────────────────────────── */

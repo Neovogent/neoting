@@ -5868,6 +5868,15 @@ components:
         # -001 is entry (link + OTP), -002 is an issued session going stale.
         - NT-OTP-001   # portal link token or OTP failed verification
         - NT-OTP-002   # portal session missing, invalid or expired
+        # -003 is NOT a refusal in the -001 sense and deliberately says so. The
+        # link verified and names a live chase; it is that the chase was
+        # DELIVERED BY SMS, and a text can be read off a lock screen or a
+        # shared handset in a way an inbox cannot. So the second factor the
+        # email lane can do without is required here (the PM's rule, 9 Sep
+        # 2026: "if it comes via SMS, you must log in with OTP"). It tells a
+        # caller holding a good link to ask for a code, and it tells a guesser
+        # nothing they did not already have — they are holding the link.
+        - NT-OTP-003   # this portal link needs a six-digit code: it was sent by SMS
         # Publishing (PUB family). SoT Stage 10: an item enters a publish
         # batch only with Total + Supplier + Category present; refusing at
         # proposal time beats publishing half-coded books.

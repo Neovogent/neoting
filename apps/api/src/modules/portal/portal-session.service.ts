@@ -98,6 +98,22 @@ interface ResolvedChase {
   readonly requestedFromContactId: string | null;
   /** That contact's provisioned user, when the row genuinely exists. Null for a phone-number-only contact. */
   readonly delegatedUserId: string | null;
+  /**
+   * How the chase this link belongs to was actually DELIVERED — the channel on
+   * its latest outbound `chase_messages` row.
+   *
+   * ⚠ Read from what carried it, never from configuration. `chase_messages.channel`
+   * defaults to `sms` and `EmailChaseSender` is the only thing that overwrites
+   * it, so `email` means SES really carried this one and `sms` means a text did.
+   * Under `SMS_SENDER=email+sms` every chase is delivered by EMAIL and the SMS
+   * outbox is a preview of composed bytes — so this reads `email` today, and
+   * flips to `sms` on its own the day `SMS_SENDER=aws` and the UK number go
+   * live. Nothing has to be remembered to switch it on.
+   *
+   * Null when the chase has no outbound message yet (nothing was sent, so
+   * nothing was sent by SMS).
+   */
+  readonly deliveredBy: string | null;
 }
 
 export class PortalSessionService {
@@ -145,12 +161,26 @@ export class PortalSessionService {
     // lock costs the server one read rather than a verification.
     if (isOtpLocked(attemptState, nowMs)) throw verificationFailed();
 
-    // ⚠ **No code supplied is not a failed code.** The link verified, it names
-    // a live chase, and it was sent to that chase's registered contact — which
-    // is the whole of what the second factor was adding once both travelled by
-    // email. A supplied code is still compared, and still counted against the
-    // lock when it is wrong: a caller holding one loses nothing, and a guesser
-    // gains nothing by supplying one.
+    // ⚠ **No code supplied is not a failed code — ON THE EMAIL LANE.** The link
+    // verified, it names a live chase, and it went to that chase's registered
+    // contact, which is the whole of what a second factor was adding once both
+    // travelled by email. A supplied code is still compared, and still counted
+    // against the lock when it is wrong: a caller holding one loses nothing,
+    // and a guesser gains nothing by supplying one.
+    //
+    // ⚠ **SMS IS THE EXCEPTION, and it is the PM's rule** (9 Sep 2026): *"if it
+    // comes via SMS, you must log in with OTP. If it comes via email, you don't
+    // need to log in with OTP."* The reason the two lanes differ is real — a
+    // text is readable from a lock screen and on a handset that gets passed
+    // around, where an inbox needs an account — so the link alone is a weaker
+    // credential when a text carried it, and the code earns its keystrokes.
+    //
+    // It keys on what DELIVERED this chase, not on configuration, so it is
+    // dormant today (every chase is carried by email; the SMS outbox is a
+    // preview) and arms itself the day `SMS_SENDER=aws` sends a real text.
+    if (resolved.deliveredBy === 'sms' && (input.otp === undefined || input.otp === '')) {
+      throw codeRequired();
+    }
     if (input.otp !== undefined && input.otp !== '') {
       if (!this.verifyOtp(input.otp, attemptState, nowMs)) {
         await this.recordFailedAttempt(resolved, linkTokenHash, attemptState, nowMs);
@@ -340,6 +370,14 @@ export class PortalSessionService {
             businessId: true,
             recipientContactId: true,
             recipient: { select: { userId: true } },
+            // The latest OUTBOUND message — `event` rows are the chase's audit
+            // log (auto-close, refusals), never something a client received.
+            messages: {
+              where: { channel: { not: 'event' } },
+              select: { channel: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
         });
         // Invisible under this practice's context is indistinguishable from
@@ -352,6 +390,7 @@ export class PortalSessionService {
           businessId: chase.businessId,
           requestedFromContactId: chase.recipientContactId,
           delegatedUserId: await this.resolveDelegatedActor(db, chase.recipient?.userId ?? null),
+          deliveredBy: chase.messages[0]?.channel ?? null,
         };
       });
       if (found !== null) return found;
@@ -488,6 +527,32 @@ export class PortalSessionService {
  * title and detail are the contract's own published example, verbatim — a
  * client that special-cases the string keeps working.
  */
+/**
+ * The SMS lane's "you need a code, ask for one" — NOT a refusal in
+ * `verificationFailed`'s sense, and deliberately distinguishable from it.
+ *
+ * It is safe to be specific here in a way `NT-OTP-001` may never be. That code
+ * is uniform because telling a caller WHY a link failed would say which links
+ * exist; this one is only ever reached by a caller already holding a link that
+ * verified against our own HMAC and names a live chase. They have the link.
+ * Telling them it needs a code adds nothing to what they hold, and withholding
+ * it would strand the one person entitled to be there in front of a screen
+ * that cannot say what to do next.
+ *
+ * The code itself is NOT minted here. `POST /portal/sign-in-codes` already
+ * mints and sends one to the chase's REGISTERED recipient (never an address
+ * the caller typed), and the client calls it on seeing this. Sending from the
+ * session opener would be a second minting path for one code.
+ */
+function codeRequired(): AppException {
+  return new AppException(
+    'NT-OTP-003',
+    HttpStatus.UNAUTHORIZED,
+    'A code is needed',
+    'This link was sent by text message, so it needs the six-digit code as well. Ask for a code and enter it.',
+  );
+}
+
 function verificationFailed(): AppException {
   return new AppException(
     'NT-OTP-001',

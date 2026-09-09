@@ -117,6 +117,16 @@ const m = defineMessages({
   // "not that". It gets its own title so the screen never borrows the hedged
   // pending copy for a verdict that is certain (owner ruling, 9 Sep 2026).
   refusedTitle: { id: 'portal.chasePortal.refusedTitle', defaultMessage: 'That is not what we asked for' },
+  // The SMS lane's code step (9 Sep 2026). Only ever reached when the server
+  // says so; the email lane never sees it.
+  codeTitle: { id: 'portal.chasePortal.codeTitle', defaultMessage: 'Enter the code we texted you' },
+  codeDetail: {
+    id: 'portal.chasePortal.codeDetail',
+    defaultMessage:
+      'This link came by text, so we need the six-digit code as well. We have just sent it to the number your accountant has on file.',
+  },
+  codeLabel: { id: 'portal.chasePortal.codeLabel', defaultMessage: 'Six-digit code' },
+  codeAction: { id: 'portal.chasePortal.codeAction', defaultMessage: 'Open my list' },
   failedTitle: { id: 'portal.chasePortal.failedTitle', defaultMessage: 'That did not send' },
   unmatchedDetail: {
     id: 'portal.chasePortal.unmatchedDetail',
@@ -354,11 +364,48 @@ function OpeningStep({
   // because StrictMode mounts twice in development, and a second `verify` would
   // open a second session for the same link.
   const opened = useRef(false);
+  const [code, setCode] = useState('');
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
     void journey.verify();
   }, [journey]);
+
+  // The SMS lane. `needsCode` is set only by the server's NT-OTP-003, and it is
+  // NOT a fault — nothing went wrong, there is one more thing to type — so this
+  // branch comes first and shows no fault box.
+  if (journey.needsCode) {
+    return (
+      <Shell title={intl.formatMessage(m.codeTitle)}>
+        <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.codeDetail)}</p>
+        <label className="block">
+          <span className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+            {intl.formatMessage(m.codeLabel)}
+          </span>
+          <input
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="000000"
+            className="w-full px-4 py-3.5 rounded-2xl bg-card border border-white/5 text-white text-[20px] tracking-[0.4em] text-center tabular-nums focus:border-brand/40 outline-none"
+          />
+        </label>
+        {journey.fault && <Fault fault={journey.fault} />}
+        <button
+          onClick={() => void journey.verify(code)}
+          disabled={journey.busy || code.length !== 6}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-cta"
+        >
+          {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
+          {intl.formatMessage(m.codeAction)}
+        </button>
+        <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.otpAudit)}</p>
+        <ExitButton onClick={onExit} />
+      </Shell>
+    );
+  }
 
   return (
     <Shell title={intl.formatMessage(journey.fault ? m.openingFailedTitle : m.openingTitle)}>

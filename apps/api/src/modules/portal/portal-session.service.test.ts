@@ -21,6 +21,13 @@ interface ChaseFixture {
   readonly businessId: string;
   readonly recipientContactId: string | null;
   readonly recipientUserId: string | null;
+  /**
+   * The channel on the chase's latest outbound message — what actually
+   * DELIVERED it. Defaults to `email`, which is every chase on the live
+   * configuration today (`SMS_SENDER=email+sms` delivers by SES and records
+   * the SMS as a preview). `sms` is the lane the code step guards.
+   */
+  readonly deliveredBy?: 'email' | 'sms';
 }
 
 interface OtpRow {
@@ -76,6 +83,10 @@ function fakePrisma(fixture: Fixture): PrismaClient {
           businessId: chase.businessId,
           recipientContactId: chase.recipientContactId,
           recipient: chase.recipientContactId === null ? null : { userId: chase.recipientUserId },
+          // Prisma returns a relation select as an array, always — never
+          // undefined — so the fake must too, or it would let a caller that
+          // forgot the empty case pass here and throw in production.
+          messages: [{ channel: chase.deliveredBy ?? 'email' }],
         };
       },
     },
@@ -304,6 +315,79 @@ test('NO code at all opens the session — the emailed link is the credential', 
   // the first upload. Nothing about the boundary moved.
   expect(db.otpSessions[0]?.chaseId).toBe('chase_1');
   expect(db.otpSessions[0]?.grantedItemIds).toEqual([]);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The SMS lane DOES need the code (the PM's rule, 9 Sep 2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A chase whose latest outbound message says a text carried it. */
+const smsDelivered = () =>
+  fixture({
+    chases: {
+      chase_1: {
+        practiceId: 'prac_1',
+        businessId: 'biz_burger',
+        recipientContactId: 'contact_1',
+        recipientUserId: null,
+        deliveredBy: 'sms',
+      },
+    },
+  });
+
+test('a chase delivered by SMS refuses the bare link with NT-OTP-003 — and opens no session', async () => {
+  // *"If it comes via SMS, you must log in with OTP. If it comes via email, you
+  // don't need to log in with OTP."* A text is readable off a lock screen and
+  // on a shared handset, so the link alone is a weaker credential than the same
+  // link in an inbox.
+  const db = smsDelivered();
+  const error = await grab(() => new PortalSessionService(fakePrisma(db), config).createSession({ linkToken: link() }, NOW));
+
+  expect(error.code).toBe('NT-OTP-003');
+  // ⚠ Distinct from NT-OTP-001 ON PURPOSE, and safe to be: this is only ever
+  // reached by a caller already holding a link that verified against our own
+  // HMAC and names a live chase, so it tells them nothing they did not have.
+  expect(error.code).not.toBe('NT-OTP-001');
+  // And it is a gate, not a session: nothing verified, so nothing was issued.
+  expect(db.otpSessions.some((row) => row.verifiedAt !== null)).toBe(false);
+});
+
+test('a chase delivered by SMS opens on the link PLUS the right code', async () => {
+  const db = smsDelivered();
+  db.otpSessions.push({
+    id: 'otp_pending',
+    linkTokenHash: createHash('sha256').update(link()).digest('hex'),
+    businessId: 'biz_burger',
+    chaseId: 'chase_1',
+    requestedFromContactId: 'contact_1',
+    userId: null,
+    scope: 'DELEGATED_UPLOAD',
+    grantedItemIds: [],
+    verifiedAt: null,
+    expiresAt: new Date(NOW + 600_000),
+    attempts: 0,
+    lockedUntil: null,
+    otpHash: hashOtp('424242'),
+    otpExpiresAt: new Date(NOW + 600_000),
+  });
+
+  const session = await new PortalSessionService(fakePrisma(db), config).createSession(
+    { linkToken: link(), otp: '424242' },
+    NOW,
+  );
+
+  expect(session.token).not.toBe('');
+  expect(db.otpSessions[0]?.verifiedAt).not.toBeNull();
+});
+
+test('the SMS gate keys on what DELIVERED the chase, so the email lane is untouched', async () => {
+  // The guard must never become "SMS is configured somewhere". It reads the
+  // channel on the chase's own last outbound message, which is `email` for
+  // every chase on the live configuration today — so this is the same bare
+  // link that opens a session above, and it still does.
+  const db = fixture();
+  const session = await new PortalSessionService(fakePrisma(db), config).createSession({ linkToken: link() }, NOW);
+  expect(session.token).not.toBe('');
 });
 
 test('a WRONG code supplied is still refused and still counted', async () => {
