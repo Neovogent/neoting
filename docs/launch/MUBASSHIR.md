@@ -143,11 +143,15 @@ HMRC. D42 forbids implying otherwise and a pricing page is the most public surfa
 PRICE: £8.50 + VAT per month, per client business. One tier. Display it as
 "£8.50 + VAT per month" — never a bare figure, because prices are stored exclusive of VAT.
 
-SUPPORT: email support, 24-hour response, 06:00–18:00 UK. State the hours.
+SUPPORT: email support at hello@neovogent.com, 09:00–17:00 UK, Monday to Friday, closed
+at weekends. First-response targets are severity-based (Terms §13.6): critical straight
+away including weekends, major within 8 hours, normal within 2 business days. State the
+hours.
 
 ⚠ COMPANY IDENTITY IN THE FOOTER — this is a legal requirement, not a design choice. The
 Companies (Trading Disclosures) Regulations require the registered company name, company
-number and registered office on the website. The VAT number belongs there too. Shakib
+number and registered office on the website. There is no VAT number: the company is not
+registered for UK VAT (owner's answer, 11 Sep 2026), so the footer carries none. Shakib
 supplies the exact values; use [PLACEHOLDER] and flag it rather than inventing them.
 
 Link the four legal pages from the footer (M4 builds them).

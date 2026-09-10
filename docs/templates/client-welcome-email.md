@@ -49,7 +49,7 @@ In developing and operating the service we are committed to following the ICO's 
 
 **Support**
 
-Throughout your time with Neo Accounting, our team is available to help with onboarding, product queries and technical issues. Reply to this email, or write to support@neovogent.com — we respond within 24 hours, between 06:00 and 18:00 UK time.
+Throughout your time with Neo Accounting, our team is available to help with onboarding, product queries and technical issues. Reply to this email, or write to hello@neovogent.com — our support hours are 09:00 to 17:00 UK time, Monday to Friday. A normal question gets a first reply within 2 business days, a major issue within 8 hours, and anything critical is picked up straight away, weekends included.
 
 We look forward to a productive and lasting working relationship.
 
@@ -62,9 +62,8 @@ Kind regards,
 
 ---
 Neo Accounting · https://neoacc.neovogent.com
-The Neo Accounting service is provided under contract by **EXAM BINARY LTD**, registered in England and Wales, company number 16261850. Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP.
-VAT registration number: **[PLACEHOLDER — EXAM BINARY LTD's UK VAT registration number, nine digits, format GB123456789, from the company's VAT certificate or HMRC online account. `9286810564` is a tax ID and is NOT it. This email must not be sent while this placeholder stands.]**
-Support: support@neovogent.com · Sent {{send_date}}
+The Neo Accounting service is provided under contract by **NEOVOGENT AI SOLUTIONS UK LTD**, registered in England and Wales, company number 15946429. Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP. Not registered for UK VAT.
+Support: hello@neovogent.com · Sent {{send_date}}
 
 ---
 
@@ -137,8 +136,10 @@ SUPPORT
 
 Throughout your time with Neo Accounting, our team is available to help
 with onboarding, product queries and technical issues. Reply to this
-email, or write to support@neovogent.com -- we respond within 24 hours,
-between 06:00 and 18:00 UK time.
+email, or write to hello@neovogent.com -- our support hours are 09:00 to
+17:00 UK time, Monday to Friday. A normal question gets a first reply
+within 2 business days, a major issue within 8 hours, and anything
+critical is picked up straight away, weekends included.
 
 We look forward to a productive and lasting working relationship.
 
@@ -149,26 +150,25 @@ Kind regards,
 
 --
 Neo Accounting . https://neoacc.neovogent.com
-The Neo Accounting service is provided under contract by EXAM BINARY
-LTD, registered in England and Wales, company number 16261850.
-Registered office: Suite 5, The Cloisters, 11-12 George Road, Edgbaston,
-Birmingham, West Midlands B15 1NP.
-VAT registration number: [PLACEHOLDER -- must be resolved before sending]
-Support: support@neovogent.com . Sent {{send_date}}
+The Neo Accounting service is provided under contract by NEOVOGENT AI
+SOLUTIONS UK LTD, registered in England and Wales, company number
+15946429. Registered office: Suite 5, The Cloisters, 11-12 George Road,
+Edgbaston, Birmingham, West Midlands B15 1NP. Not registered for UK VAT.
+Support: hello@neovogent.com . Sent {{send_date}}
 ```
 
 ---
 
 ## 5. Usage notes
 
-**Who sends it.** Sent in the name of **Md Rakib Saleh, Founder, Neovogent AI Solutions UK Ltd** — the name and title exactly as printed on the company's signature asset (`ceo-sign.png`, also served at `https://api.neovogent.com/images/policy-email/ceo-sign.png`), the same asset used on the 29 August 2026 company policy email and the salary slips. In HTML sends, place the signature image above the printed name; in plain-text sends, the printed name and title stand alone. The sending mailbox should be one the practice can actually reply to — replies are routed to support (support@neovogent.com per the Terms of Service, clause 24).
+**Who sends it.** Sent in the name of **Md Rakib Saleh, Founder, Neovogent AI Solutions UK Ltd** — the name and title exactly as printed on the company's signature asset (`ceo-sign.png`, also served at `https://api.neovogent.com/images/policy-email/ceo-sign.png`), the same asset used on the 29 August 2026 company policy email and the salary slips. In HTML sends, place the signature image above the printed name; in plain-text sends, the printed name and title stand alone. The sending mailbox should be one the practice can actually reply to — replies are routed to support (hello@neovogent.com per the Terms of Service, clause 24).
 
 **When it is triggered.** When an accounting practice completes registration (and, where billing is live at intake, subscribes) on Neo Accounting. One send per practice; it is a welcome, not a receipt — Stripe issues the payment documents separately.
 
 **Check before sending — all of these:**
 
-1. **The VAT placeholder is resolved.** The footer must carry EXAM BINARY LTD's real UK VAT registration number. It is not on Companies House; it comes from the company's VAT certificate or HMRC online account. An email carrying `[PLACEHOLDER]` must not leave the building.
-2. **The contracting entity is still Exam Binary.** The Terms of Service (docs/legal/terms-of-service.md, header block, decision of 26 Aug 2026) name **EXAM BINARY LTD (company no. 16261850)** as the contracting entity and merchant of record **for the first customer only**, because it holds the live Stripe account — the client's card statement will read Exam Binary. When Stripe migrates to **NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, same registered office), this footer changes in the same commit as the legal documents — not before, not after. Note the web app's landing footer currently shows the Neovogent identity; the legal documents govern, and the mismatch is reported to the owner.
+1. **No VAT line, and that is deliberate.** NEOVOGENT AI SOLUTIONS UK LTD is not registered for UK VAT (owner's answer, 11 Sep 2026). The footer therefore carries no VAT number. If the company registers, the number goes into this footer, into the four documents under `docs/legal/`, and into Stripe's tax-ID field in the same change.
+2. **The contracting entity is Neovogent.** The Terms of Service name **NEOVOGENT AI SOLUTIONS UK LTD (company no. 15946429)** as the contracting entity and merchant of record — the decision of 3 Sep 2026, superseding the 26 Aug 2026 one that named EXAM BINARY LTD. The Stripe live-mode account must be verified under the same company before any payment is taken, so the client's card statement reads Neovogent.
 3. **A contact name is held.** If `{{contact_first_name}}` is empty, the greeting falls back to "Dear {{firm_name}} team," — never "Dear Concern".
 4. **The legal documents are published.** This email points to commitments the Terms of Service and Privacy Notice carry; both are marked *DRAFT — not for publication until legally reviewed*. Do not send a terms-bearing welcome email before the documents it leans on are live.
 5. **Capability wording is intact.** The email must not say or imply that Neo Accounting posts to a ledger, connects to a bank feed, or files anything with HMRC. In this release, export is the sole egress and "Published" is an internal state meaning approved-and-released-for-export (Source of Truth v1.6, D42). If anyone edits the copy, re-check this.
@@ -190,7 +190,7 @@ Support: support@neovogent.com . Sent {{send_date}}
 | "produces an import file for VT Transaction+" — and deliberately **not** "posts to your ledger" | Source of Truth v1.6 §24.1, D42 (export is the sole egress; *Published* means approved-and-released-for-export, never posted-to-a-ledger); Terms of Service plain-English summary and clause 4.3 | Verified against `/Users/mubasshir/neoting/docs/Source_Of_Truth.md` and `/Users/mubasshir/neoting/docs/legal/terms-of-service.md` |
 | "each line carrying a reference back to the source document it came from" | Source of Truth v1.6, D43 — every exported transaction carries a resolvable link to its source document | Verified against `/Users/mubasshir/neoting/docs/Source_Of_Truth.md` (D43) |
 | "nothing is finalised until someone at your practice approves it" | Source of Truth §24.2 stages 8–10 (accountant edits, super admin releases, D44); repo-wide invariant "no state change outside the Review → Approve path" | Verified against `/Users/mubasshir/neoting/CLAUDE.md` and `docs/Source_Of_Truth.md` |
-| "we respond within 24 hours, between 06:00 and 18:00 UK time" | Terms of Service clause 24 ("Response time: within 24 hours, 06:00–18:00 UK time") and the landing page support copy | Verified against `/Users/mubasshir/neoting/docs/legal/terms-of-service.md` §24 |
-| Footer identity: EXAM BINARY LTD, company no. 16261850, registered office as shown, VAT number `[PLACEHOLDER]` | Terms of Service clause 1.1 and clause 24 | Verified against `/Users/mubasshir/neoting/docs/legal/terms-of-service.md` (the VAT number is genuinely a placeholder there — carried through as one) |
+| "our support hours are 09:00 to 17:00 UK time, Monday to Friday" and the severity-based reply targets | Terms of Service clause 13.4 and clause 13.6, and the landing page support copy | Verified against `docs/legal/terms-of-service.md` §13.4 and §13.6 (owner's answers, 11 Sep 2026) |
+| Footer identity: NEOVOGENT AI SOLUTIONS UK LTD, company no. 15946429, registered office as shown, no VAT line | Terms of Service clause 1.1 and clause 24 | Verified against `docs/legal/terms-of-service.md`. The contracting entity changed on 3 Sep 2026; the company is not registered for UK VAT, so no VAT number is shown |
 
-*"We are committed to meeting the applicable requirements" is used deliberately instead of "we comply with": the company's own legal documents are drafts awaiting solicitor review and the VAT registration is unresolved, so an unqualified written compliance representation is not yet defensible. See the accompanying report.*
+*"We are committed to meeting the applicable requirements" is used deliberately instead of "we comply with": the company's own legal documents are drafts awaiting solicitor review and the ICO registration is still pending, so an unqualified written compliance representation is not yet defensible. See the accompanying report.*

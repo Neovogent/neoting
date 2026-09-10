@@ -41,7 +41,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 **Neo Accounting** · [https://neoacc.neovogent.com](https://neoacc.neovogent.com)
 
-**In plain English:** Neo Accounting costs £8.50 per month plus VAT for each client business, billed to your card in advance. There is no minimum term and no contract to get out of. You can cancel yourself at any time, in the app or by email. Cancelling stops the next payment — it does not refund the month you are already in, because you keep using the service until that month ends. If we have charged you in error, we refund it. If something has genuinely gone wrong, ask us and we will usually refund anyway. Your documents and data stay exportable and deletable by you, without asking us, both before and after you leave.
+**In plain English:** Neo Accounting costs £8.50 per month for each client business, billed to your card in advance. There is no minimum term and no contract to get out of. You can cancel yourself at any time, in the app or by email. Cancelling stops the next payment — it does not refund the month you are already in, because you keep using the service until that month ends. If we have charged you in error, we refund it. If something has genuinely gone wrong, ask us and we will usually refund anyway. Your documents and data stay exportable and deletable by you, without asking us, both before and after you leave.
 
 ## Contents
 
@@ -63,17 +63,17 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 1.1 This policy applies to every Neo Accounting subscription bought through our Stripe checkout at [https://neoacc.neovogent.com](https://neoacc.neovogent.com).
 
-1.2 The customer is the accounting practice that signs up. Your clients do not contract with us and are not billed by us.
+1.2 The subscription is held by the **client business**, which pays for its own £8.50 line (Terms, clause 9.9). The accounting practice composes and manages the work; the client business holds the payment relationship. Where the practice pays on a client's behalf, this policy applies to whoever the card belongs to.
 
-1.3 The price is **£8.50 per calendar month plus VAT, for each client business** on your account. Billing is monthly, rolling, in advance. There is no minimum term.
+1.3 The price is **£8.50 per calendar month, for each client business** on your account. We are not currently registered for UK VAT, so no VAT is added today; if we register, VAT will be added at the prevailing rate and shown separately, and we will tell you first. Billing is monthly, rolling, in advance. There is no minimum term.
 
 ## 2. How to cancel
 
 2.1 **Yourself, in the app.** Sign in at [https://neoacc.neovogent.com/app](https://neoacc.neovogent.com/app) and open the billing link at Settings › Billing in the app. That opens the Stripe customer portal, where you can cancel immediately. You do not need our permission and you do not need to raise a ticket.
 
-2.2 **By email.** Write to **support@neovogent.com** from an email address on the account and say you want to cancel. We reply within 24 hours, and we act on the request the same working day. Our support hours are 06:00–18:00 UK time.
+2.2 **By email.** Write to **hello@neovogent.com** from an email address on the account and say you want to cancel. We act on the request the same business day we receive it. Our support hours are 09:00–17:00 UK time, Monday to Friday; a request that arrives at a weekend is acted on the next business day.
 
-2.3 **Removing one client business rather than the whole account.** [PLACEHOLDER: confirm — does removing a single client business stop that £8.50 line at the next renewal, and is that self-serve in the app?]
+2.3 **Removing one client business rather than the whole account.** You can remove a single client business from inside the app at any time, without touching anything else, and removing one is reversible for 30 days. The subscription for that client business is cancelled separately, through the Stripe billing portal at Settings › Billing — removing the client inside the app does not by itself stop the payment. Once the subscription is cancelled, the £8.50 line stops at the next renewal and the month already paid for runs to its end.
 
 2.4 We will never make you call us, and we will never ask you to explain why before we cancel.
 
@@ -96,7 +96,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 - we charged you for a client business you had already removed;
 - we charged the wrong amount — in which case we refund the difference.
 
-4.3 Refunds are made through Stripe, back to the card we originally charged, and include the VAT charged on that payment. How quickly it appears is set by your card issuer, not by us.
+4.3 Refunds are made through Stripe, back to the card we originally charged, and include any VAT charged on that payment. How quickly it appears is set by your card issuer, not by us.
 
 4.4 Tell us within 90 days of the charge appearing on your statement, so we can still reverse it in Stripe rather than send money separately.
 
@@ -104,7 +104,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 5.1 Clause 4 is the position we are obliged to take. It is not the only one we will take.
 
-5.2 If the service did not do what you signed up for during a month you paid for, email **support@neovogent.com** and tell us what happened. We can refund a month, or part of one, at our discretion.
+5.2 If the service did not do what you signed up for during a month you paid for, email **hello@neovogent.com** and tell us what happened. We can refund a month, or part of one, at our discretion.
 
 5.3 Doing this once does not oblige us to do it again, and it does not change clause 4 for anyone else.
 
@@ -120,7 +120,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 6.5 Deciding how long to keep your clients' records — and your own professional and tax record-keeping obligations — is your call as controller, not ours. **Export before you delete.** Once a purge has run, we cannot get the data back.
 
-6.6 [PLACEHOLDER: confirm the export and self-serve deletion controls described in 6.2–6.4 are live in the product before this policy is published. Do not publish a commitment ahead of the build.]
+6.6 **What "self-serve" means here.** Export runs per client business, from inside the app, as often as you like. Deletion is per document and per client business, also from inside the app: a deleted document sits in Trash for 30 days before it is permanently removed, and a document that has already been exported is held indefinitely instead, so the link inside your export file keeps working. If you want the whole workspace exported or erased in one go, email hello@neovogent.com and we will do it for you within the 90-day window.
 
 ## 7. Failed payments
 
@@ -130,7 +130,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 ## 8. Billing questions and disputes
 
-8.1 **Email us first: support@neovogent.com.** We answer within 24 hours, 06:00–18:00 UK time. Tell us the date and amount of the charge and what looks wrong.
+8.1 **Email us first: hello@neovogent.com.** We answer within 2 business days, and usually sooner. Our support hours are 09:00–17:00 UK time, Monday to Friday. Tell us the date and amount of the charge and what looks wrong.
 
 8.2 We would far rather refund £8.50 than argue about it. Almost every billing dispute we see is settled the same day by email.
 
@@ -146,7 +146,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 9.4 If you genuinely did sign up as a consumer, you have 14 days from the day the contract was made to cancel and get your money back. Because signing up gives you the service straight away, we can charge you for the part of the service you used before you cancelled.
 
-9.5 We are not going to have this argument over one month's fee. **If you are within 14 days of signing up and you have barely used the service, email support@neovogent.com and we will refund the month** — whether or not the regulations require it.
+9.5 We are not going to have this argument over one month's fee. **If you are within 14 days of signing up and you have barely used the service, email hello@neovogent.com and we will refund the month** — whether or not the regulations require it.
 
 ## 10. Changes to this policy
 
@@ -162,11 +162,10 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 - Company number: 15946429
 - Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP, United Kingdom
-- Tax ID: [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]
-- VAT registration number: [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
-- Support and billing: **support@neovogent.com** — replies within 24 hours, 06:00–18:00 UK time
+- VAT registration number: not currently registered for UK VAT
+- Support and billing: **hello@neovogent.com** — 09:00–17:00 UK time, Monday to Friday
 - Related documents: Terms of Service `/legal/terms-of-service` · Privacy Notice `/legal/privacy-notice` · Data Processing Agreement `/legal/data-processing-terms`
 
 ---
 
-*Last updated: 26 August 2026 · Version 0.1 (draft — pending legal review)*
+*Last updated: 11 September 2026 · Version 0.2 (draft — pending legal review)*

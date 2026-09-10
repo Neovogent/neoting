@@ -7,7 +7,7 @@ import { SesEmailSender, type SesSendClient } from './ses-email-sender.js';
 const config = {
   region: 'eu-west-2',
   fromAddress: 'no-reply@neoting.neovogent.com',
-  replyToAddress: 'support@neovogent.com',
+  replyToAddress: 'hello@neovogent.com',
   configurationSetName: 'nt-staging-default',
 };
 
@@ -41,7 +41,7 @@ test('the envelope is From no-reply, Reply-To support, and names the configurati
     // be ingested as a client document (email.tf, the doc-to-s3 receipt rule).
     FromEmailAddress: 'no-reply@neoting.neovogent.com',
     Destination: { ToAddresses: ['ada@example.com'] },
-    ReplyToAddresses: ['support@neovogent.com'],
+    ReplyToAddresses: ['hello@neovogent.com'],
     // Without this the send silently opts out of bounce suppression and
     // reputation metrics.
     ConfigurationSetName: 'nt-staging-default',

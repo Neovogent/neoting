@@ -9,7 +9,7 @@ import { SmtpEmailSender } from './smtp-email-sender.js';
 const base = {
   SES_REGION: 'eu-west-2',
   EMAIL_FROM_ADDRESS: 'no-reply@neoting.neovogent.com',
-  EMAIL_REPLY_TO_ADDRESS: 'support@neovogent.com',
+  EMAIL_REPLY_TO_ADDRESS: 'hello@neovogent.com',
   EMAIL_CONFIGURATION_SET: 'nt-staging-default',
   SMTP_HOST: 'localhost',
   SMTP_PORT: 1025,

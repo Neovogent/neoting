@@ -84,10 +84,10 @@ and produces an import file for VT Transaction+. **It reads documents using AI, 
 can be wrong. Nothing it suggests goes anywhere until a person at your practice approves
 it, and once you approve it, the figures are yours.** Neo Accounting does not post to a
 ledger, does not connect to a bank, does not file anything with HMRC, and does not give
-accounting advice. It costs GBP 8.50 per month plus VAT for each client business, billed
-by card through Stripe. It is monthly and rolling — you can cancel at any time, export
+accounting advice. It costs GBP 8.50 per month for each client business, billed by card
+through Stripe — we are not VAT registered today, so no VAT is added (Clause 9.2). It is monthly and rolling — you can cancel at any time, export
 everything, and delete it. Our liability to you is limited, and the limit is set out in
-Clause 20. If anything below is unclear, email support@neovogent.com and ask before you
+Clause 20. If anything below is unclear, email hello@neovogent.com and ask before you
 sign up.
 
 ---
@@ -127,7 +127,7 @@ sign up.
 
 - **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in
   England and Wales, company number
-  15946429, tax ID **[PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]**, VAT registration number [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.], whose
+  15946429, not currently registered for UK VAT, whose
   registered office is in Birmingham at Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
   ("**Neovogent AI Solutions**", "**we**", "**us**", "**our**"); and
 - the accounting practice named on the account ("**you**", "**your**", "**the
@@ -271,7 +271,7 @@ by your staff and by any of your clients you invite in.
 You must keep it switched on for those users. If you turn it off or work around it, you
 do so at your own risk and we are not responsible for what follows.
 
-7.4 Tell us straight away at support@neovogent.com if you think an account has been
+7.4 Tell us straight away at hello@neovogent.com if you think an account has been
 compromised.
 
 7.5 You must keep the contact details on your account up to date. Notices we send to the
@@ -298,8 +298,10 @@ documents on your instructions.
 9.1 The price is **GBP 8.50 per month, plus VAT, for each client business** on your
 account.
 
-9.2 All prices are stated **excluding VAT**. VAT is added at the prevailing UK rate and
-shown separately on the invoice.
+9.2 All prices are stated **excluding VAT**. **We are not currently registered for UK
+VAT, so no VAT is added to your invoice today** — you pay GBP 8.50 per client business
+per month. If we become VAT registered, VAT will be added at the prevailing UK rate and
+shown separately on the invoice, and we will tell you before that starts.
 
 9.3 Payment is by card, taken by **Stripe**, our payment processor. Checkout is hosted by
 Stripe. **Card details never reach Neovogent AI Solutions’ systems and we do not store them.** Your
@@ -339,18 +341,21 @@ support ticket, call anyone, or ask permission.
 
 11.2 Cancelling stops the next payment. Access continues to the end of the month already paid for.
 
-11.3 You can cancel a single client business without cancelling the whole account. The
-charge for that client business stops at the next billing date.
+11.3 You can remove a single client business from the app without cancelling the whole
+account, and removing one is reversible for 30 days. The subscription for that client
+business is a separate thing and is cancelled through the Stripe billing portal at
+Settings › Billing — removing the client inside the app does not by itself stop the
+payment. Cancelling the subscription stops the charge at the next billing date.
 
 11.4 **Export and erasure are self-serve.** At any time — during a trial, at the end of a
 trial, and on or after cancellation — you can export your documents and data from within
 the product, and you can delete them from within the product. Neither is gated on a
 support ticket, and neither is withheld over a billing dispute.
 
-11.5 **After cancellation** we keep your data for [PLACEHOLDER: confirm the
-post-cancellation retention window and whether export and deletion remain available
-throughout it], so that you can still export it. After that window we delete it. Once it
-is deleted we cannot get it back.
+11.5 **After cancellation** we keep your data for **90 days**, so that you can still get
+it out. Export and self-serve deletion both stay available to you for the whole of that
+90 days. After the window we securely delete the data. Once it is deleted we cannot get
+it back.
 
 11.6 Deletion does not extend to data we are required to keep by law — for example
 billing records we must retain for tax purposes. That data is kept for as long as the law
@@ -374,13 +379,16 @@ only in accordance with the law.
   security without our written permission;
 - (d) reverse engineer, decompile, or copy the software, except where the law says you
   may;
-- (e) resell, white-label or provide Neo Accounting to anyone outside your practice and
-  your own clients [PLACEHOLDER: confirm whether any reseller or white-label arrangement
-  is permitted, and on what terms];
+- (e) resell, sublicense, white-label or otherwise provide Neo Accounting to anyone
+  outside your practice and your own clients. **We do not currently offer
+  white-labelling.** If you want to discuss a commercial or strategic partnership, email
+  hello@neovogent.com — any such arrangement needs its own written agreement signed by
+  both of us;
 - (f) use the service, or anything it produces, to build or train a competing product;
 - (g) put an unreasonable load on the service — for example by automated bulk uploading
-  outside normal working use [PLACEHOLDER: confirm whether any fair-use volume limit
-  applies per client business, and state the number if so]; or
+  outside normal working use. **There is no fixed upload or fair-use limit today.** We
+  may introduce reasonable limits in future, based on storage, security, performance and
+  cost; if we do, we will publish them and tell you before they take effect; or
 - (h) share logins, or give access to anyone who is not one of your staff or an
   authorised person at a client business.
 
@@ -402,15 +410,25 @@ outside UK working hours.
 13.3 Parts of the service depend on suppliers we do not control (Clause 15.4). If one of
 them has an outage, so do we.
 
-13.4 **Support** is by email at **support@neovogent.com**. We respond within **24
-hours**. Our support hours are **06:00–18:00 UK time** (our team works 11:00–23:00 local
-time in Bangladesh).
+13.4 **Support** is by email at **hello@neovogent.com**. Our support hours are
+**09:00–17:00 UK time, Monday to Friday**. Standard support is closed at weekends, but a
+critical incident reported to that address is picked up immediately, including at
+weekends.
 
 13.5 Support covers using Neo Accounting. It does not cover your accounting questions,
 your clients' affairs, VT Transaction+, or your own IT.
 
-13.6 [PLACEHOLDER: confirm whether severity levels and different response targets apply,
-or whether the single 24-hour target above is the whole commitment.]
+13.6 **Response targets.** How quickly we come back to you depends on how serious the
+problem is:
+
+| Severity | What it means | Target for our first response |
+|---|---|---|
+| Critical | The service is down, data is at risk, or a security incident is suspected | Prioritised immediately, including at weekends |
+| Major | A significant part of the service is not working and there is no reasonable workaround | Within 8 hours |
+| Normal | Everything else — questions, minor faults, requests | Within 2 business days |
+
+Weekends are excluded from the major and normal targets. A first response is not a fix:
+it tells you we have it, who has it, and what happens next.
 
 ---
 
@@ -458,18 +476,18 @@ part of this agreement. How we handle personal data more generally is described 
 | Amazon Bedrock (AWS) | The AI model that reads document images | UK — eu-west-2 (London), region-pinned; no cross-region inference is permitted |
 | Stripe | Payment processing (hosted checkout; card details never reach our systems) | See the DPA |
 | Cloudflare | Email routing for our support address | See the DPA |
-| Google (Gmail) | The mailbox our support address forwards to | See the DPA |
+| Google Workspace | The managed business mailbox our support address forwards to | See the DPA |
 
 15.5 **Data location.** Your clients' documents and data are stored and processed in the
-UK (AWS eu-west-2, London). [PLACEHOLDER: confirm and state the one named exception —
-the cross-region disaster-recovery backup target — and where it is, so that this clause
-is accurate rather than absolute.]
+UK (AWS eu-west-2, London), and our disaster-recovery backups are held in the same UK
+region. No copy is replicated outside the United Kingdom.
 
 15.6 We will give you reasonable notice before we add or change a sub-processor, so that
 you can object.
 
-15.7 Support email sent to us may be read in Google's Gmail. If you need to send us
-something sensitive about a client, put it in the product rather than in an email.
+15.7 Support email sent to us is handled in our managed Google Workspace account. If you
+need to send us something sensitive about a client, put it in the product rather than in
+an email.
 
 ---
 
@@ -545,8 +563,10 @@ cannot lawfully be limited or excluded.
 
 20.2 Subject to Clause 20.1, **our total liability to you, for everything arising out of
 or in connection with this agreement, is limited to the total fees you have paid us in
-the [PLACEHOLDER: confirm the period — e.g. the 12 months immediately before the event
-giving rise to the claim].**
+the 18 months immediately before the event giving rise to the claim.** If you have been a
+customer for less than 18 months, the cap is the fees you have actually paid. If you
+believe the service has caused you a loss, we will try to settle it with you in good
+faith before anything else.
 
 20.3 Subject to Clause 20.1, we are not liable for: loss of profit, loss of business,
 loss of anticipated savings, loss of goodwill, or any indirect or consequential loss.
@@ -570,19 +590,28 @@ substitute for it.
 
 ## 21. Complaints
 
-21.1 If something has gone wrong, email **support@neovogent.com** with "Complaint" in the
-subject line. We will acknowledge it within 24 hours during our support hours and tell
-you who is dealing with it.
+21.1 If something has gone wrong, email **hello@neovogent.com** with "Complaint" in the
+subject line. We will acknowledge it within **1 business day** and tell you who is
+dealing with it.
 
-21.2 [PLACEHOLDER: confirm the escalation route and target resolution time, and whether
-any alternative dispute resolution or ombudsman scheme applies.]
+21.2 **How it is handled.** Our support team takes it first. If they cannot resolve it,
+or it needs specialist investigation, it goes to our technical team. Anything still
+unresolved after that is escalated to Neovogent management for a final internal review.
+
+21.3 **How long it should take.** We aim to resolve a complaint within **3 to 5 business
+days**. If it needs longer because of its complexity, we will tell you why, where it has
+got to, and when we expect to finish.
+
+21.4 **Dispute resolution.** No external alternative dispute resolution or ombudsman
+scheme is designated for this service. If a complaint is still unresolved after Clause
+21.2, Clause 23 sets out the law and the courts that apply.
 
 ---
 
 ## 22. General
 
 22.1 **Notices.** Notices to you go to the account's registered email address. Notices to
-us go to support@neovogent.com, and for anything legal also to our registered office
+us go to hello@neovogent.com, and for anything legal also to our registered office
 address in Clause 24.
 
 22.2 **Assignment.** You may not transfer this agreement without our written consent
@@ -625,14 +654,15 @@ You can save and print this page at any time.
 Registered in England and Wales, company number
 **15946429**
 Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
-Tax ID: **[PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]**
-VAT registration number: [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
+VAT registration number: not currently registered for UK VAT
 
-**Support and general enquiries:** support@neovogent.com
-**Response time:** within 24 hours, 06:00–18:00 UK time
+**Support and general enquiries:** hello@neovogent.com
+**Support hours:** 09:00–17:00 UK time, Monday to Friday. Closed at weekends; critical
+incidents are picked up at weekends too
+**Response targets:** Clause 13.6
 **Service address:** https://neoacc.neovogent.com
 
 ---
 
-**Version 0.1 — DRAFT, not for publication until legally reviewed.**
-**Last updated: 26 August 2026.**
+**Version 0.2 — DRAFT, not for publication until legally reviewed.**
+**Last updated: 11 September 2026.**

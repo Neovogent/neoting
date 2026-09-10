@@ -89,14 +89,15 @@ CONTROLLER parts of this notice.
 | Registered name | NEOVOGENT AI SOLUTIONS UK LTD |
 | Company number | **15946429** — verified at Companies House, 3 Sep 2026 |
 | Registered office | Birmingham, United Kingdom — Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP |
-| Tax ID | [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.] |
-| VAT registration number | [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.] |
-| ICO registration number | [PLACEHOLDER: ICO data protection fee registration number] |
+| VAT registration number | Not registered — Neovogent AI Solutions UK Ltd is not currently registered for UK VAT |
+| ICO registration number | Registration with the Information Commissioner's Office is in progress. The number will be published here as soon as it is issued |
 | Product | Neo Accounting — https://neoacc.neovogent.com (the app is at /app) |
 
-**1.2 How to reach us about privacy.** Email **support@neovogent.com**. We reply within 24 hours. Our support hours are **06:00–18:00 UK time**, Monday to Friday — [PLACEHOLDER: confirm whether support runs at weekends]. Our team works from Bangladesh, where those hours are 11:00–23:00 local time. Clause 7.3 explains what that means for your data.
+**1.2 How to reach us about privacy.** Email **hello@neovogent.com**. Our support hours are **09:00–17:00 UK time, Monday to Friday**, and standard support is closed at weekends. We acknowledge a privacy enquiry within 2 business days. A critical incident — a suspected breach, or anything else putting data at risk — is picked up immediately, including at weekends. Our team works from Bangladesh; clause 7.3 explains what that means for your data.
 
-**1.3 Data protection officer.** We have not appointed a data protection officer. We do not believe we are required to. [PLACEHOLDER: confirm this assessment, and name an internal owner for data protection questions.] Send privacy questions to support@neovogent.com and mark them "Privacy".
+**1.3 Data protection officer.** We have not appointed a data protection officer. Given the nature and scale of what we process, we do not believe Article 37 requires one. We keep that assessment under review and will appoint one if our processing changes or grows.
+
+We do not route privacy matters to one named individual. Send privacy questions to **hello@neovogent.com** with "Privacy" in the subject line; the responsible team member takes it on, investigates it, and coordinates it through to a resolution.
 
 **1.4 UK representative.** We are a UK company, so we do not need a UK or EU representative under Article 27.
 
@@ -111,7 +112,7 @@ This is the most important part of this notice. Getting it wrong would send peop
 | Whose data | The accounting practice and its staff: the people who sign up, sign in, pay and email support | The practice's **clients** — their business documents, and the contact details of their staff |
 | Who decides what happens to it | **Neovogent AI Solutions** | **The accounting practice** |
 | Whose privacy notice applies | This one | The practice's own privacy notice |
-| Who a person asks about their data | Us — support@neovogent.com | Their accountant. See clause 4.3 |
+| Who a person asks about their data | Us — hello@neovogent.com | Their accountant. See clause 4.3 |
 | What governs it | This notice, and our terms | Our Data Processing Agreement with the practice |
 
 **2.1** In plain terms: **your account is ours to explain; your clients' documents are yours to explain.** We hold your clients' documents because you asked us to, and we do only what you instruct.
@@ -126,11 +127,13 @@ This is the most important part of this notice. Getting it wrong would send peop
 
 | Category | Examples | Where it comes from |
 |---|---|---|
-| Account and identity | Name, work email address, [PLACEHOLDER: confirm whether we collect a phone number at sign-up], the practice name, your role in the practice, password credentials, multi-factor authentication settings | You, when you sign up or edit your profile |
+| Account and identity | Name, work email address, **mobile number**, the practice name, your role in the practice, password credentials, multi-factor authentication settings | You, when you sign up or edit your profile |
 | Billing | Billing contact, billing address, VAT number, subscription records, invoices, the number of client businesses you are billed for | You, and Stripe |
 | Card details | **We never see or store these.** Payment card details are entered on a checkout page hosted by Stripe and go straight to Stripe | Not collected by us |
-| Support correspondence | The emails you send to support@neovogent.com and our replies, including anything you attach | You |
+| Support correspondence | The emails you send to hello@neovogent.com and our replies, including anything you attach | You |
 | Service and security records | Sign-in times, IP address, browser and device information, actions taken in the app, error and audit logs | Automatically, when you use the app |
+
+**3.1a Why we ask for a mobile number.** A mobile number is required, not optional. We use it to send a one-time passcode when you sign in, and — where you have asked us to — to send reminders and document chases to a client business by SMS. Email on its own is not a reliable way for an accountant to reach a client about a missing receipt, which is why we ask for the number rather than offer it. We use it for authentication and for the service messages you have agreed to; we do not use it for unrelated marketing unless you separately agree. If you give us a client's mobile number, you are confirming to us that you are authorised to do so.
 
 **3.2 What we do not collect.** Neo Accounting does not connect to any bank, does not post to any ledger, and does not file anything with HMRC. It produces an import file for VT Transaction+ that a person downloads and imports. So we never hold bank login credentials, and we never act on your behalf with HMRC.
 
@@ -144,7 +147,7 @@ This is the most important part of this notice. Getting it wrong would send peop
 
 **4.2 Our role.** For all of this, **the practice is the controller and Neovogent AI Solutions is the processor**. We act only on the practice's documented instructions. We do not decide what to collect, we do not use it for our own purposes, and we do not sell it or share it with anyone except the sub-processors listed in clause 6.
 
-**4.3 If you are a client of a practice.** If you want a copy of your data, want something corrected, or want it deleted, please ask **your accountant**. We are not allowed to act on your request directly — we would be acting without our customer's instruction. If you contact us anyway, we will pass your request to the practice and tell you we have done so. [PLACEHOLDER: confirm the internal timescale for forwarding such a request — suggest "without undue delay and in any event within 3 working days".]
+**4.3 If you are a client of a practice.** If you want a copy of your data, want something corrected, or want it deleted, please ask **your accountant**. We are not allowed to act on your request directly — we would be acting without our customer's instruction. If you contact us anyway, we will pass your request to the practice and tell you we have done so. We record the request as soon as it reaches us and forward it securely to the responsible practice **without undue delay and in any event within 3 working days**, sooner where it is urgent. We give the practice reasonable technical help with it, and we keep a record of the request and of what was done about it.
 
 **4.4 The processor terms.** The full Article 28(3) terms — instructions, confidentiality, security, sub-processors, assistance with data subject rights, breach notification, deletion or return at the end, and audit — are set out in our **Data Processing Agreement**, which forms part of our contract with the practice. That agreement, not this notice, governs Part B.
 
@@ -161,7 +164,7 @@ This clause covers **Part A only** — the data we control. For Part B the lawfu
 | What we do | Why |
 |---|---|
 | Create and run your account, sign you in, manage multi-factor authentication | You cannot use the product otherwise |
-| Take payment — GBP 8.50 per month plus VAT, per client business, monthly and rolling, through Stripe | To bill the subscription |
+| Take payment — GBP 8.50 per month per client business, monthly and rolling, through Stripe | To bill the subscription |
 | Answer your support emails | To provide support |
 | Send service messages — billing failures, security notices, changes that affect you | These are part of the service, not marketing |
 
@@ -174,13 +177,21 @@ This clause covers **Part A only** — the data we control. For Part B the lawfu
 | Monitor whether the service is working, and fix it when it is not | Running a reliable product |
 | Improve the product using how the app is used | Making the product better for the people who pay for it |
 
-We have considered whether these override your interests and concluded they do not. [PLACEHOLDER: record the legitimate interests assessment (LIA) and reference it here.] You can object — see clause 11.
+We have carried out a legitimate interests assessment and concluded that these interests do not override your rights:
+
+- **Purpose.** We need limited account, contact, device and usage information to protect accounts, prevent fraud, keep the platform secure, and run the service reliably.
+- **Necessity.** We use only what is reasonably required for that, and a less intrusive alternative wherever one exists.
+- **Balance.** These are activities someone using a business application reasonably expects. We minimise what we collect, restrict who can reach it, apply the retention limits in clause 8, explain the processing here, and honour objections and opt-outs where they apply.
+
+The full assessment is documented internally and is reviewed before we rely on this basis for anything new. You can object — see clause 11.
 
 **5.3 Legal obligation** — Article 6(1)(c). We must keep invoices and VAT records to meet UK tax law, and we must respond to lawful requests from a regulator or a court.
 
 **5.4 Do you have to give us this data?** Yes, for the account and billing data at clause 3.1. It is a contractual requirement: without it we cannot open an account, sign you in, or invoice you. The service and security records are collected automatically as a consequence of using the app.
 
-**5.5 Marketing.** [PLACEHOLDER: confirm whether Neovogent AI Solutions sends marketing email. If it does, state the lawful basis — consent, or the soft opt-in for existing customers — and how to unsubscribe. If it does not, replace this clause with "We do not send marketing email."]
+**5.5 Marketing.** We send essential service messages about onboarding, account activity, security, changes to the service, and changes to our Terms or this notice. Those are part of the service, not marketing, and you cannot unsubscribe from them while you hold an account.
+
+We may also send marketing or promotional email where the law allows it — relying on your consent, or on the soft opt-in for existing customers in regulation 22 of the Privacy and Electronic Communications Regulations. Every marketing email is clearly identifiable as one and carries an unsubscribe link; unsubscribing applies to marketing only and does not stop your service messages. We use a name, photograph, quotation or customer story in our own marketing only with that person's explicit permission.
 
 ---
 
@@ -193,16 +204,16 @@ We use a small number of suppliers to run the service. This is the complete list
 | **Amazon Web Services (AWS)** | Hosting, file storage, database | Account data and uploaded documents, encrypted at rest | UK — eu-west-2 (London) |
 | **Amazon Bedrock** (an AWS service) | The AI model that reads document images | The contents of documents sent for reading | UK — eu-west-2 (London), region-pinned |
 | **Stripe** | Payment processing and hosted checkout | Your card details (which never reach us), your billing details and payment history | See clause 7.2 |
-| **Cloudflare** | Email routing for support@neovogent.com | Emails sent to and from our support address, in transit | See clause 7.2 |
-| **Google (Gmail)** | The mailbox that our support address forwards to | Emails sent to and from our support address, at rest | See clause 7.2 |
+| **Cloudflare** | Email routing for hello@neovogent.com | Emails sent to and from our support address, in transit | See clause 7.2 |
+| **Google Workspace** | The managed business mailbox our support address forwards to | Emails sent to and from our support address, at rest | See clause 7.2 |
 
 **6.1 We do not sell personal data**, and we do not share it with anyone for advertising.
 
-**6.2 Other disclosures.** We may disclose data if the law requires it, to a professional adviser under a duty of confidence, or to a buyer if the business is sold — in which case we will tell you first. [PLACEHOLDER: confirm the business-transfer position with a solicitor.]
+**6.2 Other disclosures.** We may disclose data where the law requires it, or to a professional adviser under a duty of confidence. **We do not sell personal data to advertisers or to unrelated third parties.** If we go through a merger, acquisition, restructuring or a sale of the business, information may pass to the acquiring or successor organisation — and only where that is necessary to keep the service running. Any such transfer is subject to confidentiality, security and data protection requirements, the receiving organisation must go on protecting the information, and we will tell you where the law requires us to.
 
-**6.3 Changing this list.** We will update this notice, and give practices notice, before adding or replacing a sub-processor. [PLACEHOLDER: confirm the notice period — the Data Processing Agreement should state one, e.g. 30 days, with a right to object.]
+**6.3 Changing this list.** If we add or replace a sub-processor we email affected practices, normally at least **3 business days** before the change takes effect, and update this notice at the same time. A practice that objects can say so — clause 10 of our Data Processing Terms sets out what happens then.
 
-**6.4 Known gap — being fixed.** Our support mailbox is a **Google account**. [PLACEHOLDER: confirm the current account type. As at drafting it is a free consumer Google account, which does **not** carry an Article 28 processor contract.] Until that is on a business plan with data processing terms in place, support email is the weakest link in this chain. Please do not send us anything by email that you would not be willing to hold in an ordinary mailbox. Tracked as an action — see the open questions accompanying this draft.
+**6.4 Our support mailbox.** Support email is handled in a managed **Google Workspace** business account — not a personal or consumer Gmail account — so it is covered by Google's Workspace data processing terms. Email is still email, though: if you need to send us something sensitive about a client, put it in the product rather than attach it to a message.
 
 ---
 
@@ -210,7 +221,9 @@ We use a small number of suppliers to run the service. This is the complete list
 
 **7.1 The product stays in the UK.** All documents, all database records and all AI processing happen in AWS's **eu-west-2 (London)** region. The AI model that reads documents is pinned to that region, and our systems are not permitted to use a cross-region inference profile — a request that tried to leave the region would fail rather than succeed quietly.
 
-**7.2 Suppliers based outside the UK.** Stripe, Cloudflare and Google are international companies, and data handled by them may be processed outside the UK. [PLACEHOLDER: for each of Stripe, Cloudflare and Google, state the transfer safeguard actually in place — the UK International Data Transfer Agreement, or the UK Addendum to the EU Standard Contractual Clauses — and link each supplier's privacy policy. Do not publish this clause until each one is checked.]
+**7.2 Suppliers based outside the UK.** Stripe, Cloudflare and Google are international companies, and data they handle may be processed outside the UK. Where a supplier does process personal data outside the UK, we rely on the UK transfer safeguard carried in that supplier's own terms and data processing agreement — either the ICO's International Data Transfer Agreement or the UK Addendum to the EU Standard Contractual Clauses. We record which safeguard applies to each supplier, and we review it.
+
+Their own privacy information explains what they do with data: [Stripe](https://stripe.com/gb/privacy), [Amazon Web Services](https://aws.amazon.com/privacy/), [Cloudflare](https://www.cloudflare.com/privacypolicy/) and [Google](https://policies.google.com/privacy).
 
 **7.3 Our team is in Bangladesh, and does not access your data.** Our staff work from Bangladesh. Bangladesh does not have UK adequacy status, so if our team looked at your data it would be a transfer outside the UK — even though the data itself stays on servers in London.
 
@@ -218,7 +231,7 @@ We use a small number of suppliers to run the service. This is the complete list
 
 If that ever has to change — for example a technical fault that cannot be fixed any other way — we will put an International Data Transfer Agreement and a transfer risk assessment in place first, and we will tell you before it happens.
 
-**7.4 Backups.** [PLACEHOLDER: confirm whether backups are held in a second region and, if so, where — the internal source of truth names a cross-region disaster-recovery target because the UK has only one AWS region. If any copy leaves the UK, say so here.]
+**7.4 Backups.** Disaster-recovery backups stay in the United Kingdom, in the AWS Europe (London) region (`eu-west-2`). No backup copy is replicated to Bangladesh or to any other country, so no international transfer mechanism is needed for backups. If that ever has to change, we will document the transfer safeguard and update this notice before any data moves.
 
 ---
 
@@ -226,18 +239,21 @@ If that ever has to change — for example a technical fault that cannot be fixe
 
 **8.1 Your clients' documents (Part B).** We keep them for as long as the practice tells us to. You can **export everything, and delete everything, yourself, from inside the app** — at any time, at the end of a trial, and when you cancel. This is a self-serve action; you never have to raise a support ticket to get your data out or to have it removed.
 
-**8.2 After you cancel.** [PLACEHOLDER: confirm the exact window during which data remains available for export after cancellation, and when it is deleted. The internal source of truth (SoT D32) refers to a 90-day post-termination window, and separately to a six-year retention clock for client financial records. State one clearly, and say which applies to Neo Accounting.]
+**8.2 After you cancel.** Your data stays available for **90 days** after your subscription ends. Both export and self-serve deletion stay open for the whole of that 90 days — neither is gated on a support ticket and neither is withheld over a billing dispute. You can also ask us, at hello@neovogent.com. After the 90 days we securely delete the data, except anything we are required to keep for legal or regulatory reasons (clause 8.3).
+
+How long your clients' records must be kept for your own tax and professional obligations is your decision as controller, not ours — so export before the window closes.
 
 **8.3 Your account data (Part A).**
 
 | What | How long |
 |---|---|
-| Account and profile data | For as long as the account is open, then deleted — [PLACEHOLDER: confirm the delay after closure] |
+| Account and profile data | For as long as the account is open, then deleted **90 days after the account is closed**, except anything we must keep by law |
 | Billing records and invoices | Six years from the end of the relevant accounting period, because UK tax law requires it |
-| Support emails | [PLACEHOLDER: confirm retention period for the support mailbox] |
-| Security, audit and error logs | [PLACEHOLDER: confirm log retention period] |
+| Support emails | Up to **12 months** after the enquiry is resolved, then securely deleted — longer only where an open complaint, legal matter or regulatory obligation needs them |
+| Security, audit and error logs | Routine logs, **7 days**. Records relevant to a technical or security incident are kept for as long as the investigation needs them |
+| A document you delete in the app | Held in Trash for **30 days**, then permanently deleted. A document that has already been exported is held indefinitely instead, so the link inside your export file keeps working |
 
-**8.4 Backups** are overwritten on a cycle, so deleted data may persist in a backup for a short period after it is removed from the live service. [PLACEHOLDER: confirm the backup cycle length.]
+**8.4 Backups** are kept separately for disaster recovery and overwritten on a rolling cycle, so data you delete may persist in a backup for a short period after it has gone from the live service. While it does, it stays encrypted, and it is not restored into use except as part of a full disaster recovery. You can export your data at any time during your subscription and throughout the 90-day window in clause 8.2 — backups are our recovery mechanism, not a copy you can ask us to retrieve from.
 
 ---
 
@@ -247,7 +263,7 @@ If that ever has to change — for example a technical fault that cannot be fixe
 
 **9.2 What it does not do.** It does not make a decision about a person. It does not decide whether anyone gets credit, a job, a service or a payment. Nothing it produces changes any record until **a person reviews it and presses Approve**. Neo Accounting does not carry out automated decision-making that produces legal effects or similarly significant effects on an individual, within the meaning of Article 22.
 
-**9.3 Training.** We do not use your data, or your clients' documents, to train our own AI models. [PLACEHOLDER: confirm and record that the AWS Bedrock terms in force prevent the model provider using inputs or outputs for model training — AWS states this contractually; cite the clause.]
+**9.3 Training.** We do not use your data, or your clients' documents, to train any AI model — ours or anyone else's. Documents are read through Amazon Bedrock over a secure API, inside the UK region named in clause 7.1. AWS states that prompts and completions sent to Bedrock are not stored by AWS, are not used to train AWS or third-party models, and are not shared with model providers — see the [AWS Bedrock FAQs](https://aws.amazon.com/bedrock/faqs/) and [Bedrock data retention](https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html). We record the model, the region and the retention configuration we use, because retention can vary by model and by setting.
 
 **9.4 Text in a document is data, not an instruction.** Anything written inside an uploaded document is treated by our systems as content to be read, never as a command to be followed.
 
@@ -267,7 +283,9 @@ We are a small company and we will not claim more than we do. We hold **no** sec
 
 **10.5** Card details never touch our systems. Checkout is hosted by Stripe.
 
-**10.6 If something goes wrong.** If there is a personal data breach affecting data we control, we will report it to the ICO within 72 hours where the law requires, and tell affected people where the risk to them is high. Where the breach affects data we process for a practice, we will tell that practice without undue delay so it can meet its own obligations. [PLACEHOLDER: confirm the notification timescale committed to in the Data Processing Agreement.]
+**10.6 If something goes wrong.** We keep appropriate technical and organisational measures in place, but no online service can promise an incident will never happen.
+
+If there is a personal data breach affecting data we control, we will report it to the ICO within 72 hours where the law requires, and tell affected people where the risk to them is high. Where a suspected or confirmed breach affects data we process for a practice, we investigate and contain it immediately and tell that practice without undue delay and **within 48 hours** of becoming aware of it, so it can meet its own obligations. We give whatever detail we have at the time and keep sending updates as the investigation goes on. A critical incident is picked up outside standard support hours, including at weekends. The same commitment is in clause 13 of our Data Processing Terms.
 
 ---
 
@@ -286,7 +304,7 @@ We are a small company and we will not claim more than we do. We hold **no** sec
 
 **11.2 Withdrawing consent.** We do not currently rely on consent for anything in Part A, other than any marketing that clause 5.5 confirms. Where we do rely on consent, you can withdraw it at any time, and withdrawing it does not make what we did beforehand unlawful.
 
-**11.3 How to ask.** Email **support@neovogent.com**. We will reply within one month. If a request is complex we may extend that by up to two further months, and we will tell you if we do. We may need to check who you are before we act. There is no charge, unless a request is manifestly unfounded or excessive.
+**11.3 How to ask.** Email **hello@neovogent.com**. We will reply within one month. If a request is complex we may extend that by up to two further months, and we will tell you if we do. We may need to check who you are before we act. There is no charge, unless a request is manifestly unfounded or excessive.
 
 **11.4 If your data is in a client document (Part B), ask the practice, not us.** See clause 4.3. This is not us avoiding the question — we are not permitted to change or hand over our customer's records on someone else's say-so.
 
@@ -294,7 +312,7 @@ We are a small company and we will not claim more than we do. We hold **no** sec
 
 ## 12. Complaining to the ICO
 
-**12.1** If you are unhappy with how we have handled your personal data, please tell us first — support@neovogent.com — so we can try to put it right.
+**12.1** If you are unhappy with how we have handled your personal data, please tell us first — hello@neovogent.com — so we can try to put it right. Clause 21 of our Terms of Service sets out how a complaint is handled, and how long it should take.
 
 **12.2** You can also complain to the UK regulator, the Information Commissioner's Office, at any time:
 
@@ -308,7 +326,23 @@ Complaining to the ICO does not affect any other legal remedy you have.
 
 ## 13. Cookies and similar technology
 
-[PLACEHOLDER: this clause cannot be written from the facts available. Confirm exactly which cookies and similar technologies the marketing site at neoacc.neovogent.com and the app at /app set — at minimum, list the strictly necessary cookies used for sign-in and security, and state whether any analytics or third-party cookies are used. If anything beyond strictly necessary cookies is set, PECR requires consent before it is set, and a cookie banner and separate cookie notice are needed. Do not publish this notice with this clause unresolved.]
+**13.1 No analytics, no advertising, no consent banner.** Neo Accounting sets no analytics cookies, no advertising cookies and no third-party trackers. Nothing beyond what is strictly necessary is set, so no cookie consent banner is required and we do not show one. If we ever introduce analytics, advertising or other optional cookies, we will put a consent banner and a separate cookie notice in place, and ask you, before anything is set.
+
+**13.2 The one cookie we set.**
+
+| Name | What it is for | How long it lasts |
+|---|---|---|
+| `nt_session` | Keeps you signed in after you log in, and proves the request is yours. Strictly necessary — without it you cannot stay signed in | 12 hours, then it expires. Cleared when you sign out |
+
+**13.3 Other browser storage.** We use your browser's own storage for a small number of strictly necessary or convenience items. These stay on your device; they are not sent to us as cookies, and they are not shared with anyone.
+
+| Item | Where | What it is for |
+|---|---|---|
+| `nt-business-portal-bearer`, `nt-business-portal-expires` | Session storage | Keeps a client signed in to the client portal for the life of that browser tab. Cleared when the tab is closed |
+| `nt.signed-in` | Local storage | Remembers that this browser has signed in before, so the app opens on the right screen instead of flashing a login page |
+| `nt.theme` | Local storage | Remembers whether you chose the light or the dark appearance |
+
+**13.4 What we never put in the browser.** Your clients' accounting records and document contents are not stored permanently in the browser, and nothing in browser storage is shared with a third party.
 
 ---
 
@@ -320,5 +354,5 @@ Complaining to the ICO does not affect any other legal remedy you have.
 
 ---
 
-**Version:** 0.1 — draft, not yet published
-**Last updated:** 26 August 2026
+**Version:** 0.2 — draft, pending legal review
+**Last updated:** 11 September 2026

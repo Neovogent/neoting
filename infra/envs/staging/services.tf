@@ -441,7 +441,7 @@ locals {
     { name = "EMAIL_SENDER", value = "ses" },
     { name = "SES_REGION", value = local.region },
     { name = "EMAIL_FROM_ADDRESS", value = "no-reply@${local.domain}" },
-    { name = "EMAIL_REPLY_TO_ADDRESS", value = "support@neovogent.com" },
+    { name = "EMAIL_REPLY_TO_ADDRESS", value = "hello@neovogent.com" },
     { name = "EMAIL_CONFIGURATION_SET", value = aws_sesv2_configuration_set.primary.configuration_set_name },
     { name = "EMAIL_RATE_LIMIT", value = "redis" },
   ]

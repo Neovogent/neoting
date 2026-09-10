@@ -29,7 +29,7 @@ import { type EmailSender, type OutboundEmail, type SentEmail } from './email-se
  *
  * **A `Reply-To` that a human reads.** `no-reply@` correctly signals that the
  * From box is not monitored, and a client who replies anyway must still reach
- * someone. `EMAIL_REPLY_TO_ADDRESS` is `support@neovogent.com`, which is a
+ * someone. `EMAIL_REPLY_TO_ADDRESS` is `hello@neovogent.com`, which is a
  * different domain on purpose: the MX for the sending domain points at SES
  * inbound, whose rule set accepts `doc@` and `dmarc@` and nothing else, so a
  * reply to any other address on it would bounce.

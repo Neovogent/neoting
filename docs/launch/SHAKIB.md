@@ -192,8 +192,9 @@ RULES THAT MATTER MORE THAN THE FEATURE:
 PROVE IT: send to a real Gmail address and a real Outlook address and confirm both land in
 the inbox, not spam. Do not mark this done on a Terraform apply.
 
-Separately, confirm support@neovogent.com still forwards correctly through Cloudflare —
-one test message, then leave it alone.
+Separately, confirm hello@neovogent.com receives correctly through Cloudflare routing into
+Google Workspace — one test message, then leave it alone. Every legal document now points
+readers at that address, so a bounce there is a launch blocker.
 
 Full gate. PR.
 ```
@@ -212,7 +213,7 @@ Read the module's `CLAUDE.md` before wiring one. Five things worth knowing:
 2. **The `ses:FromAddress` grant was pinned to `doc@`, and that was a bug.**
    `doc@` is the *inbound* intake address — mail arriving there is filed as a
    client document, so sending from it would ingest every client reply as
-   paperwork. Now `no-reply@`, with `Reply-To: support@neovogent.com`.
+   paperwork. Now `no-reply@`, with `Reply-To: hello@neovogent.com`.
 3. **Three boot gates, and `services.tf` was updated in the same commit** so the
    next staging deploy cannot crash-loop. `EMAIL_SENDER=demo` refuses in
    production — it is the one stand-in whose failure is invisible from every
@@ -233,7 +234,7 @@ Read the module's `CLAUDE.md` before wiring one. Five things worth knowing:
   Terraform (it would be created `PendingConfirmation` and look wired while
   delivering nothing), so this is out of band and the confirmation is the proof.
 
-`support@neovogent.com` MX resolves to Cloudflare email routing with a matching
+`hello@neovogent.com` MX resolves to Cloudflare email routing with a matching
 SPF record; the live forwarding test is still yours to run from outside.
 
 ---
@@ -592,17 +593,22 @@ They are a DRAFTING AID, not legal advice. Read them properly — they were writ
 product's own documented behaviour, so anything they promise is something the code must
 actually do.
 
-YOU MUST SUPPLY:
-- The company number (Companies House).
-- The registered office address as it appears on the register.
-- A decision on the Gmail forwarding. support@neovogent.com currently forwards to a free
-  consumer Google account, which has no Art. 28 processor contract. Client financial
-  records will pass through it. Either move to a business mailbox with proper terms, or
-  record the decision and its reasoning.
-- Confirmation of the retention periods the privacy notice states, since D32 commits to
-  export and erasure but not to a number of days.
+SUPPLIED, 11 Sep 2026 (`Neo_Accounting_Legal_Information_Checklist`): company number,
+registered office, support hours and response targets, complaint route, retention
+periods, breach deadline, sub-processor notice period, transfer position, Bedrock
+commitments, cookie and browser-storage position. All 62 placeholders are resolved and
+the four documents no longer render the draft banner.
 
-Every [PLACEHOLDER] must be resolved before these go live. Grep for it.
+STILL OWED BY YOU:
+- The ICO registration number, once issued. Registration is in progress; the notice says
+  so rather than claiming a number.
+- The backup retention / overwrite cycle in days, from the technical side. The documents
+  describe a rolling cycle without stating a figure.
+- Legal review by a UK solicitor. The documents are still marked DRAFT.
+
+RESOLVED: the mailbox question. Support email is a managed Google Workspace business
+account, not a free consumer Gmail, so Annex B row 5 carries the Workspace DPA. The
+contact address in all four documents is now hello@neovogent.com.
 
 Then hand them to Mubasshir for M4, which renders them as pages.
 ```

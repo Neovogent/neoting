@@ -401,7 +401,7 @@ const EnvSchema = z.object({
   // domain's MX points at SES inbound, whose rule set accepts `doc@` and
   // `dmarc@` and nothing else, so a reply to any other address ON it bounces.
   // Empty omits the header rather than sending a blank one.
-  EMAIL_REPLY_TO_ADDRESS: z.string().default('support@neovogent.com'),
+  EMAIL_REPLY_TO_ADDRESS: z.string().default('hello@neovogent.com'),
 
   // The SES configuration set (`nt-<env>-default`, email.tf). Left off, a
   // message still sends — and silently opts out of bounce/complaint

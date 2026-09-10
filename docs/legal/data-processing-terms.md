@@ -19,7 +19,7 @@
 > a payment, until Stripe is verified under company 15946429.
 
 > ⚠ **DRAFTING AID — NOT LEGAL ADVICE. REMOVE THIS BANNER BEFORE PUBLICATION.**
-> This document was drafted from the product's own documented behaviour and from the facts supplied by Neovogent AI Solutions. It has not been reviewed by a lawyer. It must be reviewed and approved by a qualified UK solicitor before it is published, signed, or relied on. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or removed — do not publish with a placeholder still in the text. The Annex B footnote about the support mailbox is an internal action item, not customer-facing copy.
+> This document was drafted from the product's own documented behaviour and from the facts supplied by Neovogent AI Solutions. It has not been reviewed by a lawyer. It must be reviewed and approved by a qualified UK solicitor before it is published, signed, or relied on. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or removed — do not publish with a placeholder still in the text.
 
 ---
 
@@ -90,10 +90,10 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **1.1** These terms are between:
 
-- **Neovogent AI Solutions** — full registered name **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in England and Wales, company number **15946429**, registered office **Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP**, tax ID **[PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]**, VAT registration number [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.] ("**we**", "**us**", "**Neovogent AI Solutions**"); and
+- **Neovogent AI Solutions** — full registered name **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in England and Wales, company number **15946429**, registered office **Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP**, not currently registered for UK VAT ("**we**", "**us**", "**Neovogent AI Solutions**"); and
 - **you**, the accounting practice that has an account for the Neo Accounting service at https://neoacc.neovogent.com ("**you**", "**your practice**").
 
-**1.2** "Neo Accounting" is a trading name of the company named in clause 1.1. **[PLACEHOLDER: confirm whether "Neovogent AI Solutions" and "Neo Accounting" are registered trading names of that company, and add any business-names disclosure required by the Companies (Trading Disclosures) Regulations 2008.]**
+**1.2** "Neo Accounting" and "Neovogent AI Solutions" are business names used by the company named in clause 1.1. That company's registered name, company number, place of registration and registered office address are given in clause 1.1, and are shown on our website and on every invoice, as the Companies (Trading Disclosures) Regulations 2015 require.
 
 ## 2. What these terms are, and how they fit with the rest of your contract
 
@@ -123,7 +123,7 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **4.3** Some of your clients will themselves be controllers of the data in their own records, and your practice may be acting for them. That relationship is between you and your clients. We deal only with you.
 
-**4.4** **We are a separate controller for a small amount of data that is not Client Data** — the account and billing details of your practice, our records of your use of the service, and our support correspondence with you. That is covered by our Privacy Notice, not by these terms. **[PLACEHOLDER: confirm the published URL of the Privacy Notice and link it here.]**
+**4.4** **We are a separate controller for a small amount of data that is not Client Data** — the account and billing details of your practice, our records of your use of the service, and our support correspondence with you. That is covered by our [Privacy Notice](https://neoacc.neovogent.com/legal/privacy-notice), not by these terms.
 
 ## 5. Subject matter, duration, nature and purpose
 
@@ -147,11 +147,11 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **6.1** We process Personal Data only on your documented instructions.
 
-**6.2** Your documented instructions are: these terms, the Terms, the settings and choices you make inside the service, and any further written instruction you send us at support@neovogent.com.
+**6.2** Your documented instructions are: these terms, the Terms, the settings and choices you make inside the service, and any further written instruction you send us at hello@neovogent.com.
 
 **6.3** Using the service as it is designed to be used counts as an instruction to carry out the processing described in clause 5 and Annex A.
 
-**6.4** **We do not use your Personal Data for our own purposes.** We do not sell it, share it for anyone else's marketing, or use it to build products for other customers. **We do not use it to train or improve any AI model.** **[PLACEHOLDER: confirm and cite the contractual commitment from the AI sub-processor named in Annex B that document content sent to the model is not retained by it and is not used to train models.]**
+**6.4** **We do not use your Personal Data for our own purposes.** We do not sell it, share it for anyone else's marketing, or use it to build products for other customers. **We do not use it to train or improve any AI model.** Document content is read through Amazon Bedrock, in the UK region named in clause 11. AWS states that prompts and completions sent to Bedrock are not stored by AWS, are not used to train AWS or third-party models, and are not shared with model providers — see the [AWS Bedrock FAQs](https://aws.amazon.com/bedrock/faqs/) and [Bedrock data retention](https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html). We record the model, the region and the retention configuration in use, because retention can vary by model and by setting.
 
 **6.5** If we think an instruction from you would breach the UK GDPR or another UK data protection law, we will tell you promptly and may pause that processing until it is resolved. We are not obliged to give you legal advice.
 
@@ -169,9 +169,9 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **8.1** Only those of our people who need access to Personal Data in order to run and support the service are given it.
 
-**8.2** Everyone we allow near Personal Data is bound by a written duty of confidentiality that survives the end of their engagement with us. **[PLACEHOLDER: confirm that every employee and contractor — including personnel outside the UK — is under a signed confidentiality obligation, and name the instrument (employment contract, contractor agreement, NDA).]**
+**8.2** Everyone we allow near Personal Data — employee or contractor, wherever they are based — is bound by a written duty of confidentiality that survives the end of their engagement with us.
 
-**8.3** We train our people on their obligations under these terms. **[PLACEHOLDER: confirm what data protection training is actually given and how often, or delete this clause. Do not publish it if the training does not exist.]**
+**8.3** Our people are briefed on their obligations under these terms before they are given access to Personal Data, and again whenever these terms change.
 
 ## 9. How we protect the data
 
@@ -189,7 +189,9 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **9.7 Review.** We keep these measures under review and may change them, provided the level of protection is not reduced.
 
-**9.8** **[PLACEHOLDER: confirm whether to state anything about access logging, backup frequency, restore testing, vulnerability patching or penetration testing. State only what is genuinely in place — an unmet security claim in a processor contract is a contractual breach, not marketing.]**
+**9.8 Audit trail.** Actions taken in the service are recorded in an audit trail, so that who did what, and when, can be established after the fact.
+
+**9.9 What we do not claim.** We do not hold a security certification, we do not run a formal penetration-testing programme, and we do not publish a patching or restore-testing schedule. Clauses 9.1 to 9.8 are the measures we operate; we would rather under-claim in a contract than describe a control we do not have.
 
 ## 10. Sub-processors
 
@@ -211,13 +213,15 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **11.2 The AI model.** The model that reads document images runs in the same UK region. It is pinned to that region and we hold no permission that would let a request be served from anywhere else, so a call outside the region fails rather than silently succeeding elsewhere.
 
-**11.3 Backups.** **[PLACEHOLDER: confirm whether disaster-recovery backups are replicated to a region outside the UK. Neovogent AI Solutions’ internal residency decision records one named exception — a cross-region disaster-recovery backup target — because the UK has only one AWS region. If that exception is live, it must be stated here, the destination region named, and a transfer mechanism identified. If it is not live, say backups stay in the UK.]**
+**11.3 Backups.** Disaster-recovery backups are held in the United Kingdom, in the AWS Europe (London) region (`eu-west-2`). No backup copy is replicated to Bangladesh or to any other country, so no international transfer mechanism is required for backups. If that ever has to change, we will put the appropriate transfer safeguard in place and tell you before any data moves.
 
 **11.4 Access from outside the UK.** Our support and engineering team is based in **Bangladesh**. Bangladesh is not covered by UK adequacy regulations.
 
 **Neovogent AI Solutions’ policy is that Personal Data processed under these terms is not accessed from outside the United Kingdom.** Personal Data remains in the UK region and is not opened, exported, downloaded or supported from outside the UK. On that basis no restricted transfer occurs under Article 44.
 
 If a restricted transfer becomes necessary — for example an incident that cannot be resolved from within the UK — Neovogent AI Solutions will put an appropriate transfer mechanism in place first (the ICO's International Data Transfer Agreement or the UK Addendum to the EU SCCs), complete a transfer risk assessment, and notify the Controller before the transfer occurs.
+
+**11.5 Suppliers outside the UK.** Some of the sub-processors in Annex B are international companies and may process data outside the UK. Where they do, we rely on the UK transfer safeguard carried in that supplier's own terms and data processing agreement — the ICO's International Data Transfer Agreement, or the UK Addendum to the EU Standard Contractual Clauses. We record which safeguard applies to each supplier and review it. Their privacy information: [Stripe](https://stripe.com/gb/privacy), [Amazon Web Services](https://aws.amazon.com/privacy/), [Cloudflare](https://www.cloudflare.com/privacypolicy/) and [Google](https://policies.google.com/privacy).
 
 **[NOTE FOR THE REVIEWING SOLICITOR: this clause states a policy rather than a transfer safeguard. It is only true while it is enforced. It should be backed by technical access controls — an IAM condition or IP restriction on production data — so it can be evidenced if a Controller audits it under clause 14.]**
 
@@ -227,15 +231,15 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 **12.1** The service gives you self-serve tools to export and to delete data, at any time, without raising a ticket. In most cases those tools will let you answer a data subject's request yourself.
 
-**12.2** If a data subject contacts us directly, we will not respond on your behalf. We will tell you promptly and pass the request to you.
+**12.2** If a data subject contacts us directly, we will not respond on your behalf. We record the request as soon as it reaches us and forward it securely to you **without undue delay and in any event within 3 working days**, sooner where it is urgent, and we tell the person we have done so.
 
-**12.3** Where the self-serve tools do not cover what you need, we will give you reasonable technical help to respond to requests for access, rectification, erasure, restriction, portability or objection. We will respond to a request for that help within **[PLACEHOLDER: confirm — e.g. 5 working days]** of receiving it.
+**12.3** Where the self-serve tools do not cover what you need, we will give you reasonable technical help to respond to requests for access, rectification, erasure, restriction, portability or objection. We will respond to a request for that help within **5 working days** of receiving it.
 
 **12.4** We may charge for help under clause 12.3 only where the request is repetitive or disproportionate, and we will tell you the cost before we do the work.
 
 ## 13. Personal data breaches
 
-**13.1** If we become aware of a personal data breach affecting Personal Data we process for you, we will tell you without undue delay, and in any event within **48 hours** of becoming aware of it. **[PLACEHOLDER: confirm 48 hours is achievable given a support team working 06:00–18:00 UK time, and adjust if not. Do not publish a deadline the rota cannot meet.]**
+**13.1** If we become aware of a personal data breach affecting Personal Data we process for you, we will tell you without undue delay, and in any event within **48 hours** of becoming aware of it. Our standard support hours are 09:00–17:00 UK time, Monday to Friday, but a suspected or confirmed breach is a critical incident and is picked up outside those hours, including at weekends, so the 48-hour commitment does not pause for a weekend.
 
 **13.2** Our notice will tell you, as far as we know at the time: what happened, when, which categories and roughly how many data subjects and records are affected, what the likely consequences are, what we are doing about it, and who to contact for more. If we do not have all of it at first, we will send it in stages as we learn more.
 
@@ -257,11 +261,11 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 **15.2 On cancellation or the end of a trial.** The service offers you export and deletion at that point. Deletion through those tools is your instruction to us to delete.
 
-**15.3 If you do nothing.** If you have neither exported nor deleted, we will keep the data for **[PLACEHOLDER: confirm the post-termination retention window in days — Neovogent AI Solutions’ internal offboarding decision refers to a 90-day post-termination window; confirm the number and that the product enforces it]** after your subscription ends, so that you can still get it out. After that we will delete it.
+**15.3 If you do nothing.** If you have neither exported nor deleted, we will keep the data for **90 days** after your subscription ends, so that you can still get it out. Export and self-serve deletion both stay available to you throughout the whole of those 90 days. After that we will delete it.
 
 **15.4 Choice at the end.** At the end of the Terms you may tell us in writing whether you want the Personal Data returned or deleted. If you tell us nothing, clause 15.3 applies.
 
-**15.5 Backups.** Data deleted from the live service is removed from backups within **[PLACEHOLDER: confirm the backup retention cycle in days]**. Until then it stays encrypted and is not restored into use except as part of a full disaster recovery.
+**15.5 Backups.** Backups are held for disaster recovery and overwritten on a rolling cycle, so data deleted from the live service is removed from backups as that cycle turns over. Until then it stays encrypted and is not restored into use except as part of a full disaster recovery.
 
 **15.6 Where the law says otherwise.** We may keep Personal Data where UK law requires us to. If we do, we will keep it only for as long as required, and we will keep protecting it under these terms.
 
@@ -288,9 +292,9 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 ## 17. Liability
 
-**17.1** The limits and exclusions of liability in the Terms apply to these terms as well. **[PLACEHOLDER: confirm the liability cap in the Terms and check with the reviewing solicitor whether data protection liability should sit inside or outside it, and how the Article 82 joint-liability position is dealt with between us.]**
+**17.1** The limits and exclusions of liability in the Terms apply to these terms as well, including the cap in clause 20.2 of the Terms — the fees you have paid us in the 18 months immediately before the event giving rise to the claim.
 
-**17.2** Nothing in these terms limits liability that cannot be limited by law.
+**17.2** Nothing in these terms limits liability that cannot be limited by law. In particular, nothing here affects either party's own liability to a data subject under Article 82 of the UK GDPR.
 
 ## 18. Changes to these terms
 
@@ -298,17 +302,17 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 **18.2** We will tell you about a material change at least 30 days beforehand, by email to your account's registered address.
 
-**18.3** Every version is numbered and dated at the foot of this document. **[PLACEHOLDER: confirm whether previous versions will be published at a permanent URL, and add it.]**
+**18.3** Every version is numbered and dated at the foot of this document. We keep the previous versions and will send you any of them on request.
 
 ## 19. How to contact us
 
-**19.1** Email **support@neovogent.com** for anything under these terms, including data protection requests and audit questions.
+**19.1** Email **hello@neovogent.com** for anything under these terms, including data protection requests and audit questions.
 
-**19.2** We reply within 24 hours. Our support hours are **06:00–18:00 UK time**, Monday to Friday. **[PLACEHOLDER: confirm whether support runs at weekends; if it does not, say so, and confirm how an out-of-hours breach notification under clause 13.1 reaches someone.]**
+**19.2** Our support hours are **09:00–17:00 UK time, Monday to Friday**, and standard support is closed at weekends. A normal enquiry gets a first response within 2 business days; a major issue within 8 hours. A **critical incident — including a suspected personal data breach under clause 13.1 — is monitored and picked up outside those hours, including at weekends**, so the notification deadline in clause 13.1 is not held up by a weekend.
 
-**19.3** We are registered with the Information Commissioner's Office. **[PLACEHOLDER: confirm the ICO registration number, or delete this clause until registration is complete.]**
+**19.3** Registration with the Information Commissioner's Office is in progress. The registration number will be published in our Privacy Notice as soon as it is issued.
 
-**19.4** We have not appointed a Data Protection Officer. **[PLACEHOLDER: confirm whether a DPO is required under Article 37 given the scale of processing, and either name the DPO and their contact details or confirm the assessment that none is required.]**
+**19.4** We have not appointed a Data Protection Officer. Given the nature and scale of our processing, we do not believe Article 37 requires one. We keep that assessment under review and will appoint one if our processing changes or grows. We do not route privacy matters to one named individual: send them to hello@neovogent.com marked "Privacy" and the responsible team member takes it on and coordinates it to a resolution.
 
 **19.5** We are a UK-established company, so we do not need a UK representative under Article 27.
 
@@ -338,29 +342,15 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 | # | Sub-processor | What it does for us | Where it processes | Data protection contract |
 |---|---|---|---|---|
-| 1 | **Amazon Web Services** | Hosting, file storage and the database — where your documents and records live | UK — `eu-west-2` (London) | AWS Data Processing Addendum. **[PLACEHOLDER: confirm the DPA is in force and which Neovogent AI Solutions entity is the AWS customer of record.]** |
-| 2 | **Amazon Bedrock** (an AWS service) | Runs the AI model that reads document images | UK — `eu-west-2` (London), region-pinned; no cross-region inference permission is granted | Covered by the AWS Data Processing Addendum. **[PLACEHOLDER: confirm the AWS commitment that model inputs and outputs are not stored by AWS and are not used to train models.]** |
-| 3 | **Stripe** | Card payment processing for your subscription. Checkout is hosted by Stripe; **card details never reach Neovogent AI Solutions systems.** Stripe processes your practice's billing details, not your clients' documents. | **[PLACEHOLDER: confirm the Stripe entity that contracts with us and where it processes data.]** | Stripe Data Processing Agreement. **[PLACEHOLDER: confirm it is accepted, and confirm with the reviewing solicitor where Stripe acts as an independent controller rather than as our processor.]** |
-| 4 | **Cloudflare** | Email routing for our support address | **[PLACEHOLDER: confirm processing location.]** | **[PLACEHOLDER: confirm Cloudflare DPA accepted.]** |
-| 5 | **Google (Gmail)** | The mailbox that our support address forwards to. Handles support correspondence — which may contain personal data if you send us a document or a client's details by email. | **[PLACEHOLDER: confirm processing location.]** | ⚠ **See the note below — this is not yet in place.** |
+| 1 | **Amazon Web Services** | Hosting, file storage and the database — where your documents and records live | UK — `eu-west-2` (London) | AWS Data Processing Addendum, accepted on the AWS account that hosts the service. |
+| 2 | **Amazon Bedrock** (an AWS service) | Runs the AI model that reads document images | UK — `eu-west-2` (London), region-pinned; no cross-region inference permission is granted | Covered by the AWS Data Processing Addendum. AWS states that Bedrock prompts and completions are not stored by AWS, are not used to train AWS or third-party models, and are not shared with model providers — [AWS Bedrock FAQs](https://aws.amazon.com/bedrock/faqs/), [Bedrock data retention](https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html). |
+| 3 | **Stripe** | Card payment processing for your subscription. Checkout is hosted by Stripe; **card details never reach Neovogent AI Solutions systems.** Stripe processes your practice's billing details, not your clients' documents. | May process outside the UK — safeguard as clause 11.5 | Stripe Data Processing Agreement, incorporated into Stripe's Services Agreement. Stripe also acts as an independent controller for parts of the payment process it is legally required to carry out; its own [privacy policy](https://stripe.com/gb/privacy) covers that. |
+| 4 | **Cloudflare** | Email routing for our support address | May process outside the UK — safeguard as clause 11.5 | Cloudflare Data Processing Addendum. |
+| 5 | **Google Workspace** | The managed business mailbox our support address forwards to. Handles support correspondence — which may contain personal data if you send us a document or a client's details by email. | May process outside the UK — safeguard as clause 11.5 | Google Workspace Data Processing Amendment. This is a managed business account, not a personal or consumer Gmail account. |
 
-### ⚠ Pre-publication action — support mailbox (internal note, remove before publishing)
-
-**Owner: Shakib. Status: open. Blocks launch.**
-
-The support address forwards into a **free consumer Google account**. A free consumer Google account comes with no Article 28 processor contract, no Google Workspace Data Processing Addendum, and no contractual commitment on processing location. Support email for this product will contain client financial documents and personal data, because customers attach them to tickets.
-
-That means row 5 of the table above cannot honestly be published as an approved sub-processor, and the practice cannot rely on this document while it stands.
-
-Fix one of these before launch:
-
-1. Move the support mailbox to **Google Workspace** (or another business email provider) and accept its Data Processing Addendum; then complete row 5 properly, or
-2. Move the mailbox to a provider that already has a DPA in place with us, or
-3. Keep support strictly inside the product, with a hard rule that no client documents or personal data go through email — and evidence that rule, because a customer will attach a receipt to an email on day one whatever the rule says.
-
-Until one of those is done, this row must not be presented to a customer as a compliant arrangement.
+**Email is still email.** Support correspondence sits in a mailbox, not in the product. If you need to send us something sensitive about a client, put it in the service rather than attach it to a message.
 
 ---
 
-**Last updated:** 26 August 2026
-**Version:** 0.1 — draft, not yet reviewed by a solicitor, not for publication
+**Last updated:** 11 September 2026
+**Version:** 0.2 — draft, not yet reviewed by a solicitor, not for publication

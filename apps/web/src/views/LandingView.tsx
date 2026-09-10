@@ -28,9 +28,11 @@ import { linkProps } from '../lib/router';
  * The footer carries the company identity the Companies (Trading Disclosures)
  * Regulations require on the website: registered name, company number and
  * registered office, taken verbatim from Shakib's S6 drafts in `docs/legal/`.
- * The VAT registration number is not known yet (the drafts mark it
- * unresolved), so it renders as [PLACEHOLDER] — grep for it before launch,
- * exactly as M4 will for the legal pages.
+ * There is no VAT line: NEOVOGENT AI SOLUTIONS UK LTD is not registered for UK
+ * VAT (owner's answer, 11 Sep 2026, `Neo_Accounting_Legal_Information_Checklist`
+ * item 2), and the Trading Disclosures Regulations ask for a VAT number only
+ * from a company that has one. If registration happens, the number goes back
+ * here AND in the four documents under `docs/legal/`.
  */
 
 const m = defineMessages({
@@ -163,7 +165,7 @@ const m = defineMessages({
   supportBody: {
     id: 'landing.landingView.supportBody',
     defaultMessage:
-      'Support is by email at {email}. We reply within 24 hours. Support hours are 06:00–18:00 UK time.',
+      'Support is by email at {email}. Support hours are 09:00–17:00 UK time, Monday to Friday. A normal question gets a first reply within 2 business days; anything critical is picked up straight away, weekends included.',
   },
 
   footerNavLabel: { id: 'landing.landingView.footerNavLabel', defaultMessage: 'Legal' },
@@ -185,14 +187,9 @@ const m = defineMessages({
     defaultMessage:
       'Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, United Kingdom',
   },
-  footerVat: {
-    id: 'landing.landingView.footerVat',
-    defaultMessage: 'VAT registration number: [PLACEHOLDER]',
-    description: 'The VAT registration number is not known yet — Shakib supplies it before launch (docs/legal marks it unresolved). Grep for [PLACEHOLDER] before publishing.',
-  },
 });
 
-const SUPPORT_EMAIL = 'support@neovogent.com';
+const SUPPORT_EMAIL = 'hello@neovogent.com';
 
 const STEPS = [
   { icon: Inbox, title: m.stepCollectTitle, body: m.stepCollectBody },
@@ -423,11 +420,7 @@ export function LandingView() {
           </div>
           <div className="flex flex-col gap-1 text-[11px] text-zinc-600 leading-relaxed">
             <p>{intl.formatMessage(m.footerCompanyName)}</p>
-            <p>
-              {intl.formatMessage(m.footerCompanyNumber)}
-              <span aria-hidden="true"> · </span>
-              {intl.formatMessage(m.footerVat)}
-            </p>
+            <p>{intl.formatMessage(m.footerCompanyNumber)}</p>
             <p>{intl.formatMessage(m.footerRegisteredOffice)}</p>
           </div>
         </footer>
