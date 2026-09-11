@@ -1,27 +1,3 @@
-> ### ⚠ CONTRACTING ENTITY — STRIPE MUST MATCH BEFORE PUBLISHING
->
-> The contracting entity and merchant of record is **NEOVOGENT AI SOLUTIONS UK LTD**
-> (company no. 15946429, incorporated 10 September 2024, registered office Suite 5,
-> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP). Decision taken
-> 3 Sep 2026, superseding the 26 Aug 2026 decision that named EXAM BINARY LTD.
->
-> This matters and is not cosmetic:
-> - The customer's **card statement** must read Neovogent AI Solutions. If it names a
->   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice must come from NEOVOGENT AI SOLUTIONS UK LTD's own VAT
->   registration**, because HMRC requires the invoice to come from the entity that made
->   the supply.
->
-> **So the Stripe live-mode account must be opened under this same entity.** No live
-> charging exists yet — live mode is blocked on company verification and the VAT number
-> (`docs/runbooks/stripe-billing.md` §1) — so there is no mismatch today, and this is the
-> moment the two are aligned at zero cost. Do not publish these documents, and do not take
-> a payment, until Stripe is verified under company 15946429.
-
-> ⚠ **NOT LEGAL ADVICE — DRAFTING AID ONLY.** The document below was drafted from Neovogent AI Solutions’ own documented product behaviour and the facts supplied by the product owner. It has not been reviewed by a lawyer. It must be read and approved by a qualified UK solicitor (data protection) before it is published, linked from the landing page, or shown to any customer. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or deleted before publication. This warning block is **outside** the document body and must not be published with it.
-
----
-
 <!--
 ART. 13 COMPLIANCE MAP — for internal review, not for the reader.
 This notice is written to cover the UK GDPR Article 13 elements. Where we are a
@@ -354,5 +330,5 @@ Complaining to the ICO does not affect any other legal remedy you have.
 
 ---
 
-**Version:** 0.2 — draft, pending legal review
-**Last updated:** 11 September 2026
+**Version:** 1.0 — reviewed and approved by a UK solicitor, 11 September 2026
+**In force from:** 11 September 2026

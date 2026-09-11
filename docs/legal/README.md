@@ -1,7 +1,7 @@
-# Legal pack — what it is, and what it still needs
+# Legal pack — version 1.0, in force
 
 Four documents, drafted from the product's own documented behaviour and from the SoT's own
-commitments:
+commitments, and **reviewed and approved by a UK solicitor on 11 September 2026**:
 
 | Document | Why it exists |
 |---|---|
@@ -10,9 +10,12 @@ commitments:
 | `data-processing-terms.md` | UK GDPR Art. 28(3). Required **before** a practice uploads a client's records. |
 | `refund-and-cancellation.md` | Stripe requires a reachable refund policy; customers need a way out. |
 
-> **These are a drafting aid, not legal advice.** They have not been reviewed by a lawyer.
-> A qualified UK solicitor should read them before they are published. Each file opens with
-> a block saying the same thing — **delete that block before publishing.**
+> **Status: published.** All four are **version 1.0**, solicitor-reviewed and approved on
+> 11 September 2026, in force from the same date. Both drafting banners have been removed
+> from the source files, and `TERMS_VERSION_IN_FORCE` in
+> `apps/api/src/modules/auth-tenancy/practice-signup.service.ts` moved `0.1` → `1.0` in the
+> same change — a signup naming any other version is refused, so **the constant and the
+> document footers move together or not at all.**
 
 ---
 
@@ -69,29 +72,27 @@ What the checklist settled, one line each:
 
 ---
 
-## What is still owed before publication
+## What is still open
 
-### 1. Legal review
+None of these blocks publication — the documents are live. They are the things a careful
+reader would ask about next.
 
-The documents are still marked **DRAFT**. No UK solicitor has read them. The checklist's own
-answers say the liability cap, the ADR position and the legitimate interests assessment are
-each subject to that review.
+### 1. The ICO registration number
 
-### 2. The ICO registration number
-
-Registration is in progress and the documents say so, which is honest but not finished. The
+**This is the only blank left in the four documents.** Registration is in progress and they
+say so, which is honest but not finished. The
 data-protection fee is a legal requirement for a company processing personal data, and
 `docs/Kickoff_Requirements.md` §1.2 marks it blocking **before any real customer data**. The
 number goes into the privacy notice's identity table when it arrives.
 
-### 3. The backup retention cycle, in days
+### 2. The backup retention cycle, in days
 
 Checklist item 25 deferred the figure to the technical team. The documents describe a
 rolling overwrite cycle without naming a length — defensible, but a processor contract that
 commits to removing deleted data from backups (processing terms, clause 15.5) reads better
 with the number in it. Take it from the RDS and S3 retention settings.
 
-### 4. ⚠ The product quotes "+ VAT" and the company is not VAT registered
+### 3. ⚠ The product quotes "+ VAT" and the company is not VAT registered
 
 The company is **not registered for UK VAT** (checklist item 2), so no VAT can lawfully be
 charged. But the price is presented as **"£8.50 + VAT per month"** in the app and on the
@@ -110,7 +111,7 @@ Two ways out, and it is a commercial decision, not an engineering one:
 
 Either is fine. Charging with the mismatch in place is not.
 
-### 5. ⚠ The 90-day deletion is a promise nothing enforces
+### 4. ⚠ The 90-day deletion is a promise nothing enforces
 
 All four documents now commit to deleting a practice's data **90 days after cancellation**.
 The product does not do this. `docs/Retention_and_Deletion_Policy.md` §3 records the owner's
@@ -127,7 +128,7 @@ Note also that purging destroys database rows and **does not reclaim the stored 
 (same policy, §5). A deletion promise that leaves the document images in the object store is
 not a deletion promise.
 
-### 6. `hello@` must actually receive
+### 5. `hello@` must actually receive
 
 All four documents, the landing page and the welcome-email template now point readers at
 **`hello@neovogent.com`** — the address the checklist gives, replacing the older
@@ -140,7 +141,7 @@ The app's outbound `Reply-To` is now `hello@` too — `EMAIL_REPLY_TO_ADDRESS` i
 product sends now invites a reply to `hello@`, so if that mailbox does not receive, customer
 replies disappear. Staging carries the new value only after the next apply.
 
-### 7. Things the documents now assert that nobody has verified
+### 6. Things the documents assert that nobody has verified
 
 None of these was in the checklist. Each is stated as fact in a document a customer will
 rely on, so confirm rather than assume:
@@ -155,7 +156,7 @@ rely on, so confirm rather than assume:
 - **Annex B rows 4 and 5** — Cloudflare's DPA and the Google Workspace Data Processing
   Amendment are accepted.
 
-### 8. Access from outside the UK — decided: it does not happen
+### 7. Access from outside the UK — decided: it does not happen
 
 **Policy, set 26 Aug 2026: personal data in Neo Accounting is not accessed from outside the
 United Kingdom.** The team works from Bangladesh; client documents stay in `eu-west-2` and
@@ -173,7 +174,7 @@ If the policy ever has to bend — a production incident nobody in the UK can re
 the moment it needs an International Data Transfer Agreement and a transfer risk assessment,
 not the moment after.
 
-### 9. The contracting entity is NEOVOGENT AI SOLUTIONS UK LTD
+### 8. The contracting entity is NEOVOGENT AI SOLUTIONS UK LTD
 
 Decided 3 Sep 2026, superseding the 26 Aug 2026 decision that named EXAM BINARY LTD. The
 contracting entity and merchant of record in all four documents is
@@ -200,15 +201,18 @@ Two further facts point the same way:
 - **Everything else already said Neovogent.** SoT D5 records the company as Neovogent, and
   the product is served from `neoacc.neovogent.com`.
 
-**The sequencing rule binds.** The entity that takes the money must be the entity in the
-contract. So **Stripe live mode must be opened under 15946429**, and no payment may be taken
-until it is.
+**The sequencing rule binds, and it is now only written here.** The entity that takes the
+money must be the entity in the contract. So **Stripe live mode must be opened under company
+15946429, and no payment may be taken until it is** — otherwise the customer's card statement
+names a company they have never heard of, and the first thing that happens is a chargeback.
+Until 11 Sep 2026 this warning sat in a banner at the top of all four documents; the banner
+went when the pack was approved for publication, so this paragraph is the surviving copy.
 
 The **tax ID and VAT number that used to block this section are gone.** The company is not
 VAT registered (see item 4 above), and the tax-ID field has been deleted from all four
 documents rather than filled with a number belonging to a different company.
 
-### 10. Who contracts with whom
+### 9. Who contracts with whom
 
 The Terms now settle it: **clause 9.9 makes the client business the payer**, matching SoT
 D48. The refund policy said the opposite until 11 Sep 2026 and has been corrected to match.

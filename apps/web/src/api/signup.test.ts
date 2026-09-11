@@ -64,12 +64,12 @@ const OFFER_BODY = {
 
 /* ── the practice ────────────────────────────────────────────────────────── */
 
-test('the terms version in force is 0.1, and every signup carries it', async () => {
+test('the terms version in force is 1.0, and every signup carries it', async () => {
   // Pinned as a literal, not read from the module: this is the value
   // `TERMS_VERSION_IN_FORCE` holds in practice-signup.service.ts, and the point
   // of the assertion is that the two agree. A test that read the constant back
   // from the constant would pass however far it had drifted.
-  expect(TERMS_VERSION).toBe('0.1');
+  expect(TERMS_VERSION).toBe('1.0');
 
   vi.mocked(createPractice).mockResolvedValueOnce(undefined as never);
   await signUpPractice(DETAILS);
@@ -84,7 +84,7 @@ test('the terms version in force is 0.1, and every signup carries it', async () 
     // anything the first one's mail goes to.
     email: 'priya@northgate.test',
     password: 'a-long-enough-passphrase',
-    acceptedTermsVersion: '0.1',
+    acceptedTermsVersion: '1.0',
   });
 });
 

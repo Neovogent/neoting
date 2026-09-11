@@ -246,14 +246,15 @@ Step 9 is the acceptance test. Steps 1, 4 and 10 are what make it a business.
 
 ## Legal pack
 
-Drafted and living in `docs/legal/`: terms of service, privacy notice, data processing
-terms, refund and cancellation policy.
+Live in `docs/legal/`: terms of service, privacy notice, data processing terms, refund
+and cancellation policy. Rendered at `/legal/*` from the markdown, which stays the source
+of truth.
 
-**They are a drafting aid, not legal advice.** They were written from the product's own
-documented behaviour and the SoT's own commitments. A qualified UK solicitor should read
-them before they go live. Two things in them need Shakib specifically: the company number,
-and a decision about the Gmail forwarding — a free consumer Google account is not an
-appropriate sub-processor for other people's financial records.
+**Version 1.0, reviewed and approved by a UK solicitor, 11 September 2026.** Every
+placeholder is resolved, both drafting banners are gone, and
+`TERMS_VERSION_IN_FORCE` moved `0.1` → `1.0` in the same change — a signup naming any
+other version is refused. What remains open is listed in `docs/legal/README.md`; the ICO
+registration number is the only blank left in the documents themselves.
 
 ---
 

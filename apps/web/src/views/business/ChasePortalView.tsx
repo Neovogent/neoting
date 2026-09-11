@@ -126,6 +126,11 @@ const m = defineMessages({
       'This link came by text, so we need the six-digit code as well. We have just sent it to the number your accountant has on file.',
   },
   codeLabel: { id: 'portal.chasePortal.codeLabel', defaultMessage: 'Six-digit code' },
+  codePlaceholder: {
+    id: 'portal.chasePortal.codePlaceholder',
+    defaultMessage: '000000',
+    description: 'Shape hint inside the six-digit code box. Digits only — localise only if the script does.',
+  },
   codeAction: { id: 'portal.chasePortal.codeAction', defaultMessage: 'Open my list' },
   failedTitle: { id: 'portal.chasePortal.failedTitle', defaultMessage: 'That did not send' },
   unmatchedDetail: {
@@ -388,7 +393,7 @@ function OpeningStep({
             inputMode="numeric"
             autoComplete="one-time-code"
             maxLength={6}
-            placeholder="000000"
+            placeholder={intl.formatMessage(m.codePlaceholder)}
             className="w-full px-4 py-3.5 rounded-2xl bg-card border border-white/5 text-white text-[20px] tracking-[0.4em] text-center tabular-nums focus:border-brand/40 outline-none"
           />
         </label>

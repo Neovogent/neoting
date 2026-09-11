@@ -36,19 +36,22 @@ import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
 
 /**
  * The terms version a signup must name — `docs/legal/terms-of-service.md`,
- * which reads *"Version 0.1 — DRAFT, not for publication until legally
- * reviewed."*
+ * which reads *"Version 1.0 — reviewed and approved by a UK solicitor,
+ * 11 September 2026."*
  *
  * The contract: *"A signup naming a version that is not the one in force is
  * refused."* An accountant who accepted v0.1 has a record saying v0.1, and it
- * stays true when v0.2 ships — which is the whole reason the version is
- * captured rather than a boolean `acceptedTerms`.
+ * stays true now that 1.0 has shipped — which is the whole reason the version
+ * is captured rather than a boolean `acceptedTerms`. Nobody is retro-migrated
+ * onto a document they never read.
  *
- * ⚠ **This constant moves when the solicitor-reviewed terms land**, in the same
- * PR that publishes them, or the signup screen will offer a version the server
- * refuses. `docs/launch/PLAN.md` has the legal pack as an open item.
+ * ⚠ **Moved 0.1 → 1.0 on 11 Sep 2026**, when the solicitor-reviewed pack was
+ * published. It moves again on the next material change to the Terms, in the
+ * same commit that changes the document — `apps/web/src/api/signup.ts` holds
+ * the matching literal and `signup.test.ts` pins it, so a half-move fails CI
+ * rather than 400-ing every signup in production.
  */
-export const TERMS_VERSION_IN_FORCE = '0.1';
+export const TERMS_VERSION_IN_FORCE = '1.0';
 
 export interface PracticeSignupInput {
   readonly practiceName: string;

@@ -1,34 +1,3 @@
-> ### ⚠ CONTRACTING ENTITY — STRIPE MUST MATCH BEFORE PUBLISHING
->
-> The contracting entity and merchant of record is **NEOVOGENT AI SOLUTIONS UK LTD**
-> (company no. 15946429, incorporated 10 September 2024, registered office Suite 5,
-> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP). Decision taken
-> 3 Sep 2026, superseding the 26 Aug 2026 decision that named EXAM BINARY LTD.
->
-> This matters and is not cosmetic:
-> - The customer's **card statement** must read Neovogent AI Solutions. If it names a
->   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice must come from NEOVOGENT AI SOLUTIONS UK LTD's own VAT
->   registration**, because HMRC requires the invoice to come from the entity that made
->   the supply.
->
-> **So the Stripe live-mode account must be opened under this same entity.** No live
-> charging exists yet — live mode is blocked on company verification and the VAT number
-> (`docs/runbooks/stripe-billing.md` §1) — so there is no mismatch today, and this is the
-> moment the two are aligned at zero cost. Do not publish these documents, and do not take
-> a payment, until Stripe is verified under company 15946429.
-
-> ### ⚠ NOT PART OF THE PUBLISHED DOCUMENT — REMOVE THIS BLOCK BEFORE PUBLICATION
->
-> This is a **drafting aid**, not legal advice. It was prepared from the product's own
-> documented behaviour and from the facts supplied by Neovogent AI Solutions. It has **not** been
-> reviewed by a qualified lawyer. It **must be reviewed and approved by a qualified UK
-> solicitor before it is published, linked from the website, or presented to any
-> customer**. Every `[PLACEHOLDER: ...]` must be resolved or deleted first — a published
-> document containing a placeholder is worse than no document at all.
-
----
-
 <!--
   DRAFTING NOTE — which legal requirement each clause is there to satisfy.
   (HTML comment: not rendered on the published page. Keep it for the reviewing solicitor.)
@@ -664,5 +633,5 @@ incidents are picked up at weekends too
 
 ---
 
-**Version 0.2 — DRAFT, not for publication until legally reviewed.**
-**Last updated: 11 September 2026.**
+**Version 1.0 — reviewed and approved by a UK solicitor, 11 September 2026.**
+**In force from 11 September 2026.**

@@ -1,28 +1,3 @@
-> ### ⚠ CONTRACTING ENTITY — STRIPE MUST MATCH BEFORE PUBLISHING
->
-> The contracting entity and merchant of record is **NEOVOGENT AI SOLUTIONS UK LTD**
-> (company no. 15946429, incorporated 10 September 2024, registered office Suite 5,
-> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP). Decision taken
-> 3 Sep 2026, superseding the 26 Aug 2026 decision that named EXAM BINARY LTD.
->
-> This matters and is not cosmetic:
-> - The customer's **card statement** must read Neovogent AI Solutions. If it names a
->   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice must come from NEOVOGENT AI SOLUTIONS UK LTD's own VAT
->   registration**, because HMRC requires the invoice to come from the entity that made
->   the supply.
->
-> **So the Stripe live-mode account must be opened under this same entity.** No live
-> charging exists yet — live mode is blocked on company verification and the VAT number
-> (`docs/runbooks/stripe-billing.md` §1) — so there is no mismatch today, and this is the
-> moment the two are aligned at zero cost. Do not publish these documents, and do not take
-> a payment, until Stripe is verified under company 15946429.
-
-> ⚠ **DRAFTING AID — NOT LEGAL ADVICE. REMOVE THIS BANNER BEFORE PUBLICATION.**
-> This document was drafted from the product's own documented behaviour and from the facts supplied by Neovogent AI Solutions. It has not been reviewed by a lawyer. It must be reviewed and approved by a qualified UK solicitor before it is published, signed, or relied on. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or removed — do not publish with a placeholder still in the text.
-
----
-
 <!--
 UK GDPR Article 28(3) coverage map — which clause satisfies which requirement.
 Keep this comment updated if clauses are renumbered.
@@ -223,9 +198,7 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 **11.5 Suppliers outside the UK.** Some of the sub-processors in Annex B are international companies and may process data outside the UK. Where they do, we rely on the UK transfer safeguard carried in that supplier's own terms and data processing agreement — the ICO's International Data Transfer Agreement, or the UK Addendum to the EU Standard Contractual Clauses. We record which safeguard applies to each supplier and review it. Their privacy information: [Stripe](https://stripe.com/gb/privacy), [Amazon Web Services](https://aws.amazon.com/privacy/), [Cloudflare](https://www.cloudflare.com/privacypolicy/) and [Google](https://policies.google.com/privacy).
 
-**[NOTE FOR THE REVIEWING SOLICITOR: this clause states a policy rather than a transfer safeguard. It is only true while it is enforced. It should be backed by technical access controls — an IAM condition or IP restriction on production data — so it can be evidenced if a Controller audits it under clause 14.]**
-
-**11.5** Except as set out in this clause and Annex B, we do not transfer Personal Data outside the UK.
+**11.6** Except as set out in this clause and Annex B, we do not transfer Personal Data outside the UK.
 
 ## 12. Helping you answer your clients' data protection requests
 
@@ -352,5 +325,5 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 ---
 
-**Last updated:** 11 September 2026
-**Version:** 0.2 — draft, not yet reviewed by a solicitor, not for publication
+**Version:** 1.0 — reviewed and approved by a UK solicitor, 11 September 2026
+**In force from:** 11 September 2026

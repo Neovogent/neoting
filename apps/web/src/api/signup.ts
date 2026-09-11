@@ -63,7 +63,7 @@ import { unwrapBody } from './envelope';
  * what a person agreed to and when is recorded as an audit event and an audit
  * event naming the wrong document is worse than none.
  */
-export const TERMS_VERSION = '0.1';
+export const TERMS_VERSION = '1.0';
 
 /** The contract's own minimum. Length only — see `PracticeSignupRequest`. */
 export const PASSWORD_MIN_LENGTH = 12;
