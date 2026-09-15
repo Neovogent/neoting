@@ -162,6 +162,58 @@ task that can actually connect.
 Then drop the twelve entries from `LOCAL_ONLY` in
 `scripts/check-env-parity.mjs`; its own hygiene check will fail until they go.
 
+## ⚠ Measured against the live vendors, 15 September 2026
+
+Driven from the deployed product with the lane on `http`. Three of the four
+reach their real sign-in/consent screen with a correctly formed request; **Xero
+does not, and cannot until its app is changed.**
+
+| Vendor | Result |
+|---|---|
+| **QuickBooks Online** | ✅ reaches `accounts.intuit.com` sign-in, right client, registered redirect, signed state, `app_group=QBO` |
+| **Sage Accounting** | ✅ reaches `sageone.com/oauth2/auth/central`, `scope=full_access`, `filter=apiv3.1` |
+| **FreeAgent** | ✅ reaches `login.sandbox.freeagent.com` — the SANDBOX host, so `LEDGER_SANDBOX=true` is doing its job |
+| **Xero** | ❌ **`Error: invalid_scope`** before any sign-in |
+
+### ⚠ Xero: the app is missing the two scopes the feature needs
+
+Probing each scope separately against `login.xero.com/identity/connect/authorize`
+with our own client id:
+
+| Scope | Xero's answer |
+|---|---|
+| `openid` | ✅ granted |
+| `accounting.contacts` | ✅ granted |
+| `accounting.settings` | ✅ granted |
+| `accounting.attachments` | ✅ granted |
+| `app.connections` | ✅ granted |
+| `profile` | ❌ invalid_scope |
+| `email` | ❌ invalid_scope |
+| **`offline_access`** | ❌ **invalid_scope** |
+| **`accounting.transactions`** | ❌ **invalid_scope** |
+
+The last two are not cosmetic:
+
+- **`accounting.transactions`** is what lets us create a bill at all. Without
+  it there is no point connecting.
+- **`offline_access`** is what returns a refresh token. Without it a connection
+  dies thirty minutes after it is made and can never be renewed.
+
+⚠ `docs/research/ledger-api-build-reference.md` §1 states that
+`accounting.transactions` is in the granted list. **That is not what Xero
+answers today**, and the reference doc should be corrected once the app is.
+
+**The fix is in the Xero portal, not in this codebase**
+(`developer.xero.com/app/manage` → the app → Configuration → scopes): enable
+`accounting.transactions` and `offline_access`. The scope set this product
+requests is the correct one for what it does, so it is deliberately NOT narrowed
+to what happens to be granted — a connection that cannot post a bill or renew
+itself would be worse than no connection, and would fail later and less
+legibly.
+
+Until then, pressing Connect on Xero sends a practice to a Xero error page. That
+is Xero refusing our request, not our code failing.
+
 ## Step 5 — prove it, per vendor
 
 For each of Xero, QuickBooks, Sage and FreeAgent:
