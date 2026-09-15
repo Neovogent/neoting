@@ -37,6 +37,12 @@ that lets an approved document reach a real set of books.
 
 ---
 
+> ✅ **Steps 1 and 2 are DONE as of 15 Sep 2026.** `secrets.tf` carries the
+> `ledger` group and `services.tf` carries the settings and the injection, with
+> `LEDGER_ADAPTER` still `demo`. What is left is Step 3 (the real values), the
+> apply, and Step 4 (the flip). The Terraform below is kept as the record of
+> what was added and why.
+
 ## Step 1 — the secret group (Terraform)
 
 `infra/envs/staging/secrets.tf` holds one secret per VENDOR, each a JSON

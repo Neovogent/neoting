@@ -81,15 +81,12 @@ const LOCAL_ONLY = {
   // it did the Stripe keys. Not a D50 change; found by running this script,
   // which is what it is for.)
   //
-  // ⚠ SMS_ORIGINATION_IDENTITY was evicted in the same pass and PUT BACK, and
-  // the mistake is worth recording because it is easy to repeat: the eviction
-  // was judged against a WORKING TREE that carried another lane's uncommitted
-  // `SMS_SENDER=aws` change to services.tf. On a clean checkout the key is not
-  // there, so the check failed for everyone else and passed here. Run this
-  // script in a `git worktree add --detach <dir> HEAD` before trusting what it
-  // says about a file somebody is mid-edit on.
-  SMS_ORIGINATION_IDENTITY:
-    'Phase 3: the UK dedicated number — lands on services.tf together with the SMS_SENDER=aws flip, which is in flight on another lane',
+  // (SMS_ORIGINATION_IDENTITY sat here through two commits and is gone for
+  // good now that the SMS lane's services.tf is committed — the eviction that
+  // #297 had to undo, re-applied at the moment it became true. The lesson from
+  // that round trip is worth keeping: this script reads the WORKING TREE, so
+  // run it inside `git worktree add --detach <dir> HEAD` before trusting what
+  // it says about a file somebody is mid-edit on.)
   SMS_REGION: 'partner of SMS_ORIGINATION_IDENTITY; stated on ECS when the number activates',
   WHATSAPP_PRACTICE_MAP:
     'controller-side override only since Practice.whatsappPhoneNumberId landed (1 Sep 2026); staging maps practices in the DB, not the task definition',
@@ -100,29 +97,10 @@ const LOCAL_ONLY = {
   TWILIO_AUTH_TOKEN: 'SMS is cut from ID; sandbox key documented for v1',
   TWILIO_VERIFY_SERVICE_SID: 'SMS is cut from ID; sandbox key documented for v1',
   TWILIO_MESSAGING_SERVICE_SID: 'SMS is cut from ID; sandbox key documented for v1',
-  // ⚠ D50 built the ledger lane and staging does not RUN it: services.tf leaves
-  // `LEDGER_ADAPTER=demo`, so none of these is read there. Turning it on is an
-  // infra change that has to land with REAL credentials in Secrets Manager and
-  // a real `INTEGRATION_TOKEN_KEY` — placeholders would boot, seal every
-  // practice's tokens under a guessable string, and look fine. This script's
-  // own instruction is that the task-definition route is a separate PR, so
-  // these sit here until that one lands, and they come off this list the day it
-  // does (the hygiene check below evicts them automatically, as it did Stripe).
-  LEDGER_SANDBOX: 'ledger lane off on staging (LEDGER_ADAPTER=demo); lands with the D50 infra PR',
-  INTEGRATION_TOKEN_KEY:
-    'seals every practice ledger token — must arrive as a REAL value in the auth secret group, never a placeholder, so it lands with the D50 infra PR',
-  XERO_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
-  XERO_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
-  XERO_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
-  QBO_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
-  QBO_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
-  QBO_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
-  SAGE_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
-  SAGE_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
-  SAGE_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
-  FREEAGENT_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
-  FREEAGENT_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
-  FREEAGENT_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
+  // (The twelve D50 ledger keys sat here while the lane was code-only. They
+  // are gone now that `services.tf` sets all of them — the hygiene check below
+  // evicted them the moment the infra landed, exactly as it did the Stripe
+  // keys and as `docs/runbooks/ledger-connections.md` said it would.)
   TRUELAYER_CLIENT_ID: 'bank feeds dormant in ID (D40)',
   TRUELAYER_CLIENT_SECRET: 'bank feeds dormant in ID (D40)',
   COMPANIES_HOUSE_API_KEY: 'not wired to a live lane yet; documented sandbox slot',

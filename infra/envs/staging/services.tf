@@ -198,14 +198,31 @@ locals {
     #                        mobile, which is the only thing the SMS-outbox
     #                        screen reads.
     #
-    #                        ⚠ STILL NO SMS LEAVES THE ACCOUNT. The outbox row
-    #                        is a record of the text that WOULD be sent, not a
-    #                        delivery receipt, and the screen must not be read
-    #                        as proof a client's phone rang. Real SMS is
-    #                        `SMS_SENDER=aws`, behind the same seam, waiting on
-    #                        the UK dedicated number's carrier registration.
-    #                        A contact with no mobile is skipped by the outbox
-    #                        half and still emailed by the email half.
+    #                        ⚠ SUPERSEDED 11 Sep 2026 — this environment now runs
+    #                        `SMS_SENDER=aws`. Kept because the outbox screen
+    #                        still exists and the distinction still matters: an
+    #                        `sms_log` row is composed bytes, NOT a delivery
+    #                        receipt, so the screen is still not proof a
+    #                        client's phone rang.
+    #
+    #   SMS_SENDER=aws       ⚠ REAL TEXT MESSAGES LEAVE THE ACCOUNT. Owner's
+    #                        instruction, 11 Sep 2026, after the UK number
+    #                        +447441471756 completed carrier registration
+    #                        (GB_LONG_CODE_REGISTRATION, COMPLETE 9 Sep).
+    #                        An approved chase.send now delivers by SMS and
+    #                        NOT by email — `aws` replaces the email half, it
+    #                        does not add to it.
+    #
+    #                        ⚠ TWO WAYS THIS SILENTLY REACHES NOBODY, both
+    #                        proven on the day of the flip:
+    #                        (1) the origination number is a GB LONG CODE and
+    #                        `InternationalSendingEnabled` is false, so any
+    #                        non-UK mobile is refused by AWS with
+    #                        INVALID_IDENTITY_FOR_DESTINATION_COUNTRY before
+    #                        the message leaves; (2) a contact with no mobile
+    #                        on file has nothing to send to, and no longer gets
+    #                        the email that `email+sms` used to fall back on.
+    #                        Revert is this one value back to `email+sms`.
     #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
     #                        reachable from this environment — and under D42
     #                        there is no ledger API in Initial Delivery at all,
@@ -267,13 +284,58 @@ locals {
     # ------------------------------------------------------------------------
     { name = "STATEMENT_READER", value = "textract" },
 
-    { name = "SMS_SENDER", value = "email+sms" },
-    # WhatsApp media fetch (Phase 2). `fixture` until the real System User
-    # token replaces the placeholder in the whatsapp secret — env.ts refuses
-    # `graph` with an empty token, and a fixture fetcher on a real message
-    # dead-letters loudly rather than fabricating bytes. Flip to `graph`
-    # together with the real token; the secret pipe is already laid above.
-    { name = "MEDIA_FETCH", value = "fixture" },
+    # ── D50: the live ledger connection ──────────────────────────────────
+    #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs, no socket opened. No
+    #                        client's books are reachable.
+    #   LEDGER_ADAPTER=http  ⚠ AN APPROVED DOCUMENT REACHES A REAL SET OF
+    #                        BOOKS. Nothing changes for a client until a super
+    #                        admin deliberately connects one — a release with
+    #                        no live connection still goes down the export
+    #                        lane, which is permanent (VT has no API).
+    #
+    # ⚠ env.ts REFUSES TO BOOT on `http` without a 64-hex INTEGRATION_TOKEN_KEY
+    # and at least one vendor application. That is deliberate: the alternative
+    # is a green task that seals every practice's tokens under a placeholder.
+    { name = "LEDGER_ADAPTER", value = "demo" },
+
+    # Sandbox or live BOOKS. `true` points QuickBooks at Sandbox Company GB and
+    # FreeAgent at its sandbox host.
+    #
+    # ⚠ IT CANNOT MAKE XERO SAFE. Xero has no sandbox at all — a developer
+    # connects a REAL organisation — so the only safe Xero target is Xero's own
+    # Demo Company (UK). The connection screen carries that warning because no
+    # environment variable can.
+    { name = "LEDGER_SANDBOX", value = "true" },
+
+    # ⚠ THESE MUST MATCH EACH VENDOR'S REGISTRATION BYTE FOR BYTE, and all four
+    # are registered against this host. A local run needs
+    # http://localhost:3000/... added at the vendor's portal as a SECOND
+    # address; it is not something a config change here can substitute for.
+    { name = "XERO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/xero/callback" },
+    { name = "QBO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/quickbooks/callback" },
+    { name = "SAGE_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/sage/callback" },
+    { name = "FREEAGENT_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/freeagent/callback" },
+
+    { name = "SMS_SENDER", value = "aws" },
+    # The dedicated UK number every chase and sign-in code originates from.
+    # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because
+    # the alternative is a green task that fails every send at request time and
+    # whose first symptom is a client who never got their text.
+    # The phone-number id rather than +447441471756: the id survives the number
+    # being re-leased, and it is what describe-phone-numbers keys on.
+    { name = "SMS_ORIGINATION_IDENTITY", value = "phone-b307702afd4b4c598b92e6e9ff73b71c" },
+    # WhatsApp media fetch (Phase 2). ⚠ LIVE since 11 Sep 2026 — a real System
+    # User token (never-expiring, `whatsapp_business_messaging`) replaced the
+    # placeholder in the whatsapp secret, so `graph` really downloads receipt
+    # images from the Graph API instead of dead-lettering them. Under `fixture`
+    # every real inbound photo dead-lettered loudly rather than fabricating
+    # bytes; that was correct, and it is what this flip ends.
+    #
+    # If this ever goes back to `fixture`, real WhatsApp photos stop arriving
+    # and start filling the DLQ. env.ts also refuses `graph` on an empty token,
+    # so revoking the token in Meta without changing this value fails the boot,
+    # which is the loud failure we want rather than silent data loss.
+    { name = "MEDIA_FETCH", value = "graph" },
     # The web app's public origin — chase.send composition signs portal links
     # as <APP_ORIGIN>/p/<token>. Stated rather than left to the code default so
     # the value survives the day the default constant moves.
@@ -594,6 +656,30 @@ locals {
     # in compute.tf is a different role and a different list.
     { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:secret_key::" },
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:webhook_secret::" },
+
+    # ── D50: the ledger applications, and the key that seals per-connection
+    # tokens. Same no-IAM-change property as Stripe above — the execution
+    # role's grant is `[for s in aws_secretsmanager_secret.app : s.arn]`, so a
+    # new group in that map is granted by construction.
+    #
+    # ⚠ THIS LIST IS SHARED BY api AND workers, AND BOTH NEED IT. The refresh
+    # sweep runs on workers: a worker that cannot open the vault cannot renew a
+    # connection, and that failure is SILENT for weeks — it surfaces as a
+    # refresh token that aged out while nobody was publishing.
+    #
+    # ⚠ `integration_token_key` must hold a REAL value before the first
+    # connection is made. A placeholder boots perfectly and seals every
+    # practice's tokens under a guessable string. Rotating it later re-seals
+    # nothing; every practice would have to reconnect every client.
+    { name = "INTEGRATION_TOKEN_KEY", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:integration_token_key::" },
+    { name = "XERO_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:xero_client_id::" },
+    { name = "XERO_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:xero_client_secret::" },
+    { name = "QBO_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:qbo_client_id::" },
+    { name = "QBO_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:qbo_client_secret::" },
+    { name = "SAGE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:sage_client_id::" },
+    { name = "SAGE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:sage_client_secret::" },
+    { name = "FREEAGENT_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_id::" },
+    { name = "FREEAGENT_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.
