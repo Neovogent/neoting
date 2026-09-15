@@ -297,11 +297,11 @@ locals {
     # and at least one vendor application. That is deliberate: the alternative
     # is a green task that seals every practice's tokens under a placeholder.
     #
-    # ⚠ SWITCHED ON 15 Sep 2026, on the owner's instruction. Landed at `demo`
-    # first (one commit earlier) so that a wrong secret KEY NAME would surface
-    # as a task that fails to start with ResourceInitializationError, before
-    # the boot gate started depending on the secret's CONTENT. That step passed.
-    { name = "LEDGER_ADAPTER", value = "http" },
+    # ⚠ THE VALUE ITSELF LIVES FURTHER DOWN, beside APP_ORIGIN and OTP_MODE
+    # where it always has. There must be exactly ONE `LEDGER_ADAPTER` entry in
+    # this list: a duplicate is valid HCL, passes `terraform validate`, and ECS
+    # silently takes the LAST one — which is how a flip to `http` applied
+    # cleanly and changed nothing at all.
 
     # Sandbox or live BOOKS. `true` points QuickBooks at Sandbox Company GB and
     # FreeAgent at its sandbox host.
@@ -351,7 +351,11 @@ locals {
     # it is simply not what new ones are minted on.
     { name = "APP_ORIGIN", value = "https://neoacc.neovogent.com" },
     { name = "OTP_MODE", value = "totp" },
-    { name = "LEDGER_ADAPTER", value = "demo" },
+    # ⚠ SWITCHED ON 15 Sep 2026, on the owner's instruction. Landed at `demo`
+    # first so a wrong secret KEY NAME would surface as a task that fails to
+    # start, before the boot gate began depending on the secret's CONTENT.
+    # The D50 block above explains what `http` means and how to roll back.
+    { name = "LEDGER_ADAPTER", value = "http" },
     { name = "BILLING", value = "stripe" },
 
     # ------------------------------------------------------------------------
