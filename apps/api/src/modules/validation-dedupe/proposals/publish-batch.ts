@@ -158,6 +158,23 @@ export interface PublishGateway {
    * approver's context. See `publishing/select-ledger-adapter.ts`.
    */
   readonly ledger: LedgerAdapterFactory;
+  /**
+   * Whether the configured adapter actually reaches a vendor (`LEDGER_ADAPTER=http`).
+   *
+   * ⚠ **WITHOUT THIS, TURNING THE LANE OFF FABRICATES REFERENCES.** The demo
+   * adapter answers every `publishBill` with a deterministic `XERO-INV-####`
+   * and `ok: true`. So a client with a live connection, on a deployment set
+   * back to `demo`, would take the ledger arm below, be marked **PUBLISHED**
+   * against a vendor reference that exists nowhere, and auto-archive — telling
+   * an accountant their books moved when nothing left the building. That is the
+   * exact lie the whole D42/D50 vocabulary discipline exists to prevent, and it
+   * is reachable by the ROLLBACK `docs/runbooks/ledger-connections.md`
+   * prescribes.
+   *
+   * False sends every release down the export lane regardless of what is
+   * connected, which is what that rollback always promised.
+   */
+  readonly ledgerLaneEnabled: boolean;
   /** publishing's `previewPublishBatch`: the minimum check AND the totals, one implementation. */
   previewPublishBatch(items: readonly PublishPreviewItem[]): PublishPreviewOutcome;
 }
@@ -528,7 +545,7 @@ export function createPublishBatchExecutor(
         }
       }
 
-      const target = await resolveTarget(db, businessId, payload.integrationId ?? null);
+      const target = await resolveTarget(db, businessId, payload.integrationId ?? null, publishing.ledgerLaneEnabled);
 
       for (const document of documents) {
         await admitForRelease(db, document, { proposalId, traceId });
@@ -712,7 +729,12 @@ function minimumRefusal(refusals: readonly PublishItemRefusal[]): string {
  * seeded `XERO` rows since long before D42, and they must not be silently
  * adopted by a release.
  */
-async function resolveTarget(db: ScopedClient, businessId: string, requested: string | null): Promise<ReleaseTarget> {
+async function resolveTarget(
+  db: ScopedClient,
+  businessId: string,
+  requested: string | null,
+  enabled: boolean,
+): Promise<ReleaseTarget> {
   if (requested !== null) {
     const row = await db.integration.findUnique({
       where: { id: requested },
@@ -728,6 +750,14 @@ async function resolveTarget(db: ScopedClient, businessId: string, requested: st
     }
     if (isExportDestination(row.kind)) return { via: 'export', destination: { id: row.id, kind: row.kind } };
     if (isLedgerKind(row.kind)) {
+      // The lane is off: a named ledger connection cannot be honoured, and
+      // must not be quietly answered by the demo adapter either.
+      if (!enabled) {
+        throw new ProposalExecutionRefused(
+          'publish.batch',
+          'this deployment is not connected to accounting software at the moment — approved documents are released for export instead',
+        );
+      }
       // ⚠ A ledger row with no stored credentials is a connection that was
       // never completed — the practice started a consent journey and did not
       // finish it. Refusing HERE, at proposal and again at approval, is much
@@ -756,7 +786,7 @@ async function resolveTarget(db: ScopedClient, businessId: string, requested: st
   // Xero for this client and then approves a release means the books, not a
   // file — and a practice that means the file names the destination explicitly,
   // which is what `integrationId` on the payload is for.
-  const ledgers = active.filter((row) => isLedgerKind(row.kind) && hasCredentials(row.tokenRef));
+  const ledgers = enabled ? active.filter((row) => isLedgerKind(row.kind) && hasCredentials(row.tokenRef)) : [];
   if (ledgers.length > 1) {
     throw new ProposalExecutionRefused(
       'publish.batch',

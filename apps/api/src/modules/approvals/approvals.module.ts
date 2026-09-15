@@ -68,7 +68,14 @@ import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './
         const logger = new Logger('CorrectionSecondOpinion');
         // ONE gateway object for both halves: the executor re-validates the
         // batch with it and the post-commit follow-up publishes through it.
-        const publishing: PublishGateway = { ledger, previewPublishBatch };
+        // ⚠ `ledgerLaneEnabled` is what stops a deployment set back to `demo`
+        // answering a real connection with the demo adapter's invented
+        // reference. See `PublishGateway` for the failure it closes.
+        const publishing: PublishGateway = {
+          ledger,
+          ledgerLaneEnabled: env.LEDGER_ADAPTER === 'http',
+          previewPublishBatch,
+        };
 
         /**
          * The entry the accountant is authorising — **the export's own emitter,

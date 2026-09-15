@@ -10,7 +10,14 @@ import { AppException } from '../../../common/problem/problem.js';
 import { assertCan, resolveActor } from '../../approvals/index.js';
 import { freeAgentLedger } from './freeagent.js';
 import { VendorApi } from './ledger-http.js';
-import { configuredVendors, credentialsFor, type LedgerEnv, vaultKeyFor, vendorConfigFor } from './ledger-config.js';
+import {
+  configuredVendors,
+  credentialsFor,
+  type LedgerEnv,
+  ledgerLaneEnabled,
+  vaultKeyFor,
+  vendorConfigFor,
+} from './ledger-config.js';
 import {
   authorizeUrl,
   exchangeCode,
@@ -154,7 +161,12 @@ export class LedgerConnectionsService {
       assertCan(await resolveActor(db, ctx), 'business.integrations.manage');
     });
 
-    const credentials = credentialsFor(this.env, slug);
+    // ⚠ The lane check comes FIRST. A deployment with every credential present
+    // but the adapter on `demo` can complete a consent journey and then answer
+    // the next release with a fabricated reference — see
+    // `PublishGateway.ledgerLaneEnabled`. Refusing here is what makes that
+    // unreachable rather than merely unlikely.
+    const credentials = ledgerLaneEnabled(this.env) ? credentialsFor(this.env, slug) : null;
     if (credentials === null) {
       throw new AppException(
         'NT-VAL-001',

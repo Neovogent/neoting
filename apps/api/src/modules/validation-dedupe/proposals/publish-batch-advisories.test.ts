@@ -54,11 +54,12 @@ function fakeDb(documents: FakeDoc[], machineExtractions: { documentId: string; 
 }
 
 const publishing: PublishGateway = {
-  ledger: {
+  ledgerLaneEnabled: true,
+  ledger: () => ({
     publishBill: async () => {
       throw new Error('the ledger must never be reached');
     },
-  } as unknown as PublishGateway['ledger'],
+  }),
   previewPublishBatch: (items) => ({
     ok: true,
     preview: { itemCount: items.length, grossPence: 99_400, vatPence: 0, currency: 'GBP' },

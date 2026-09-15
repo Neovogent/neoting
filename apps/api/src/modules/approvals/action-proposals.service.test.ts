@@ -214,7 +214,8 @@ const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOri
     // No publish proposals here, so the ledger is never reached; a stub keeps
     // the gate-ladder assertions independent of METH S10's wiring.
     {
-      ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
+      ledgerLaneEnabled: true,
+  ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
       previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
     },
     new InMemoryIdempotencyStore(),

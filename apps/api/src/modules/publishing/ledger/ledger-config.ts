@@ -82,9 +82,23 @@ export function vendorConfigFor(env: LedgerEnv, slug: VendorSlug): VendorConfig 
   return base;
 }
 
-/** Which of the four this deployment can actually offer a practice. */
+/**
+ * Which of the four this deployment can actually offer a practice.
+ *
+ * ⚠ **Empty while the lane is off**, even when every credential is present.
+ * Offering Connect on a deployment whose adapter is `demo` would let a practice
+ * complete a real consent journey and then be answered by the demo adapter's
+ * invented reference on the next release — see `PublishGateway.ledgerLaneEnabled`
+ * for that failure. A screen that cannot honour a button must not show it.
+ */
 export function configuredVendors(env: LedgerEnv): readonly VendorSlug[] {
+  if (env.LEDGER_ADAPTER !== 'http') return [];
   return (Object.keys(VENDORS) as VendorSlug[]).filter((slug) => credentialsFor(env, slug) !== null);
+}
+
+/** Whether this deployment may complete a consent journey at all. */
+export function ledgerLaneEnabled(env: LedgerEnv): boolean {
+  return env.LEDGER_ADAPTER === 'http';
 }
 
 /** The sealing key, parsed once. Throws on anything but 64 hex characters — `env.ts` gates it at boot. */
