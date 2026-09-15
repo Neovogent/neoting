@@ -140,6 +140,15 @@ recorded as owed rather than implied.
 
 ## Current state, honestly
 
+✅ **Shipped to staging on 15 Sep 2026** (#294, #296) and **inert there by
+design**: `LEDGER_ADAPTER=demo`, no vendor application configured, so
+`configuredVendors()` returns an empty list and the Connections tab offers
+nothing to connect to. Verified against the deployed API: `GET /v1/integrations`
+401s, `POST /v1/integrations/authorisations` 400s naming the `vendor` field on a
+bad enum, and the callback 302s back into the app with a readable reason rather
+than a stack trace. **`docs/runbooks/ledger-connections.md` is how it gets
+turned on**, and it is an infra act with real credentials, not a code change.
+
 ✅ Built and proven against a real database and a real HTTP vendor: the shared
 layer, all four adapters, the connection surface, the refresh sweep, and the
 ledger arm of `publish.batch`.
