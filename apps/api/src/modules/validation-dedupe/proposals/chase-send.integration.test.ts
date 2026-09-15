@@ -39,7 +39,7 @@ const STAFF = ScopeContextSchema.parse({ actorId: 'p8_user', practiceId: P });
 // required `publishing` dep and the service's follow-up seam, nothing more
 // (the real gateway is exercised in publish-batch.integration.test.ts).
 const STUB_PUBLISHING: PublishGateway = {
-  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 

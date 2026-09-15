@@ -119,11 +119,14 @@ function acceptanceService(): InvitationAcceptanceService {
 
 /** D42: releasing for export reaches no ledger. The adapter is a tripwire. */
 const PUBLISHING: PublishGateway = {
-  ledger: {
+  // D50 made this a FACTORY. The tripwire is unchanged in spirit: the EXPORT
+  // lane must still never reach a ledger, and a client with no ledger
+  // connection takes that lane.
+  ledger: () => ({
     publishBill: async () => {
-      throw new Error('D42: releasing a document for export must never reach a ledger');
+      throw new Error('the export lane must never reach a ledger (D42 kept by D50)');
     },
-  },
+  }),
   previewPublishBatch,
 };
 

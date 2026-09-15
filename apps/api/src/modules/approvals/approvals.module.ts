@@ -10,7 +10,7 @@ import { selectSmsSender } from '../chase/index.js';
 import { analysisAccountChart, previewExportEntries } from '../exports-public-api/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { NOTIFICATIONS_SERVICE, NotificationsModule, type NotificationsService } from '../notifications/index.js';
-import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
+import { LEDGER_ADAPTER, type LedgerAdapterFactory, previewPublishBatch, PublishingModule } from '../publishing/index.js';
 import { ChartOfAccountsService, selectCodingModel } from '../rules-suggestions/index.js';
 import {
   buildExecutorRegistry,
@@ -61,7 +61,7 @@ import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: ACTION_PROPOSALS_SERVICE,
-      useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapter, notifications: NotificationsService) => {
+      useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapterFactory, notifications: NotificationsService) => {
         // The coding model's only reporting channel — it never throws and never
         // fails a caller, so a WARN is the whole of what a slow or refused
         // second opinion leaves behind.

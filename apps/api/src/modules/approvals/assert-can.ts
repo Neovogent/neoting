@@ -106,7 +106,32 @@ export type PermittedAction =
   | 'team.manage'
   | 'business.people.manage'
   | 'business.profile.manage'
-  | 'business.billing.manage';
+  | 'business.billing.manage'
+  /**
+   * Connecting a client's accounting software to Neoting, and disconnecting it
+   * (D50, 15 Sep 2026 — Shakib's ruling on the day the ledger lane was built).
+   *
+   * ⚠ **The release predicate, `mayRelease` — the practice's super admin and
+   * nobody else.** Connecting is not itself a release, and the temptation is to
+   * treat it as configuration. It is not: it is the act that decides whether a
+   * later Approve lands in a real set of books or in a file somebody reviews
+   * first. Whoever holds that decision is holding D44's authority one step
+   * earlier, so it is the same person.
+   *
+   * ⚠ **The cost, stated rather than discovered**, and it is the same bus
+   * factor `publish.release` already carries: exactly one membership per
+   * practice can hold `isOwner`, there is no ownership-transfer operation, and
+   * a firm whose owner is away cannot connect a new client's books. That is the
+   * thing to fix first if a second admin ever becomes possible — not by
+   * widening this.
+   *
+   * A separate NAME rather than reusing `publish.release`, for the reason this
+   * file establishes three times over: the refusal message is the whole
+   * user-facing product of a permission check, and *"Only your practice's super
+   * admin can release documents for export"* is a wrong answer wearing a right
+   * status code when somebody pressed Connect.
+   */
+  | 'business.integrations.manage';
 
 /**
  * The acting person, resolved from their membership. Everything needed to answer
@@ -661,6 +686,8 @@ export function assertCan(actor: Actor, action: 'business.profile.manage'): void
  * already refused a body naming a different one before this is reached.
  */
 export function assertCan(actor: Actor, action: 'business.billing.manage'): void;
+/** `business.integrations.manage` — no resource: the controller has already resolved the client through RLS. */
+export function assertCan(actor: Actor, action: 'business.integrations.manage'): void;
 export function assertCan(actor: Actor, action: PermittedAction, resource?: ProposalResource): void {
   if (action === 'business.billing.manage') {
     if (mayManageBilling(actor)) return;
@@ -698,6 +725,18 @@ export function assertCan(actor: Actor, action: PermittedAction, resource?: Prop
       // them (ask somebody who can), and it never says which of the people on
       // screen those are — the list already shows that.
       'Only an owner or a user administrator at your business can add or remove people. Ask one of them.',
+    );
+  }
+
+  if (action === 'business.integrations.manage') {
+    if (mayRelease(actor)) return;
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      // Names the act, names who has it, and does not imply the reader did
+      // anything wrong — they pressed a button they should not have been shown.
+      "Only your practice's super admin can connect or disconnect a client's accounting software. Ask them.",
     );
   }
 

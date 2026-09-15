@@ -1,5 +1,5 @@
 import type { PublishBatchPayload } from '@neoting/contracts/model';
-import type { DocumentState } from '@prisma/client';
+import type { DocumentState, IntegrationKind } from '@prisma/client';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import { notDeleted } from '../../../common/documents/deleted-documents.js';
@@ -7,7 +7,8 @@ import type { ExportEntryPreview, ExportableDocumentRow } from '../../exports-pu
 import {
   type ExportDestination,
   isExportDestination,
-  type LedgerAdapter,
+  isLedgerKind,
+  type LedgerAdapterFactory,
   PUBLISH_MINIMUM_CODE,
   type PublishItemRefusal,
   type PublishPreviewItem,
@@ -23,64 +24,52 @@ import {
 } from './proposal-executor.js';
 
 /**
- * `publish.batch` — the effect half of METH Stage 10 (SoT §4 Stage 10, §17.1),
- * rebuilt for Initial Delivery by **D42, which supersedes D6** (SoT §24.3).
+ * `publish.batch` — the effect half of METH Stage 10 (SoT §4 Stage 10, §17.1).
+ * Rebuilt for Initial Delivery by **D42**; given its second egress back by
+ * **D50**, which supersedes D42 (15 Sep 2026).
  *
- * ⚠ **THIS EXECUTOR RELEASES DOCUMENTS FOR EXPORT. IT DOES NOT TALK TO A
- * LEDGER, AND UNDER D42 NOTHING DOES.** *Published* is an INTERNAL state
- * meaning **approved and released for export**. It asserts nothing about Xero,
- * QuickBooks, VT or anything else: no bill was posted, nothing was synced, and
- * nothing was sent anywhere. Every string this file emits — refusals, event
- * details, the execution `detail` the audit trail stores — says
- * *released for export*, and any future edit that reintroduces the words
- * "posted", "synced" or "sent to" here is a D42 defect rather than a copy
- * preference.
+ * ⚠ **THIS EXECUTOR NOW HAS TWO EGRESSES AND CHOOSES BETWEEN THEM.**
+ * `resolveTarget` decides which, from the client's own `integrations` rows:
  *
- * **What changed, and why it had to.** Until this stage the executor demanded
- * an active ledger connection through `resolveIntegration` and refused without
- * one. There was no OAuth flow, no endpoint and no `integration.create` outside
- * `prisma/seed.ts`, and D47 forbids client intake from asking for a connection
- * — so no document could ever reach PUBLISHED, and the export (which is ID's
- * ONLY egress) had nothing to export. The release no longer depends on a
- * connection existing:
+ * - **The ledger lane (D50).** The client has a live connection to Xero,
+ *   QuickBooks Online, Sage or FreeAgent. This transaction writes one
+ *   `publishes` row per item in **QUEUED** — durable intent, committed
+ *   atomically with the approval — and returns the `publish` follow-up.
+ *   `publish-follow-up.ts` drives the vendor AFTER the commit and is the only
+ *   place in this codebase that calls a ledger. **The documents stay READY**
+ *   until a vendor confirms; PUBLISHED here would mean the books moved, and
+ *   nothing may claim that before it is true.
+ * - **The export lane (D42, permanent).** Everything else, unchanged.
+ *   *Published* is an INTERNAL state meaning **approved and released for
+ *   export**: no bill was posted and nothing was sent anywhere. ⚠ **Export is
+ *   not retired and never will be** — VT Transaction+ has no API and neither
+ *   does anything else in Tier C of the request list — so an edit that treats
+ *   this arm as legacy is a D50 misreading. The strings this arm emits still
+ *   say *released for export* and must keep saying it.
  *
- * - A client's `integrations` row, when it has one, is an **export
- *   destination** — `VT` or `MANUAL`, the kinds S0 added for exactly this
- *   (`modules/publishing/export-destination.ts`). It records which import file
- *   the accountant will produce. It is never called.
- * - A client with **no** row still releases. `publishes.integration_id` is
- *   nullable in the schema, and null is the honest value for "released for
- *   export, destination not yet recorded" — far better than a refusal that
- *   would strand every document at READY again.
- * - A **ledger-vendor** row (XERO/QUICKBOOKS/SAGE/FREEAGENT — seeded, dormant,
- *   v1) is NOT an export destination and is never chosen. Stamping a vendor's
- *   id on a row that released a document for export is the lie D42 exists to
- *   prevent.
+ * ⚠ **A live ledger connection WINS when the payload names no destination.**
+ * That is the one behaviour D50 changes for a client holding both. Connecting
+ * a client's books is a deliberate act somebody performed; carrying a
+ * `VT`/`MANUAL` row is the default state every client has. A practice that
+ * means the file names the destination explicitly — that is what
+ * `payload.integrationId` is for.
  *
- * **The ledger seam is dormant, not deleted.** `PublishGateway.ledger`,
- * `publish-follow-up.ts`, the `publish` `FollowUp` variant and the
- * `LedgerAdapter` interface all still exist, untouched, for D6/v1. This
- * executor simply no longer returns that follow-up, so nothing drives them —
- * which is what makes the real Xero adapter a later *addition* rather than a
- * later rewrite.
+ * **Why the ledger lane splits across a commit at all.** One sentence: *an
+ * external HTTP call must never hold a tenant transaction open*. A batch is up
+ * to 500 items and a real vendor round trip lasts as long as someone else's
+ * network; inside this transaction that is minutes of held row locks. The
+ * export lane makes no call, so it is committed whole, here, and has no
+ * follow-up.
  *
- * **The follow-up went away, and the reason it existed went with it.** The
- * post-commit split was there for one sentence: *an external HTTP call must
- * never hold a tenant transaction open*. Releasing for export makes no call —
- * it is `publishes` rows and a state transition, in the same database, in the
- * transaction the engine already opened. So the whole effect is committed
- * atomically with the approval, and the window in which a document was READY
- * in the inbox while QUEUED in `publishes` no longer exists.
- *
- * ⚠ **AUTO-ARCHIVE IS GONE, AND THAT IS LOAD-BEARING.** The ledger follow-up
- * archived a document the moment the vendor confirmed it, which was right when
- * PUBLISHED meant "the books have it". Under D42 it means "ready to be
- * exported", and the contract is explicit on `POST /v1/exports`: **"Only
- * `PUBLISHED` documents are exported."** A release that archived on the way
- * out would move every document straight past the only state the export can
- * see, and `NT-EXP-001` ("nothing to export") would be the permanent answer.
- * Archiving stays a `document.archive` proposal, which is where a human
- * decides it.
+ * ⚠ **AUTO-ARCHIVE IS PER-LANE, AND THAT IS LOAD-BEARING.** The ledger
+ * follow-up archives a document the moment the vendor confirms it, which is
+ * right when PUBLISHED means "the books have it". On the EXPORT lane it means
+ * "ready to be exported", and the contract is explicit on `POST /v1/exports`:
+ * **"Only `PUBLISHED` documents are exported."** A release that archived on the
+ * way out would move every document straight past the only state the export can
+ * see, and `NT-EXP-001` ("nothing to export") would be the permanent answer. So
+ * the export arm here archives nothing; archiving stays a `document.archive`
+ * proposal, which is where a human decides it.
  *
  * What this function owns, all inside the engine's one transaction:
  *
@@ -154,16 +143,21 @@ import {
  */
 export interface PublishGateway {
   /**
-   * publishing's `LedgerAdapter`, config-selected.
+   * publishing's ledger adapter FACTORY, config-selected.
    *
-   * ⚠ **Dormant under D42, and this executor never touches it.** It stays on
-   * the gateway because the engine still carries the `publish` `FollowUp` arm
-   * for the v1 ledger lane (D6), and because deleting a seam is how a later
-   * Xero adapter becomes a rewrite instead of an addition. Nothing in the
-   * Initial Delivery release path calls it — `publish-batch.test.ts` passes a
-   * throwing adapter as a tripwire.
+   * ✅ **Live again under D50** (15 Sep 2026), after being dormant for the whole
+   * of Initial Delivery under D42. This executor still never calls it — an
+   * external HTTP call may not hold a tenant transaction open — but it once
+   * again returns the `publish` follow-up that drives it, for batches whose
+   * target is one of the four ledger connections. The export lane is
+   * unchanged and permanent (VT Transaction+ has no API), so this executor now
+   * has TWO egresses and chooses between them on the target's kind.
+   *
+   * ⚠ A FACTORY rather than an adapter: a real adapter reads its own client's
+   * sealed tokens through `scopedDb`, so it is built per unit of work with the
+   * approver's context. See `publishing/select-ledger-adapter.ts`.
    */
-  readonly ledger: LedgerAdapter;
+  readonly ledger: LedgerAdapterFactory;
   /** publishing's `previewPublishBatch`: the minimum check AND the totals, one implementation. */
   previewPublishBatch(items: readonly PublishPreviewItem[]): PublishPreviewOutcome;
 }
@@ -534,11 +528,61 @@ export function createPublishBatchExecutor(
         }
       }
 
-      const destination = await resolveExportDestination(db, businessId, payload.integrationId ?? null);
+      const target = await resolveTarget(db, businessId, payload.integrationId ?? null);
 
       for (const document of documents) {
         await admitForRelease(db, document, { proposalId, traceId });
       }
+
+      // ── D50: THE LEDGER LANE ───────────────────────────────────────────
+      //
+      // The books are somebody else's system, over a network, and a batch is
+      // up to 500 items. So this transaction writes durable INTENT — one
+      // `publishes` row per item in QUEUED, committed atomically with the
+      // approval — and stops. `publish-follow-up.ts` drives the vendor after
+      // the commit, per item, each resolution in its own short transaction.
+      //
+      // ⚠ **The documents stay READY.** Under the export lane a release IS the
+      // publication and PUBLISHED is written here; under the ledger lane
+      // PUBLISHED means the client's books actually moved, and nothing may
+      // claim that before a vendor has said so. A crash between here and the
+      // follow-up therefore leaves QUEUED rows and READY documents, which is
+      // truthful and re-drivable — the follow-up's work list is read from the
+      // database, not carried in memory.
+      if (target.via === 'ledger') {
+        for (const document of documents) {
+          await db.publish.create({
+            data: {
+              businessId,
+              documentId: document.id,
+              integrationId: target.integrationId,
+              mode: 'MANUAL',
+              state: 'QUEUED',
+              idempotencyKey: publishIdempotencyKey(proposalId, document.id),
+              actionProposalId: proposalId,
+              // D44's evidence: who authorised this reaching a client's books.
+              publishedByUserId: ctx.actorId,
+            },
+            select: { id: true },
+          });
+        }
+        return {
+          changed: documents.map((document) => ({ entity: 'document' as const, id: document.id })),
+          alreadyApplied: false,
+          followUps: [{ kind: 'publish' as const, proposalId, businessId }],
+          detail: {
+            queued: documents.length,
+            publishedToLedger: true,
+            ledgerKind: target.kind,
+            integrationId: target.integrationId,
+            grossPence: preview.grossPence,
+            vatPence: preview.vatPence,
+          },
+        };
+      }
+
+      // ── The export lane, unchanged and permanent (D42's egress, kept by D50)
+      const destination = target.destination;
 
       // One `releasedAt` for the whole batch: the approval was one act, and
       // rows that share a `completedAt` to the microsecond are what the export
@@ -559,9 +603,7 @@ export function createPublishBatchExecutor(
         changed: documents.map((document) => ({ entity: 'document' as const, id: document.id })),
         alreadyApplied: false,
         // No follow-up. Releasing for export calls nothing and waits for
-        // nothing, so there is no work that must not run in this transaction —
-        // see the header for why the ledger lane's post-commit split existed
-        // and why D42 removes its reason along with the call.
+        // nothing, so there is no work that must not run in this transaction.
         followUps: [],
         detail: {
           released: documents.length,
@@ -670,46 +712,96 @@ function minimumRefusal(refusals: readonly PublishItemRefusal[]): string {
  * seeded `XERO` rows since long before D42, and they must not be silently
  * adopted by a release.
  */
-async function resolveExportDestination(
-  db: ScopedClient,
-  businessId: string,
-  requested: string | null,
-): Promise<ExportDestination | null> {
+async function resolveTarget(db: ScopedClient, businessId: string, requested: string | null): Promise<ReleaseTarget> {
   if (requested !== null) {
     const row = await db.integration.findUnique({
       where: { id: requested },
-      select: { id: true, businessId: true, kind: true, isActive: true },
+      select: { id: true, businessId: true, kind: true, isActive: true, tokenRef: true },
     });
     // Unreachable, absent and belonging to another client are one refusal —
     // the same 404-never-403 wording the document lookup uses.
     if (row === null || row.businessId !== businessId) {
-      throw new ProposalExecutionRefused('publish.batch', 'that export destination is not reachable for this batch');
+      throw new ProposalExecutionRefused('publish.batch', 'that destination is not reachable for this batch');
     }
     if (!row.isActive) {
-      throw new ProposalExecutionRefused('publish.batch', 'that export destination is switched off — turn it back on, then propose the release again');
+      throw new ProposalExecutionRefused('publish.batch', 'that destination is switched off — turn it back on, then propose the release again');
     }
-    if (!isExportDestination(row.kind)) {
-      throw new ProposalExecutionRefused(
-        'publish.batch',
-        'that connection is an accounting-software connection, and this release does not write to accounting software — approved documents are released for export and the accountant imports the file',
-      );
+    if (isExportDestination(row.kind)) return { via: 'export', destination: { id: row.id, kind: row.kind } };
+    if (isLedgerKind(row.kind)) {
+      // ⚠ A ledger row with no stored credentials is a connection that was
+      // never completed — the practice started a consent journey and did not
+      // finish it. Refusing HERE, at proposal and again at approval, is much
+      // kinder than 500 items failing one at a time in the follow-up.
+      if (!hasCredentials(row.tokenRef)) {
+        throw new ProposalExecutionRefused(
+          'publish.batch',
+          'that accounting-software connection was never finished — open the client\'s Connections screen and connect it, then propose the release again',
+        );
+      }
+      return { via: 'ledger', integrationId: row.id, kind: row.kind };
     }
-    return { id: row.id, kind: row.kind };
+    throw new ProposalExecutionRefused('publish.batch', 'that destination is not one this release can use');
   }
+
+  const active = await db.integration.findMany({
+    where: { businessId, isActive: true },
+    select: { id: true, kind: true, tokenRef: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // ⚠ **A LIVE LEDGER CONNECTION WINS, and this is the one behaviour D50
+  // changes for a client who has both.** Connecting a client's books is a
+  // deliberate act somebody performed on purpose; carrying a `VT`/`MANUAL` row
+  // is the default state every client has. So a practice that has connected
+  // Xero for this client and then approves a release means the books, not a
+  // file — and a practice that means the file names the destination explicitly,
+  // which is what `integrationId` on the payload is for.
+  const ledgers = active.filter((row) => isLedgerKind(row.kind) && hasCredentials(row.tokenRef));
+  if (ledgers.length > 1) {
+    throw new ProposalExecutionRefused(
+      'publish.batch',
+      'this client has more than one accounting-software connection — name the one to publish to',
+    );
+  }
+  const ledger = ledgers[0];
+  if (ledger !== undefined) return { via: 'ledger', integrationId: ledger.id, kind: ledger.kind };
 
   // `integrationId: null` means "the client's single export destination" (the
   // contract). SINGLE is the operative word.
-  const active = await db.integration.findMany({
-    where: { businessId, isActive: true },
-    select: { id: true, kind: true },
-    orderBy: { createdAt: 'asc' },
-  });
-  const destinations = active.filter((row): row is { id: string; kind: ExportDestination['kind'] } => isExportDestination(row.kind));
+  const destinations = active.filter((row): row is { id: string; kind: ExportDestination['kind']; tokenRef: string | null } =>
+    isExportDestination(row.kind),
+  );
   if (destinations.length > 1) {
     throw new ProposalExecutionRefused('publish.batch', 'this client has more than one export destination — name the one to release for');
   }
-  return destinations[0] ?? null;
+  const destination = destinations[0];
+  return { via: 'export', destination: destination === undefined ? null : { id: destination.id, kind: destination.kind } };
 }
+
+/**
+ * Whether an `integrations` row actually holds sealed credentials.
+ *
+ * ⚠ A positive test rather than `!== null`, because the column is absent on a
+ * projection that did not select it and `undefined` must read as NOT connected.
+ * The safe direction for this question is the one that refuses: adopting a row
+ * with no token fails every item of a batch in the follow-up, one at a time, in
+ * front of an accountant.
+ */
+function hasCredentials(tokenRef: string | null | undefined): boolean {
+  return typeof tokenRef === 'string' && tokenRef !== '';
+}
+
+/**
+ * The two egresses, as a closed union (D50).
+ *
+ * ⚠ **Export is not retired and never will be.** VT Transaction+ has no API,
+ * and neither does anything else in Tier C of the request list, so the file
+ * lane is permanent. This is a SECOND egress, and every reader of this type
+ * should take the `export` arm as the default rather than the legacy one.
+ */
+type ReleaseTarget =
+  | { readonly via: 'export'; readonly destination: ExportDestination | null }
+  | { readonly via: 'ledger'; readonly integrationId: string; readonly kind: IntegrationKind };
 
 /**
  * Get one document into the state a release can legally leave from, or refuse.

@@ -3410,6 +3410,177 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
 
   # ==========================================================================
+  # LEDGER CONNECTIONS (D50) — connect a client's books once, publish to them
+  # thereafter.
+  #
+  # ⚠ NOTHING HERE WRITES TO A LEDGER. Publishing stays an approved
+  # `publish.batch` proposal and there is no publish endpoint; these four
+  # operations only manage the CONNECTION. `x-nt-side-effect: ingest` on the
+  # three that change something is the same class the upload and intake paths
+  # carry — they create or remove a connection record, they do not move a
+  # client's books.
+  #
+  # ⚠ The callback is NOT part of the REST contract and is deliberately absent
+  # from this file. `GET /v1/integrations/{vendor}/callback` is a browser
+  # redirect target whose shape belongs to Xero, Intuit, Sage and FreeAgent —
+  # versioned on their schedule, not ours, exactly like the WhatsApp webhook
+  # (`apps/api/CLAUDE.md`). Declaring it here would invite a generated client to
+  # call it.
+  # ==========================================================================
+
+  /integrations:
+    get:
+      operationId: listIntegrations
+      summary: List a client's connections
+      description: |
+        Every accounting-software connection and export destination for one
+        client business, plus the vendors this deployment can offer that they
+        have not connected yet — so one read renders the whole Connections
+        screen.
+
+        `health`, `tokenExpiresAt` and `lastErrorMessage` are how a practice
+        sees that a connection has been revoked at the vendor before a batch
+        fails on it.
+      tags: [publishing]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          description: The client workspace whose connections these are.
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: The client's connections, and what else could be connected.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /integrations/authorisations:
+    post:
+      operationId: createIntegrationAuthorisation
+      summary: Start connecting a client's accounting software
+      description: |
+        Returns the vendor's own consent URL. The browser is sent there; the
+        practice signs in at Xero, Intuit, Sage or FreeAgent, chooses the
+        client's organisation and consents; the vendor redirects back to our
+        callback, which stores the connection.
+
+        ⚠ **Only the firm's owner may do this** (`NT-PRM-001` otherwise) — the
+        same authority that releases documents (D44) and manages the
+        subscription, because connecting is what makes a later approval reach a
+        real set of books.
+
+        ⚠ The returned URL is single-use and expires in ten minutes. It carries
+        a signed `state` that ties the callback to this request and to the
+        person who made it.
+      tags: [publishing]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IntegrationAuthorisationRequest' }
+      responses:
+        '201':
+          description: Where to send the browser.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationAuthorisation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /integrations/{integrationId}/sync:
+    post:
+      operationId: syncIntegration
+      summary: Re-read a client's accounts, suppliers and tax rates
+      description: |
+        Pulls the client's own nominal codes, suppliers, tax rates and bank
+        accounts out of their ledger so coding matches theirs.
+
+        ⚠ It writes only the vendor's own lists. The accountant-owned chart of
+        accounts is never overwritten — SoT §24.4.1 says the chart is theirs
+        once it exists, and a sync that replaced their edits would be the
+        product overruling a human.
+      tags: [publishing]
+      x-nt-side-effect: ingest
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The connection, freshly synced.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Integration' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /integrations/{integrationId}/disconnection:
+    post:
+      operationId: disconnectIntegration
+      summary: Disconnect a client's accounting software
+      description: |
+        Switches the connection off and destroys the stored credentials. Nothing
+        already published is touched — a transaction in a client's books belongs
+        to the client, not to us.
+
+        ⚠ **Intuit requires this to exist** as a condition of production access,
+        and a practice must be able to reach it without a support ticket.
+
+        ⚠ **Only the firm's owner may do this**, for the same reason as
+        connecting.
+
+        Idempotent: disconnecting an already-disconnected connection succeeds.
+      tags: [publishing]
+      x-nt-side-effect: ingest
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The connection, now disconnected.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Integration' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
   # BANKING — read surface (METH Stage 2, issue #120)
   # ==========================================================================
 
@@ -6439,6 +6610,149 @@ components:
         fine-grained permissions are checked at call sites, never inferred
         from the role name.
       enum: [PRACTICE_ADMIN, CLIENT_ADMIN, PRACTICE_STANDARD, BUSINESS_ADMIN, USER_ADMIN, BUSINESS_STANDARD]
+
+    LedgerVendor:
+      type: string
+      description: |
+        The four ledgers a client's books can be connected to (D50). A subset of
+        `IntegrationKind` by design: `VT` and `MANUAL` are export destinations
+        and can never be connected to, so they are not offerable values here.
+
+        The slug, not the enum name, because it is also the URL segment the
+        vendor redirects back to.
+      enum: [xero, quickbooks, sage, freeagent]
+
+    IntegrationHealth:
+      type: string
+      description: |
+        Whether the connection last worked. `ERROR` is how a practice learns a
+        connection was revoked at the vendor BEFORE a batch of forty fails on
+        it, so it is rendered, not merely stored.
+      enum: [OK, ERROR, UNKNOWN]
+
+    Integration:
+      type: object
+      description: |
+        One connection or export destination for one client business.
+
+        ⚠ **No token, ever.** `integrations.token_ref` holds a sealed blob and
+        never leaves the server in any shape. What a screen needs is whether the
+        connection works and when it was last used, which is what this carries.
+      required: [id, businessId, kind, isActive]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        kind: { $ref: '#/components/schemas/IntegrationKind' }
+        vendor:
+          allOf: [{ $ref: '#/components/schemas/LedgerVendor' }]
+          nullable: true
+          description: Null for an export destination, which has no vendor to connect to.
+        label:
+          type: string
+          nullable: true
+          description: What to call it on screen — "Xero", "Sage Accounting".
+        orgRef:
+          type: string
+          nullable: true
+          description: |
+            The vendor's own identifier for the connected organisation — a Xero
+            tenant, an Intuit realm, a Sage business. Shown so a practice can
+            confirm they connected the right set of books.
+        connectedOrganisation:
+          type: string
+          nullable: true
+          description: The organisation's name at the vendor, when the vendor gives one.
+        isActive: { type: boolean }
+        isConnected:
+          type: boolean
+          description: |
+            Whether credentials are actually stored. A row can exist with none —
+            a consent journey somebody started and did not finish — and a
+            publish to such a row refuses rather than failing per item.
+        health:
+          allOf: [{ $ref: '#/components/schemas/IntegrationHealth' }]
+          nullable: true
+        tokenExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the current access token stops working. UTC.
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastErrorAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastErrorMessage:
+          type: string
+          nullable: true
+          description: |
+            ⚠ Always OUR sentence, never a vendor's error body. A vendor's
+            message quotes the submitted values back, which here would be
+            somebody's bookkeeping on a screen and in a screenshot.
+        referenceCounts:
+          type: object
+          nullable: true
+          description: How many of each list the last sync brought back.
+          properties:
+            accounts: { type: integer }
+            suppliers: { type: integer }
+            taxRates: { type: integer }
+            bankAccounts: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    ConnectableVendor:
+      type: object
+      description: One of the four this deployment can offer, that this client has not connected.
+      required: [vendor, label]
+      properties:
+        vendor: { $ref: '#/components/schemas/LedgerVendor' }
+        label: { type: string }
+        caution:
+          type: string
+          nullable: true
+          description: |
+            A warning the practice must read BEFORE consenting, or null.
+
+            ⚠ It exists for Xero, which has no sandbox at all: a developer
+            connects a REAL organisation, so the only safe target is Xero's own
+            Demo Company (UK). No environment variable can make that safe, so
+            the screen says it instead.
+
+    IntegrationList:
+      type: object
+      required: [data, connectable]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Integration' }
+        connectable:
+          type: array
+          items: { $ref: '#/components/schemas/ConnectableVendor' }
+
+    IntegrationAuthorisationRequest:
+      type: object
+      required: [businessId, vendor]
+      properties:
+        businessId: { type: string, minLength: 1 }
+        vendor: { $ref: '#/components/schemas/LedgerVendor' }
+
+    IntegrationAuthorisation:
+      type: object
+      required: [authorisationUrl, expiresAt]
+      properties:
+        authorisationUrl:
+          type: string
+          format: uri
+          description: |
+            The vendor's own consent page. Send the browser here as a top-level
+            navigation — it is a sign-in page and will not render in a frame.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Ten minutes out. After this the link is refused and the journey restarts.
 
     IntegrationKind:
       type: string

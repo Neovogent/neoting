@@ -20,6 +20,7 @@ import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-uplo
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PortalModule } from './modules/portal/portal.module.js';
+import { LedgerConnectionsModule } from './modules/publishing/ledger/ledger-connections.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
 import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-suggestions.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
@@ -52,6 +53,10 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
     NotificationsModule,
     PortalModule,
     PublishingModule,
+    // D50 — the connection surface. A separate module from PublishingModule on
+    // purpose; `ledger-connections.module.ts` says why (a seam that exports a
+    // module dragging a controller is the boot-order trap auth-tenancy records).
+    LedgerConnectionsModule,
     RulesSuggestionsModule,
     TasksModule,
     ValidationDedupeModule,

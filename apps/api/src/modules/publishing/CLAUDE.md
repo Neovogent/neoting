@@ -6,7 +6,42 @@
 
 The canonical model, Xero and QuickBooks adapters, two-way reference sync, idempotent publish, and the integration health surface.
 
-## ⚠ Initial Delivery (ID) — read this before the sections below
+## ⚠ D50 — READ THIS BEFORE THE ID SECTION BELOW (15 September 2026)
+
+**The ledger lane is LIVE, and the D42 banner under this one is history.**
+`ledger/` is the whole of it — OAuth, a sealed token vault, atomic refresh with
+rotation, the `ReferenceSync` service, a refresh sweep, the connection surface,
+and four real adapters behind `LedgerAdapter`. Read `ledger/CLAUDE.md` before
+touching any of it.
+
+Four things change for a reader of the sections below:
+
+- **`LEDGER_ADAPTER` has a second value, `http`**, and `selectLedgerAdapter`
+  now returns a **factory** rather than an adapter. A real adapter reads its own
+  client's sealed tokens through `scopedDb`, so it needs a tenant context that a
+  boot-time singleton cannot have. ⚠ `LedgerAdapter` itself is **unchanged** —
+  only who constructs one is.
+- **`publish.batch` has two egresses** and chooses on the client's own
+  `integrations` rows. A live ledger connection queues `publishes` rows QUEUED,
+  leaves the documents READY and returns the `publish` follow-up; everything
+  else releases for export exactly as before.
+- **⚠ EXPORT IS NOT RETIRED AND NEVER WILL BE.** VT Transaction+ has no API. The
+  D42 vocabulary rule below still binds the export arm word for word: nothing on
+  that path may say *posted*, *synced* or *sent to*. What changed is that there
+  is now a second path where those words are true.
+- **⚠ The auto-archive warning below was right and is now answered.** The ledger
+  follow-up archives on the vendor's confirmation, which is correct when
+  PUBLISHED means "the books have it"; the export arm archives nothing, because
+  `POST /v1/exports` serves only PUBLISHED documents. Per-lane, deliberately.
+
+`export-destination.ts` stands unchanged: `VT`/`MANUAL` are still export
+destinations and still carry no token. What changed is that a `XERO` row with
+sealed credentials is no longer dormant — and one **without** them is still
+never adopted, which is what keeps every seeded vendor row inert.
+
+---
+
+## ⚠ Initial Delivery (ID) — the D42 release, kept as the record
 
 **D42 supersedes D6 and this module’s whole adapter path for ID** (SoT §24.3). No ledger API integration and no auto-publish ships in the first client release. Concretely:
 
@@ -324,14 +359,23 @@ sketched 1–2 s; 800 ms is deliberately under it, because the number multiplies
       generated Zod at the boundary, `PublishingModule` and `app.module.ts` wire it.
       Unit-tested offline + an RLS integration test (`p10_`) proving another practice
       sees none of them.
-- [ ] **v1, NOT ID** (D42) — the real Xero adapter behind `LedgerAdapter`
-      (`LEDGER_ADAPTER=xero`): OAuth token storage on `integrations`, Zod-parsed HTTP
-      responses, retryable/non-retryable mapped from status codes, and the follow-up
-      runner moved onto BullMQ. Deliberately out of the first client release.
-- [ ] Reference-list sync (`ReferenceSync`) — the seeded chart of accounts stands in for
-      it in the demo, presented as synced. Out of Stage 10's scope on purpose.
-- [ ] Integration health logic and webhooks — **v1, not ID** (D42). Canonical-model
-      completeness IS ID work: it is what the export emitters read from.
+- [x] **DONE, 15 Sep 2026 (D50)** — real adapters behind `LedgerAdapter` for all
+      FOUR vendors (`LEDGER_ADAPTER=http`): the OAuth flow, a sealed token vault
+      in `integrations.token_ref`, Zod-parsed responses, retryable mapped
+      honestly from status codes. ⚠ The follow-up runner is still the inline
+      function, NOT BullMQ — it is re-drivable from the QUEUED rows, so moving
+      it is a worker change with no call-site change, and it is the next thing
+      to do when a batch is big enough to matter.
+- [x] **DONE, 15 Sep 2026** — `ReferenceSync` has a service
+      (`ledger/reference-sync.ts`). ⚠ It writes the vendor's lists under their
+      OWN `listKind`s and never touches `chart_of_accounts`, which
+      `rules-suggestions` owns and an accountant edits (§24.4.1).
+- [x] **Integration health is live** (D50) — `health`, `tokenExpiresAt`,
+      `lastErrorAt` and `lastErrorMessage` are written by the token store and
+      rendered on the client's Connections tab, which is how a practice learns a
+      connection was revoked BEFORE a batch of forty fails on it.
+- [ ] **Webhooks** (Xero and QuickBooks offer them; Sage does not) — still
+      unbuilt. Delta-polling through `syncIntegration` is the standing answer.
 - [ ] Release authority (D44): `Ready → Published` gated on the firm’s **super admin**,
       singly and in bulk. **Still not built — stage A12**, and it attaches on the ENGINE's
       approve path (`modules/approvals/action-proposals.service.ts`,

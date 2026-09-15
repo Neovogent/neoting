@@ -33,6 +33,7 @@ import {
   SupplierCodingService,
 } from '../modules/rules-suggestions/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
+import { LEDGER_REFRESH_INTERVAL_MS, runLedgerRefreshSweep } from '../modules/publishing/ledger/refresh-scheduler.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
 /**
@@ -233,6 +234,32 @@ function bootstrap(): void {
   worker.on('ready', () => logger.log(`ingest worker ready on '${INGEST_QUEUE_NAME}'`));
   worker.on('error', (err: Error) => logger.error(`worker error: ${err.message}`));
   logger.log(`ingest worker starting (redis ${env.REDIS_URL})`);
+
+  // ── D50: keep idle ledger connections alive ──────────────────────────────
+  //
+  // ⚠ NOT how an access token stays fresh — `LedgerTokenStore` refreshes on
+  // demand before every vendor call. This is for the connection NOBODY is
+  // using: Xero retires an unused refresh token after 60 days, Sage after 31,
+  // QuickBooks after 100, so a client whose accountant publishes nothing over a
+  // quiet summer loses the connection silently and finds out in September.
+  //
+  // A plain interval rather than a repeatable BullMQ job, deliberately: the
+  // sweep reads its work list from the database and is safe to call any number
+  // of times, so it needs no queue to be correct — and a second API task
+  // running it would simply find nothing due. It is a no-op unless
+  // `LEDGER_ADAPTER=http`.
+  //
+  // `unref()` so it can never hold the process open on shutdown.
+  if (env.LEDGER_ADAPTER === 'http') {
+    const sweep = (): void => {
+      void runLedgerRefreshSweep(getPrismaClient(), env).catch((error: unknown) =>
+        logger.error(`ledger refresh sweep failed: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    };
+    setInterval(sweep, LEDGER_REFRESH_INTERVAL_MS).unref();
+    sweep();
+    logger.log('ledger refresh sweep armed (every 12h)');
+  }
 }
 
 bootstrap();
