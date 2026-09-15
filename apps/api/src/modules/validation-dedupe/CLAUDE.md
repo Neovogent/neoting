@@ -277,8 +277,37 @@ structural) and decides nothing about whether it may happen.
   recorded seam on the event (`createRuleDeferred`), for `rule.create`
   (METH S13). Dates land as UTC midnight; the extraction value keeps the
   contract's `YYYY-MM-DD`.
-- **`publish.batch`** (METH S10, rebuilt for **Initial Delivery** by **D42**,
-  launch stage A5) — `publish-batch.ts`. It **releases documents for export**.
+- **`publish.batch`** (METH S10, rebuilt for ID by **D42**, given its second
+  egress back by **D50** on 15 Sep 2026) — `publish-batch.ts`.
+
+  ⚠ **IT NOW HAS TWO EGRESSES AND CHOOSES BETWEEN THEM**, on the client's own
+  `integrations` rows:
+
+  - **the LEDGER lane** — the client has a live connection (a ledger-vendor row
+    holding sealed credentials). This transaction writes `publishes` rows
+    **QUEUED**, leaves the documents **READY**, and returns the `publish`
+    follow-up; `publish-follow-up.ts` drives the vendor after the commit and is
+    the only place in the codebase that calls a ledger. PUBLISHED here would
+    claim the client's books moved before a vendor said so.
+  - **the EXPORT lane** — everything else, unchanged and **permanent** (VT
+    Transaction+ has no API). Everything the section below says about it still
+    holds word for word, including the vocabulary rule.
+
+  ⚠ **A live ledger connection WINS when the payload names no destination** —
+  the one behaviour change for a client holding both. Connecting is a deliberate
+  act; carrying a `VT` row is the default state every client has. A practice
+  that means the file names `payload.integrationId`.
+
+  ⚠ **A vendor row with NO sealed credentials is never adopted**, on either
+  path. Every seeded `XERO` row is that shape, and adopting one would fail all
+  500 items of a batch in the follow-up for want of a token. Named explicitly,
+  it refuses with *"never finished"* — at approve time, not 500 times over.
+
+  ⚠ **Auto-archive is per-lane and that is load-bearing.** The ledger follow-up
+  archives on the vendor's confirmation; the export arm archives nothing,
+  because `POST /v1/exports` serves only PUBLISHED documents.
+
+  Everything below describes the export arm, which is unchanged.
 
   ⚠ ***Published* is an INTERNAL state meaning approved and released for
   export.** It asserts nothing about a ledger. Nothing was posted, synced or

@@ -76,9 +76,10 @@ const LOCAL_ONLY = {
   // Switches staging leaves at their code default, stated locally for
   // discoverability. If staging ever needs the non-default, the key moves to
   // services.tf and off this list.
-  EMAIL_SOURCE: 'defaults to fixture everywhere; the s3 poller has no ECS service yet (apps/api/CLAUDE.md)',
-  SMS_ORIGINATION_IDENTITY:
-    'Phase 3: the UK dedicated number, still in carrier review — lands on services.tf together with the SMS_SENDER=aws flip',
+  // (EMAIL_SOURCE and SMS_ORIGINATION_IDENTITY used to sit here. services.tf
+  // sets both now, so their reasons had expired and the hygiene check below
+  // evicted them — exactly as it did the Stripe keys. Not a D50 change; found
+  // by running this script, which is what it is for.)
   SMS_REGION: 'partner of SMS_ORIGINATION_IDENTITY; stated on ECS when the number activates',
   WHATSAPP_PRACTICE_MAP:
     'controller-side override only since Practice.whatsappPhoneNumberId landed (1 Sep 2026); staging maps practices in the DB, not the task definition',
@@ -89,10 +90,29 @@ const LOCAL_ONLY = {
   TWILIO_AUTH_TOKEN: 'SMS is cut from ID; sandbox key documented for v1',
   TWILIO_VERIFY_SERVICE_SID: 'SMS is cut from ID; sandbox key documented for v1',
   TWILIO_MESSAGING_SERVICE_SID: 'SMS is cut from ID; sandbox key documented for v1',
-  XERO_CLIENT_ID: 'ledger adapters dormant in ID (D42)',
-  XERO_CLIENT_SECRET: 'ledger adapters dormant in ID (D42)',
-  INTUIT_CLIENT_ID: 'ledger adapters dormant in ID (D42)',
-  INTUIT_CLIENT_SECRET: 'ledger adapters dormant in ID (D42)',
+  // ⚠ D50 built the ledger lane and staging does not RUN it: services.tf leaves
+  // `LEDGER_ADAPTER=demo`, so none of these is read there. Turning it on is an
+  // infra change that has to land with REAL credentials in Secrets Manager and
+  // a real `INTEGRATION_TOKEN_KEY` — placeholders would boot, seal every
+  // practice's tokens under a guessable string, and look fine. This script's
+  // own instruction is that the task-definition route is a separate PR, so
+  // these sit here until that one lands, and they come off this list the day it
+  // does (the hygiene check below evicts them automatically, as it did Stripe).
+  LEDGER_SANDBOX: 'ledger lane off on staging (LEDGER_ADAPTER=demo); lands with the D50 infra PR',
+  INTEGRATION_TOKEN_KEY:
+    'seals every practice ledger token — must arrive as a REAL value in the auth secret group, never a placeholder, so it lands with the D50 infra PR',
+  XERO_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
+  XERO_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
+  XERO_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
+  QBO_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
+  QBO_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
+  QBO_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
+  SAGE_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
+  SAGE_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
+  SAGE_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
+  FREEAGENT_CLIENT_ID: 'ledger lane off on staging (D50 infra PR)',
+  FREEAGENT_CLIENT_SECRET: 'ledger lane off on staging (D50 infra PR)',
+  FREEAGENT_REDIRECT_URI: 'ledger lane off on staging (D50 infra PR)',
   TRUELAYER_CLIENT_ID: 'bank feeds dormant in ID (D40)',
   TRUELAYER_CLIENT_SECRET: 'bank feeds dormant in ID (D40)',
   COMPANIES_HOUSE_API_KEY: 'not wired to a live lane yet; documented sandbox slot',

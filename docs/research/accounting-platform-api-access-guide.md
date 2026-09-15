@@ -40,6 +40,13 @@ Neoting is a **chat-first document-to-bookkeeping platform for UK accounting pra
 
 ---
 
+> **Updated 12 September 2026 — see `docs/research/ledger-input-api-request-list.md`** for the full
+> platform list, the request tracker and three corrections to this document: Sage 200 *does* have a
+> public developer portal, Nomi and BrightBooks *do* have a working input path (Dext uses both), and
+> Bokio is leaving the UK market on 30 June 2026.
+
+---
+
 *(Sections below are appended as research completes. Any claim not verified against official vendor documentation is marked **"not verified"** rather than guessed.)*
 
 ---

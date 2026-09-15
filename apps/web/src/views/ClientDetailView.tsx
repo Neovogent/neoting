@@ -56,6 +56,11 @@ const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements')
 // `api/chases.ts` + the generated chases client, and this route is within
 // ~1.5 kB of the 250 kB budget. Synthetic keeps the seeded table below.
 const ClientChases = lazy(() => import('./ClientChases'));
+// D50's Connections tab — its own chunk because it carries `api/integrations.ts`
+// and four generated client functions, and this route has single-digit kilobytes
+// of headroom against the 250 kB budget. Nobody who is not connecting a ledger
+// fetches any of it.
+const ClientConnections = lazy(() => import('./ClientConnections').then((m) => ({ default: m.ClientConnections })));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
 /**
  * ⚠ **Lazy since 7 Sep 2026, and the laziness PAID for review item 67's scope
@@ -670,7 +675,7 @@ const m = defineMessages({
  */
 const TABS = [
   'Overview', 'Costs', 'Sales', 'Bank', 'Supplier Statements', 'Expense Claims',
-  'Approvals', 'Documents', 'Chases', 'Tasks', 'Users', 'Settings', 'AI',
+  'Approvals', 'Documents', 'Chases', 'Tasks', 'Users', 'Connections', 'Settings', 'AI',
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -707,6 +712,7 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   Chases: { id: 'clients.clientDetailView.tabChases', defaultMessage: 'Chases' },
   Tasks: { id: 'clients.clientDetailView.tabTasks', defaultMessage: 'Tasks' },
   Users: { id: 'clients.clientDetailView.tabUsers', defaultMessage: 'Users' },
+  Connections: { id: 'clients.clientDetailView.tabConnections', defaultMessage: 'Connections' },
   Settings: { id: 'clients.clientDetailView.tabSettings', defaultMessage: 'Settings' },
   AI: { id: 'clients.clientDetailView.tabAi', defaultMessage: 'AI' },
 });
@@ -2053,6 +2059,18 @@ export function ClientDetailView() {
                 </p>
               </Panel>
             </div>
+          )}
+
+          {/* D50 — connect this client's accounting software once, then an
+              approved release reaches their books instead of a file. Its own
+              tab rather than a card inside Settings: it is where a practice
+              goes when a connection has stopped working, and a screen you visit
+              because something is wrong should not be three scrolls down
+              somebody else's page. */}
+          {tab === 'Connections' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientConnections client={client} />
+            </Suspense>
           )}
 
           {tab === 'Settings' && (

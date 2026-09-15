@@ -38,7 +38,15 @@ import { LEDGER_ADAPTER, PRISMA, PUBLISHES_SERVICE } from './tokens.js';
 @Module({
   controllers: [PublishesController],
   providers: [
+    // ⚠ D50: this token now yields a FACTORY rather than an adapter instance.
+    // A real adapter has to read its own client's sealed tokens out of
+    // `integrations`, every query goes through `scopedDb(ctx)`, and a singleton
+    // built at boot has no context — so the adapter is built per unit of work
+    // with the approver's own. `select-ledger-adapter.ts` carries the reasoning
+    // and the two options that were rejected. `LedgerAdapter` itself is
+    // unchanged; only who constructs one is.
     { provide: LEDGER_ADAPTER, useFactory: (env: Env) => selectLedgerAdapter(env), inject: [ENV] },
+
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: PUBLISHES_SERVICE,

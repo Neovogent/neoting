@@ -3,7 +3,7 @@ import type { Document as DocumentRow, IntegrationKind } from '@prisma/client';
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
-import type { LedgerAdapter, LedgerAttachment, LedgerPublishResult } from '../../publishing/index.js';
+import type { LedgerAdapterFactory, LedgerAttachment, LedgerPublishResult } from '../../publishing/index.js';
 import { transitionDocument } from '../document-state.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import type { FollowUp } from './proposal-executor.js';
@@ -74,15 +74,21 @@ export async function runPublishFollowUp(
   prisma: PrismaClient,
   ctx: ScopeContext,
   followUp: Extract<FollowUp, { kind: 'publish' }>,
-  ledger: LedgerAdapter,
+  ledger: LedgerAdapterFactory,
   traceId: string,
 ): Promise<void> {
+  // ⚠ Built HERE, with this approval's own context, and not at boot. A real
+  // adapter reads the client's sealed ledger tokens through `scopedDb`, so it
+  // needs a tenant scope; a singleton built at boot would either have none or
+  // have somebody else's. `publishing/select-ledger-adapter.ts` carries the two
+  // alternatives that were rejected. One adapter per batch, not one per item.
+  const adapter = ledger(prisma, ctx);
   const jobs = await scopedDb(prisma, ctx, (db) => loadJobs(db, followUp.proposalId));
 
   for (const job of jobs) {
     // The vendor call, OUTSIDE every transaction. This line is the point of
     // the whole file.
-    const result = await ledger.publishBill({
+    const result = await adapter.publishBill({
       documentId: job.document.id,
       attempt: job.attempt,
       target: { integrationId: job.target.integrationId, kind: job.target.kind, orgRef: job.target.orgRef },

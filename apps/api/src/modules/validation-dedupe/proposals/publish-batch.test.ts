@@ -65,6 +65,14 @@ interface IntegrationRow {
   businessId: string;
   kind: string;
   isActive: boolean;
+  /**
+   * ⚠ D50: what tells a LIVE ledger connection from a row somebody started and
+   * abandoned. A vendor row with no sealed credentials is never adopted by a
+   * release — the seeded `XERO` rows that have existed since long before this
+   * are exactly that shape, and adopting one would fail every item of a batch
+   * in the follow-up for want of a token.
+   */
+  tokenRef?: string | null;
 }
 
 /** The default: one VT export destination, which is what A11's client intake creates. */
@@ -94,7 +102,8 @@ function harness(rows: DocRow[], integrations: IntegrationRow[] = VT_DESTINATION
       },
     },
     integration: {
-      findUnique: async ({ where }: { where: { id: string } }) => integrations.find((i) => i.id === where.id) ?? null,
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        integrations.find((i) => i.id === where.id) ?? null,
       findMany: async ({ where }: { where: { businessId: string; isActive: boolean } }) =>
         integrations.filter((i) => i.businessId === where.businessId && i.isActive === where.isActive),
     },
@@ -123,11 +132,14 @@ function harness(rows: DocRow[], integrations: IntegrationRow[] = VT_DESTINATION
 
 /** The REAL preview (pure), and a ledger that fails the test if it is ever called. */
 const PUBLISHING: PublishGateway = {
-  ledger: {
+  // D50 made this a FACTORY, and the tripwire still means what it meant: these
+  // fixtures have no ledger connection, so they take the export lane, and the
+  // export lane reaches no vendor. A ledger-lane test builds its own.
+  ledger: () => ({
     publishBill: async () => {
-      throw new Error('D42: releasing a document for export must never reach a ledger — the adapter is dormant, not a dependency');
+      throw new Error('the export lane must never reach a ledger (D42 kept by D50)');
     },
-  },
+  }),
   previewPublishBatch,
 };
 
@@ -282,10 +294,78 @@ test('the export destination is resolved, never guessed: two, wrong client, swit
   const off = harness([doc('doc_1')], [{ id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: false }]);
   await expect(executor.execute(off.db, input({ ...payload, integrationId: 'int_vt' }))).rejects.toThrow('switched off');
 
+  // ⚠ D50 CHANGED THIS ONE. It used to refuse with "does not write to
+  // accounting software" — true under D42, false now. A NAMED ledger row that
+  // was never connected refuses with the thing the practice can act on: the
+  // consent journey was not finished. Refusing here, rather than in the
+  // follow-up, is what stops 500 items failing one at a time.
   const vendor = harness([doc('doc_1')], [{ id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true }]);
   await expect(
     executor.execute(vendor.db, input({ ...payload, integrationId: 'int_xero' })),
-  ).rejects.toThrow('does not write to accounting software');
+  ).rejects.toThrow('never finished');
+});
+
+/**
+ * ⚠ **D50's own arm, and the three properties that make it safe.**
+ *
+ * The export lane above is unchanged and permanent. This is the SECOND egress,
+ * and what it must NOT do is as load-bearing as what it must: the documents stay
+ * READY (PUBLISHED would claim the client's books moved before a vendor said
+ * so), the rows stay QUEUED (durable intent, committed with the approval), and
+ * the follow-up is returned so the vendor is reached AFTER the commit.
+ */
+test('D50: a live ledger connection queues for the follow-up and leaves the documents READY', async () => {
+  const { db, created, map } = harness([doc('doc_1')], [
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.sealed.blob.here' },
+  ]);
+
+  const result = await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+
+  expect(created[0]).toMatchObject({ integrationId: 'int_xero', state: 'QUEUED' });
+  // ⚠ NOT resolved in this transaction, unlike the export lane.
+  expect(created[0]).not.toHaveProperty('completedAt');
+  expect(map.get('doc_1')?.state).toBe('READY');
+  expect(result.followUps).toEqual([{ kind: 'publish', proposalId: 'prop_1', businessId: 'biz_1' }]);
+  expect(result.detail).toMatchObject({ publishedToLedger: true, ledgerKind: 'XERO' });
+});
+
+test('D50: a live ledger connection WINS over an export destination when neither is named', async () => {
+  // The one behaviour change for a client holding both. Connecting is a
+  // deliberate act; carrying a VT row is the default state every client has.
+  const { db, created } = harness([doc('doc_1')], [
+    { id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: true },
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.sealed.blob.here' },
+  ]);
+
+  await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+  expect(created[0]).toMatchObject({ integrationId: 'int_xero', state: 'QUEUED' });
+});
+
+test('D50: a practice that means the FILE names the export destination, and gets it', async () => {
+  const { db, created, map } = harness([doc('doc_1')], [
+    { id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: true },
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.sealed.blob.here' },
+  ]);
+
+  const result = await executor.execute(
+    db,
+    input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270), integrationId: 'int_vt' }),
+  );
+
+  expect(created[0]).toMatchObject({ integrationId: 'int_vt' });
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
+  expect(result.followUps).toEqual([]);
+  expect(result.detail).toMatchObject({ releasedForExport: true });
+});
+
+test('D50: two live ledger connections refuse rather than one being picked', async () => {
+  const { db } = harness([doc('doc_1')], [
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.a.b.c' },
+    { id: 'int_qbo', businessId: 'biz_1', kind: 'QUICKBOOKS', isActive: true, tokenRef: 'v1.d.e.f' },
+  ]);
+  await expect(
+    executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) })),
+  ).rejects.toThrow('more than one accounting-software connection');
 });
 
 test('only READY, or a document whose last release FAILED, may enter a batch', async () => {

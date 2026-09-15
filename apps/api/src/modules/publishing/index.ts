@@ -58,5 +58,19 @@ export {
  * composition unit; naming it here is the honest way to say so.
  */
 export { PublishingModule } from './publishing.module.js';
-export { selectLedgerAdapter } from './select-ledger-adapter.js';
+export { type LedgerAdapterFactory, selectLedgerAdapter } from './select-ledger-adapter.js';
+
+/**
+ * The ledger lane's vocabulary (D50). `isLedgerKind` is the mirror of
+ * `isExportDestination` and the publish executor needs both: they are how it
+ * tells a client's live Xero connection from a record of which file their
+ * accountant imports, and the two egresses are permanently side by side.
+ *
+ * ⚠ Nothing else from `./ledger/` is on this seam, deliberately. The four
+ * vendor modules, the token vault, the OAuth flow and the HTTP client are
+ * internals — `selectLedgerAdapter` is how an adapter is obtained, and the
+ * connection SURFACE is HTTP.
+ */
+export { isLedgerKind, VENDOR_SLUGS, type VendorSlug } from './ledger/vendors.js';
+export { LedgerConnectionsModule } from './ledger/ledger-connections.module.js';
 export { LEDGER_ADAPTER } from './tokens.js';

@@ -442,13 +442,67 @@ const EnvSchema = z.object({
   // anybody chose on purpose.
   PORTAL_SESSION_SECRET: z.string().default(''),
 
-  // The ledger adapter (METH Stage 10). `demo` = DemoXeroAdapter — deterministic
-  // XERO-INV-#### refs, a simulated per-item delay and one scripted
-  // failure-then-retry; the real Xero SDK + OAuth lands behind the same seam.
-  // Default `demo` and, today, the ONLY value: a real bill posting into a real
-  // client's books is not something an unset variable may cause. Selected by
-  // config, not import, like the switches above.
-  LEDGER_ADAPTER: z.enum(['demo']).default('demo'),
+  // The ledger adapter (METH Stage 10, now D50). `demo` = DemoXeroAdapter —
+  // deterministic XERO-INV-#### refs, a simulated per-item delay and one
+  // scripted failure-then-retry. `http` = the real thing: OAuth connections to
+  // Xero, QuickBooks Online, Sage and FreeAgent, posting real bills with the
+  // receipt attached.
+  //
+  // ⚠ Default `demo`, and it stays `demo`: a real bill posting into a real
+  // client's books is not something an unset variable may cause. Turning this
+  // on is a deliberate act in one environment at a time. Selected by config,
+  // not import, like the switches above.
+  LEDGER_ADAPTER: z.enum(['demo', 'http']).default('demo'),
+
+  // ── The ledger connections (D50) ────────────────────────────────────────
+  //
+  // ⚠ The SEALING key for every client's ledger tokens, and the reason no
+  // token is ever readable in a database dump. 64 hex characters — `openssl
+  // rand -hex 32`, the same instruction SESSION_SECRET carries. It belongs in
+  // the `auth` Secrets Manager group beside the other app-generated HMAC keys,
+  // because it is exactly that class of credential: ours, no vendor, no
+  // rotation ceremony at a third party.
+  //
+  // ⚠ Rotating it does NOT re-seal existing connections. Every practice would
+  // have to reconnect every client. `token-vault.ts` carries a `v1` prefix so a
+  // staged rotation can be built when that matters; today it does not exist.
+  //
+  // Empty default, fail-closed: `selectLedgerAdapter` refuses `http` without
+  // it, so the failure is a boot refusal rather than tokens sealed under a
+  // guessable key.
+  INTEGRATION_TOKEN_KEY: z.string().default(''),
+
+  // ⚠ Sandbox or live BOOKS. `true` points QuickBooks at Sandbox Company GB
+  // and FreeAgent at its sandbox host. It cannot make Xero safe — Xero has no
+  // sandbox at all and a developer connects a REAL organisation, so the only
+  // safe Xero target is their own Demo Company (UK). The connection screen says
+  // so rather than pretending a flag covers it.
+  //
+  // `.env.integrations` writes this as `QBO_ENV=sandbox`; one knob covers both
+  // platforms here because a deployment that is sandbox for one is sandbox for
+  // both, and two flags is one flag that can be wrong.
+  LEDGER_SANDBOX: z.string().default('true').transform((value) => value !== 'false'),
+
+  // Our APPLICATION's registration with each vendor — never any client's
+  // connection. Platform credentials, so they live in Secrets Manager exactly
+  // as the Xero and Intuit groups in `infra/envs/*/secrets.tf` already do.
+  // A vendor whose client id is empty simply does not appear on the connection
+  // screen, which is how a deployment can carry two of the four.
+  XERO_CLIENT_ID: z.string().default(''),
+  XERO_CLIENT_SECRET: z.string().default(''),
+  XERO_REDIRECT_URI: z.string().default(''),
+
+  QBO_CLIENT_ID: z.string().default(''),
+  QBO_CLIENT_SECRET: z.string().default(''),
+  QBO_REDIRECT_URI: z.string().default(''),
+
+  SAGE_CLIENT_ID: z.string().default(''),
+  SAGE_CLIENT_SECRET: z.string().default(''),
+  SAGE_REDIRECT_URI: z.string().default(''),
+
+  FREEAGENT_CLIENT_ID: z.string().default(''),
+  FREEAGENT_CLIENT_SECRET: z.string().default(''),
+  FREEAGENT_REDIRECT_URI: z.string().default(''),
 
   // The chat model runtime (Governance §9). `bedrock` = the real thing —
   // Amazon Bedrock, eu-west-2, IAM via the task role, model IDs pinned in
@@ -814,6 +868,38 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['OBJECT_STORE'],
       message: 'MEDIA_FETCH=graph with OBJECT_STORE=fixture persists rows pointing at in-memory bytes — set OBJECT_STORE=s3 (MinIO locally) before fetching real media',
+    });
+  }
+
+  // ⚠ D50: the live ledger lane cannot boot without the key that seals every
+  // client's tokens. A boot refusal rather than a request-time one, and louder
+  // than the UPLOAD_URL_SECRET case below, because the failure mode without it
+  // is not a 500 — it is a practice completing a consent journey at Xero and
+  // the connection silently never being storable.
+  if (env.LEDGER_ADAPTER === 'http' && !/^[0-9a-fA-F]{64}$/.test(env.INTEGRATION_TOKEN_KEY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['INTEGRATION_TOKEN_KEY'],
+      message:
+        'LEDGER_ADAPTER=http needs INTEGRATION_TOKEN_KEY set to 64 hex characters (`openssl rand -hex 32`) — it is what seals every client ledger token, and without it no connection can be stored (D50)',
+    });
+  }
+
+  // The same class of mistake one step further on: the lane is on, the key is
+  // there, and not one of the four applications is configured — so the
+  // connection screen offers a practice nothing at all, with no error anywhere.
+  if (
+    env.LEDGER_ADAPTER === 'http' &&
+    env.XERO_CLIENT_ID === '' &&
+    env.QBO_CLIENT_ID === '' &&
+    env.SAGE_CLIENT_ID === '' &&
+    env.FREEAGENT_CLIENT_ID === ''
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['LEDGER_ADAPTER'],
+      message:
+        'LEDGER_ADAPTER=http with no vendor application configured — set at least one of XERO_CLIENT_ID, QBO_CLIENT_ID, SAGE_CLIENT_ID or FREEAGENT_CLIENT_ID, or leave LEDGER_ADAPTER=demo (D50)',
     });
   }
 

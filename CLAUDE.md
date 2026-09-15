@@ -10,23 +10,29 @@ Neoting is a **chat-first document-to-bookkeeping platform** for UK accounting p
 
 | File | Governs |
 |---|---|
-| `docs/Source_Of_Truth.md` (v1.6) | Product scope and requirements |
+| `docs/Source_Of_Truth.md` (v1.7) | Product scope and requirements |
 | `docs/Engineering_Governance.md` (v1.6) | How it is built and operated |
 | `docs/Team_Engineering_Guideline.md` (v1.1) | How the team works, and the bootstrap phase |
 
 Conflict rule: the Source of Truth wins on scope, Governance wins on engineering rules and process. Anything not in those files is not a requirement. **A feature not listed in v1 is not in v1** — that scope fence is the contract.
 
-**The release you are building is Initial Delivery (ID), not v1** — SoT v1.6, §24 and D39–D49. ID is the first paid client delivery: a narrower product with a complete spine, not v1 with pieces missing. It has its own scope fence, and three v1 decisions are superseded *for ID only* while standing unchanged for v1:
+**Initial Delivery (ID) has shipped. You are building the second release** — SoT v1.7, D50.
+
+ID was the first paid client delivery: a narrower product with a complete spine. It is done. **The second release adds a live ledger connection** for Xero, QuickBooks Online, Sage Business Cloud Accounting and FreeAgent — see `docs/ledger-connect-build-brief.md`. ⚠ **Export is not retired.** VT Transaction+ has no API and never will, so the file lane stays permanently; the ledger connection is a *second* egress, not a replacement.
+
+⚠ **The rest of the second release's scope is not recorded anywhere yet.** Only the ledger work is decided. If you are asked to build something else, get it written into the SoT before you start.
+
+These were ID's supersessions. **D42 is now itself superseded by D50**; the other two stand until someone says otherwise:
 
 | For ID | Instead of | Decision |
 |---|---|---|
 | Manual bank statement upload (PDF/CSV/XLSX) is the **only** bank input | TrueLayer feeds | D40 supersedes D4 |
-| **No ledger API, no auto-publish.** Export is the sole egress, and *Published* is an internal state meaning approved-and-released-for-export — it asserts nothing about a ledger, and no surface may imply otherwise | Xero + QuickBooks adapters | D42 supersedes D6 |
+| ~~No ledger API, no auto-publish~~ — ⚠ **superseded by D50.** The second release connects to Xero, QuickBooks Online, Sage and FreeAgent. *Published* meaning approved-and-released-for-export remains true of the **export** lane | Xero + QuickBooks adapters | D42, now superseded by **D50** |
 | Subscription is live at intake: £8.50/month + VAT per client business, paid by the client | Billing deferred | D48 supersedes D26 |
 
-The rest of ID in one line each: **D41** gates statement extraction on provable completeness, not confidence · **D43** every exported transaction carries a resolvable link to its source document · **D44** accountants compose and edit, only the firm's **super admin** releases · **D45** every intake channel accepts known senders only · **D46** unacceptable documents are flagged, never blocked · **D47** client onboarding asks for no connections · **D49** the prototype UI repo is ID's design source of record.
+The rest of ID in one line each: **D41** gates statement extraction on provable completeness, not confidence · **D43** every released transaction carries a resolvable link to its source document — through a file that is a typable link, through the API it is a real attachment · **D44** accountants compose and edit, only the firm's **super admin** releases · **D45** every intake channel accepts known senders only · **D46** unacceptable documents are flagged, never blocked · **D47** client onboarding asks for no connections · **D49** the prototype UI repo is ID's design source of record.
 
-**Expired, and kept only as a record:** the 18–20 Aug MVP push ran under `METH_MODE.md` (repo root) and produced the 21 Aug client-demo runbook, `docs/DEMO_SCRIPT_2026-08-21.md`. That demo has happened. Neither file governs anything now, neither is the roadmap, and every `// DEMO-MOCK` they left behind is owed a tracked issue. **§24 is the plan; those two files are history.**
+**Expired, and kept only as a record:** the 18–20 Aug MVP push ran under `METH_MODE.md` (repo root) and produced the 21 Aug client-demo runbook, `docs/DEMO_SCRIPT_2026-08-21.md`. That demo has happened. Neither file governs anything now, neither is the roadmap, and every `// DEMO-MOCK` they left behind is owed a tracked issue. **§24 is the record of ID, which has shipped; `docs/ledger-connect-build-brief.md` is the current plan. Those two files are history.**
 
 ## Before you write code
 

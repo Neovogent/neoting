@@ -38,7 +38,7 @@ const STAFF = ScopeContextSchema.parse({ actorId: 'p13_user', practiceId: P });
 // Neither publish nor SMS is in frame: the stubs satisfy the registry's
 // required deps and nothing more (their real suites exercise them).
 const STUB_PUBLISHING: PublishGateway = {
-  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 

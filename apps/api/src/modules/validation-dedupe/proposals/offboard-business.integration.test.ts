@@ -49,7 +49,7 @@ const STAFF_B = ScopeContextSchema.parse({ actorId: 'pob_user_b', practiceId: P_
 // Publish is not in frame: the stub satisfies the registry's required dep and
 // nothing more (its real suites exercise it).
 const STUB_PUBLISHING: PublishGateway = {
-  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 

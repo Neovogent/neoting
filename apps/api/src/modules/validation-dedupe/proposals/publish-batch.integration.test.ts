@@ -79,11 +79,14 @@ const STAFF_B = ScopeContextSchema.parse({ actorId: 's10_user_b', practiceId: P_
  * D42 removed the vendor call; this is what proves it stayed removed.
  */
 const PUBLISHING: PublishGateway = {
-  ledger: {
+  // D50 made this a FACTORY. The tripwire is unchanged in spirit: the EXPORT
+  // lane must still never reach a ledger, and a client with no ledger
+  // connection takes that lane.
+  ledger: () => ({
     publishBill: async () => {
-      throw new Error('D42: releasing a document for export must never reach a ledger');
+      throw new Error('the export lane must never reach a ledger (D42 kept by D50)');
     },
-  },
+  }),
   previewPublishBatch,
 };
 const executor = createPublishBatchExecutor(PUBLISHING);
@@ -310,7 +313,7 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
     expect((await owner.document.findUnique({ where: { id: 's10_doc_bare' } }))?.state).toBe('PUBLISHED');
   });
 
-  test('a dormant seeded ledger-vendor row is never adopted as an export destination', async () => {
+  test('a ledger-vendor row with NO stored credentials is never adopted as a destination', async () => {
     await seedDocument('s10_doc_legacy', { businessId: BIZ_LEGACY });
     const payload: PublishBatchPayload = { documentIds: ['s10_doc_legacy'], preview: await previewOf(['s10_doc_legacy']) };
 
@@ -318,12 +321,14 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
 
     const row = await owner.publish.findFirst({ where: { actionProposalId: 's10_prop_legacy' } });
     expect(row?.state).toBe('SUCCEEDED');
-    // The XERO row is right there and active. Stamping it on a release would
-    // put a vendor's name on an act that never touched a vendor.
+    // ⚠ The XERO row is right there and active — and carries no `token_ref`,
+    // which is the shape every seeded vendor row has had since long before D50.
+    // Adopting one would fail every item of the batch in the follow-up for want
+    // of a token, so the release takes the export lane and stamps nothing.
     expect(row?.integrationId).toBeNull();
   });
 
-  test('naming a ledger-vendor connection refuses, in words that do not claim anything was posted', async () => {
+  test('naming an UNFINISHED ledger connection refuses, naming the step that was not finished', async () => {
     await seedDocument('s10_doc_named', { businessId: BIZ_LEGACY });
     const payload: PublishBatchPayload = {
       documentIds: ['s10_doc_named'],
@@ -336,9 +341,47 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ProposalExecutionRefused);
-    expect((error as Error).message).toContain('does not write to accounting software');
+    // ⚠ D50 CHANGED THIS SENTENCE. It said "does not write to accounting
+    // software" — true under D42, false now. A named vendor row with no sealed
+    // credentials is a consent journey somebody started and did not finish, and
+    // saying so is what a practice can act on. Refusing HERE rather than in the
+    // follow-up is what stops 500 items failing one at a time.
+    expect((error as Error).message).toContain('never finished');
     expect(await owner.publish.count({ where: { actionProposalId: 's10_prop_named' } })).toBe(0);
     expect((await owner.document.findUnique({ where: { id: 's10_doc_named' } }))?.state).toBe('READY');
+  });
+
+  /**
+   * ⚠ **D50's arm, against a real database.** The three properties that make it
+   * safe are all things the unit suite can only assert about a fake: the row is
+   * committed QUEUED rather than resolved, the document is still READY (nothing
+   * may claim a client's books moved before a vendor said so), and the
+   * follow-up is returned so the vendor is reached after the commit.
+   */
+  test('a LIVE ledger connection queues for the follow-up and leaves the document READY', async () => {
+    await seedDocument('s10_doc_ledger', { businessId: BIZ_LEGACY });
+    // The same row, now holding credentials. The blob is opaque to this
+    // executor — it branches on presence, never on content.
+    await owner.integration.update({ where: { id: INT_LEGACY }, data: { tokenRef: 'v1.sealed.blob.here' } });
+
+    const payload: PublishBatchPayload = {
+      documentIds: ['s10_doc_ledger'],
+      preview: await previewOf(['s10_doc_ledger']),
+    };
+    const result = await scopedDb(app, STAFF_A, (db) => executor.execute(db, input('s10_prop_ledger', payload)));
+
+    const row = await owner.publish.findFirst({ where: { actionProposalId: 's10_prop_ledger' } });
+    expect(row?.state).toBe('QUEUED');
+    expect(row?.integrationId).toBe(INT_LEGACY);
+    expect(row?.completedAt).toBeNull();
+    expect(row?.externalRef).toBeNull();
+    expect(row?.attachmentSent).toBe(false);
+    // ⚠ NOT PUBLISHED. The books have not moved yet.
+    expect((await owner.document.findUnique({ where: { id: 's10_doc_ledger' } }))?.state).toBe('READY');
+    expect(result.followUps).toEqual([{ kind: 'publish', proposalId: 's10_prop_ledger', businessId: BIZ_LEGACY }]);
+
+    // Put the fixture back, so a later test in this file meets the row it expects.
+    await owner.integration.update({ where: { id: INT_LEGACY }, data: { tokenRef: null } });
   });
 
   test('a retry over a failed attempt re-arms REJECTED → PROCESSING → READY and releases; the failed attempt is untouched', async () => {
