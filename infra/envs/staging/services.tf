@@ -296,7 +296,12 @@ locals {
     # ⚠ env.ts REFUSES TO BOOT on `http` without a 64-hex INTEGRATION_TOKEN_KEY
     # and at least one vendor application. That is deliberate: the alternative
     # is a green task that seals every practice's tokens under a placeholder.
-    { name = "LEDGER_ADAPTER", value = "demo" },
+    #
+    # ⚠ SWITCHED ON 15 Sep 2026, on the owner's instruction. Landed at `demo`
+    # first (one commit earlier) so that a wrong secret KEY NAME would surface
+    # as a task that fails to start with ResourceInitializationError, before
+    # the boot gate started depending on the secret's CONTENT. That step passed.
+    { name = "LEDGER_ADAPTER", value = "http" },
 
     # Sandbox or live BOOKS. `true` points QuickBooks at Sandbox Company GB and
     # FreeAgent at its sandbox host.
