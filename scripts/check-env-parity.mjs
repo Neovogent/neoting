@@ -135,6 +135,30 @@ const ECS_ONLY = {
   UPLOAD_URL_SECRET: 'fails closed on empty (env.ts:126), so local omits it until the web-upload lane is exercised locally',
 };
 
+// ⚠ DUPLICATE ENV NAMES IN A TASK DEFINITION, and the reason this check exists.
+//
+// A repeated `{ name = "X", ... }` in the same container's list is valid HCL,
+// passes `terraform validate`, applies cleanly — and ECS silently takes the
+// LAST one. On 15 Sep 2026 that swallowed a `LEDGER_ADAPTER` flip to `http`
+// whole: the plan looked right, the apply said success, and the running task
+// kept the `demo` value from an entry forty lines further down. Nothing
+// anywhere reported a problem.
+//
+// Counted per FILE rather than per container: a name legitimately appears once
+// per service list (api, workers, migrate), so the check is that no name
+// appears more often than there are lists that can hold it. Anything above the
+// number of distinct `secrets`/`environment` blocks is a duplicate.
+function duplicateEnvNames(tf) {
+  const counts = new Map();
+  for (const m of tf.matchAll(/\{\s*name\s*=\s*"([A-Z][A-Z0-9_]*)"/g)) {
+    counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
+  }
+  // `local.injected_secrets` and `local.migration_secrets` are the two shared
+  // lists; a name may appear in both, plus once inline per service block.
+  const CEILING = 4;
+  return [...counts.entries()].filter(([, n]) => n > CEILING).map(([name, n]) => `${name} (${n}x)`);
+}
+
 const failures = [];
 const notes = [];
 
@@ -178,6 +202,14 @@ for (const key of [...ecsKeys].sort()) {
 }
 
 if (notes.length > 0) console.log(notes.map((n) => `note: ${n}`).join('\n'));
+for (const dup of duplicateEnvNames(read('infra/envs/staging/services.tf'))) {
+  failures.push(
+    `${dup} appears more times in services.tf than there are lists to hold it — a duplicate ` +
+      `{ name = ... } is valid HCL and ECS silently takes the LAST one, so the value you can ` +
+      `see in the plan may not be the one that runs.`,
+  );
+}
+
 if (failures.length > 0) {
   console.error(`env parity check failed (${failures.length}):\n` + failures.map((f) => `  ✗ ${f}`).join('\n'));
   process.exit(1);
