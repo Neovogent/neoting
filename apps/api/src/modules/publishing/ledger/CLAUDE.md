@@ -140,16 +140,32 @@ recorded as owed rather than implied.
 
 ## Current state, honestly
 
+✅ **LIVE on staging since 15 Sep 2026** — `LEDGER_ADAPTER=http`, real
+credentials in `/neoting/staging/ledger`, all four offered on the client
+Connections tab. The boot gates passed, which is what proves the sealing key and
+the applications are genuinely valid rather than merely present.
+
+⚠ **Three of four reach their real consent screen; Xero does not.** Xero's app
+is not granted `accounting.transactions` (create a bill) or `offline_access`
+(get a refresh token), and answers `invalid_scope` before any sign-in. The fix
+is in Xero's portal, not here — the scope set this module requests is the
+correct one, and narrowing it would buy a connection that cannot post or renew.
+Measured scope by scope in `docs/runbooks/ledger-connections.md`.
+
+⚠ **No transaction has appeared in any vendor's own screen yet.** All four stop
+at the vendor's sign-in for want of a test company to consent as. That is the
+acceptance evidence the brief asks for and it is still owed.
+
 ✅ Built and proven against a real database and a real HTTP vendor: the shared
 layer, all four adapters, the connection surface, the refresh sweep, and the
 ledger arm of `publish.batch`.
 
-⚠ **Not yet proven against a real vendor.** Every application is registered
-against `https://api.neoting.neovogent.com/...`, so a local run needs a
+⚠ **Local runs still need a localhost callback per vendor.** Every application
+is registered against `https://api.neoting.neovogent.com/...`, so a laptop needs
 `http://localhost:3000/v1/integrations/<vendor>/callback` added at each portal.
-**FreeAgent's is added** (15 Sep 2026) and its consent journey was driven as far
-as FreeAgent's own sign-in. Xero, Intuit and Sage need the same one-line
-addition, and all four need a sandbox/demo account sign-in.
+**FreeAgent's is added** (15 Sep 2026). ⚠ On STAGING none of that is needed —
+the registered URIs are the staging ones, which is why the live test got
+further than the local one did.
 
 ⚠ **Staging does not run this lane**: `LEDGER_ADAPTER=demo` there, and the
 twelve new keys are allowlisted in `scripts/check-env-parity.mjs` until the
@@ -157,8 +173,12 @@ infra PR lands them in the task definitions with REAL values.
 
 ## TODO
 
+- [ ] **Xero: enable `accounting.transactions` and `offline_access` on the app.**
+      Blocks Xero entirely; nothing in this codebase can work around it, and
+      `docs/research/ledger-api-build-reference.md` §1 is wrong about the
+      current grant.
 - [ ] The four vendor screenshots — the acceptance evidence the brief asks for.
-      Blocked on portal sign-ins, not on code.
+      Blocked on a test company per vendor to consent as, not on code.
 - [ ] The infra PR: a `ledger` secret group + the four redirect URIs and
       `LEDGER_SANDBOX` on `services.tf`, then drop the twelve allowlist entries.
 - [ ] The **QuickBooks App Assessment Questionnaire** (~1 hour). Every answer is
