@@ -76,10 +76,20 @@ const LOCAL_ONLY = {
   // Switches staging leaves at their code default, stated locally for
   // discoverability. If staging ever needs the non-default, the key moves to
   // services.tf and off this list.
-  // (EMAIL_SOURCE and SMS_ORIGINATION_IDENTITY used to sit here. services.tf
-  // sets both now, so their reasons had expired and the hygiene check below
-  // evicted them — exactly as it did the Stripe keys. Not a D50 change; found
-  // by running this script, which is what it is for.)
+  // (EMAIL_SOURCE used to sit here. The committed services.tf sets it now, so
+  // its reason had expired and the hygiene check below evicted it — exactly as
+  // it did the Stripe keys. Not a D50 change; found by running this script,
+  // which is what it is for.)
+  //
+  // ⚠ SMS_ORIGINATION_IDENTITY was evicted in the same pass and PUT BACK, and
+  // the mistake is worth recording because it is easy to repeat: the eviction
+  // was judged against a WORKING TREE that carried another lane's uncommitted
+  // `SMS_SENDER=aws` change to services.tf. On a clean checkout the key is not
+  // there, so the check failed for everyone else and passed here. Run this
+  // script in a `git worktree add --detach <dir> HEAD` before trusting what it
+  // says about a file somebody is mid-edit on.
+  SMS_ORIGINATION_IDENTITY:
+    'Phase 3: the UK dedicated number — lands on services.tf together with the SMS_SENDER=aws flip, which is in flight on another lane',
   SMS_REGION: 'partner of SMS_ORIGINATION_IDENTITY; stated on ECS when the number activates',
   WHATSAPP_PRACTICE_MAP:
     'controller-side override only since Practice.whatsappPhoneNumberId landed (1 Sep 2026); staging maps practices in the DB, not the task definition',
