@@ -188,7 +188,16 @@ FreeAgent and confirm `attachmentSent` is false.
 ## Rolling back
 
 `LEDGER_ADAPTER=demo` and restart. Existing connections stay in the database and
-stop being used; every release goes back to the export lane. Nothing already
+stop being used; every release goes back to the export lane.
+
+⚠ **That sentence was not true when this runbook was first written, and the fix
+is worth knowing about.** `DemoXeroAdapter` answers every publish with `ok` and
+a deterministic `XERO-INV-####`, so a client with a live connection on a
+`demo` deployment would have taken the LEDGER arm and been marked PUBLISHED
+against a reference that exists nowhere. `PublishGateway.ledgerLaneEnabled` is
+what now sends those releases down the export lane instead, and
+`publish-batch.test.ts` pins it. The connection screen also stops offering
+Connect while the lane is off, so no new connection can be made into that gap. Nothing already
 posted to a client's books is touched, and nothing should be — a transaction in
 their ledger belongs to them.
 

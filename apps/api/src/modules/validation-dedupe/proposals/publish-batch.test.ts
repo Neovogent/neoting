@@ -135,6 +135,7 @@ const PUBLISHING: PublishGateway = {
   // D50 made this a FACTORY, and the tripwire still means what it meant: these
   // fixtures have no ledger connection, so they take the export lane, and the
   // export lane reaches no vendor. A ledger-lane test builds its own.
+  ledgerLaneEnabled: true,
   ledger: () => ({
     publishBill: async () => {
       throw new Error('the export lane must never reach a ledger (D42 kept by D50)');
@@ -356,6 +357,52 @@ test('D50: a practice that means the FILE names the export destination, and gets
   expect(map.get('doc_1')?.state).toBe('PUBLISHED');
   expect(result.followUps).toEqual([]);
   expect(result.detail).toMatchObject({ releasedForExport: true });
+});
+
+/**
+ * ⚠ **THE ROLLBACK MUST NOT FABRICATE A VENDOR REFERENCE.**
+ *
+ * `DemoXeroAdapter` answers every `publishBill` with `ok: true` and a
+ * deterministic `XERO-INV-####`. So a client with a LIVE connection, on a
+ * deployment set back to `LEDGER_ADAPTER=demo`, would take the ledger arm, be
+ * marked PUBLISHED against a reference that exists nowhere, and auto-archive —
+ * telling an accountant their books moved when nothing left the building.
+ *
+ * `docs/runbooks/ledger-connections.md` prescribes exactly that rollback and
+ * promises "every release goes back to the export lane". This is what makes
+ * that sentence true.
+ */
+test('D50: with the lane OFF, a live connection is ignored and the release goes to EXPORT', async () => {
+  const off: PublishGateway = { ...PUBLISHING, ledgerLaneEnabled: false };
+  const executorOff = createPublishBatchExecutor(off);
+
+  const { db, created, map } = harness([doc('doc_1')], [
+    { id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: true },
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.sealed.blob.here' },
+  ]);
+
+  const result = await executorOff.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+
+  // The export lane, exactly as the rollback promises.
+  expect(created[0]).toMatchObject({ integrationId: 'int_vt', state: 'SUCCEEDED' });
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
+  expect(result.followUps).toEqual([]);
+  expect(result.detail).toMatchObject({ releasedForExport: true });
+  // ⚠ And no vendor reference was invented along the way.
+  expect(created[0]).not.toHaveProperty('externalRef');
+});
+
+test('D50: with the lane OFF, NAMING a ledger connection refuses rather than being faked', async () => {
+  const off: PublishGateway = { ...PUBLISHING, ledgerLaneEnabled: false };
+  const executorOff = createPublishBatchExecutor(off);
+
+  const { db } = harness([doc('doc_1')], [
+    { id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true, tokenRef: 'v1.sealed.blob.here' },
+  ]);
+
+  await expect(
+    executorOff.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270), integrationId: 'int_xero' })),
+  ).rejects.toThrow('not connected to accounting software at the moment');
 });
 
 test('D50: two live ledger connections refuse rather than one being picked', async () => {

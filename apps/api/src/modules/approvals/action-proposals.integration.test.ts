@@ -16,6 +16,7 @@ import { canonicalStringify, sha256Hex } from './canonical-hash.js';
  * batches). `publish-batch.integration.test.ts` is where the real adapter runs.
  */
 const PUBLISHING: PublishGateway = {
+  ledgerLaneEnabled: true,
   ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch,
 };

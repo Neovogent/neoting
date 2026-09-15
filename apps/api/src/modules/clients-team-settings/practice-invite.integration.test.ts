@@ -122,6 +122,7 @@ const PUBLISHING: PublishGateway = {
   // D50 made this a FACTORY. The tripwire is unchanged in spirit: the EXPORT
   // lane must still never reach a ledger, and a client with no ledger
   // connection takes that lane.
+  ledgerLaneEnabled: true,
   ledger: () => ({
     publishBill: async () => {
       throw new Error('the export lane must never reach a ledger (D42 kept by D50)');

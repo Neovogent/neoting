@@ -56,6 +56,7 @@ const STAFF_A = ScopeContextSchema.parse({ actorId: USER_A, practiceId: P_A });
 const STAFF_B = ScopeContextSchema.parse({ actorId: USER_B, practiceId: P_B });
 
 const PUBLISHING: PublishGateway = {
+  ledgerLaneEnabled: true,
   ledger: () => ({
     publishBill: async () => {
       throw new Error('no proposal in this suite reaches a ledger');

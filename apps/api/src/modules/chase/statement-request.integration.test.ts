@@ -46,6 +46,7 @@ let app: PrismaClient;
 const STAFF = ScopeContextSchema.parse({ actorId: OWNER_USER, practiceId: P });
 
 const STUB_PUBLISHING: PublishGateway = {
+  ledgerLaneEnabled: true,
   ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };

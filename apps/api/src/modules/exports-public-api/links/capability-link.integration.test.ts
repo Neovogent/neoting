@@ -53,6 +53,7 @@ const STAFF_A = ScopeContextSchema.parse({ actorId: 'a8x_staffA', practiceId: PR
 const STAFF_B = ScopeContextSchema.parse({ actorId: 'a8x_staffB', practiceId: PRACTICE_B });
 
 const STUB_PUBLISHING: PublishGateway = {
+  ledgerLaneEnabled: true,
   ledger: () => ({ publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) }),
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
