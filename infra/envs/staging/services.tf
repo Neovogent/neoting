@@ -198,14 +198,31 @@ locals {
     #                        mobile, which is the only thing the SMS-outbox
     #                        screen reads.
     #
-    #                        ⚠ STILL NO SMS LEAVES THE ACCOUNT. The outbox row
-    #                        is a record of the text that WOULD be sent, not a
-    #                        delivery receipt, and the screen must not be read
-    #                        as proof a client's phone rang. Real SMS is
-    #                        `SMS_SENDER=aws`, behind the same seam, waiting on
-    #                        the UK dedicated number's carrier registration.
-    #                        A contact with no mobile is skipped by the outbox
-    #                        half and still emailed by the email half.
+    #                        ⚠ SUPERSEDED 11 Sep 2026 — this environment now runs
+    #                        `SMS_SENDER=aws`. Kept because the outbox screen
+    #                        still exists and the distinction still matters: an
+    #                        `sms_log` row is composed bytes, NOT a delivery
+    #                        receipt, so the screen is still not proof a
+    #                        client's phone rang.
+    #
+    #   SMS_SENDER=aws       ⚠ REAL TEXT MESSAGES LEAVE THE ACCOUNT. Owner's
+    #                        instruction, 11 Sep 2026, after the UK number
+    #                        +447441471756 completed carrier registration
+    #                        (GB_LONG_CODE_REGISTRATION, COMPLETE 9 Sep).
+    #                        An approved chase.send now delivers by SMS and
+    #                        NOT by email — `aws` replaces the email half, it
+    #                        does not add to it.
+    #
+    #                        ⚠ TWO WAYS THIS SILENTLY REACHES NOBODY, both
+    #                        proven on the day of the flip:
+    #                        (1) the origination number is a GB LONG CODE and
+    #                        `InternationalSendingEnabled` is false, so any
+    #                        non-UK mobile is refused by AWS with
+    #                        INVALID_IDENTITY_FOR_DESTINATION_COUNTRY before
+    #                        the message leaves; (2) a contact with no mobile
+    #                        on file has nothing to send to, and no longer gets
+    #                        the email that `email+sms` used to fall back on.
+    #                        Revert is this one value back to `email+sms`.
     #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
     #                        reachable from this environment — and under D42
     #                        there is no ledger API in Initial Delivery at all,
@@ -267,13 +284,26 @@ locals {
     # ------------------------------------------------------------------------
     { name = "STATEMENT_READER", value = "textract" },
 
-    { name = "SMS_SENDER", value = "email+sms" },
-    # WhatsApp media fetch (Phase 2). `fixture` until the real System User
-    # token replaces the placeholder in the whatsapp secret — env.ts refuses
-    # `graph` with an empty token, and a fixture fetcher on a real message
-    # dead-letters loudly rather than fabricating bytes. Flip to `graph`
-    # together with the real token; the secret pipe is already laid above.
-    { name = "MEDIA_FETCH", value = "fixture" },
+    { name = "SMS_SENDER", value = "aws" },
+    # The dedicated UK number every chase and sign-in code originates from.
+    # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because
+    # the alternative is a green task that fails every send at request time and
+    # whose first symptom is a client who never got their text.
+    # The phone-number id rather than +447441471756: the id survives the number
+    # being re-leased, and it is what describe-phone-numbers keys on.
+    { name = "SMS_ORIGINATION_IDENTITY", value = "phone-b307702afd4b4c598b92e6e9ff73b71c" },
+    # WhatsApp media fetch (Phase 2). ⚠ LIVE since 11 Sep 2026 — a real System
+    # User token (never-expiring, `whatsapp_business_messaging`) replaced the
+    # placeholder in the whatsapp secret, so `graph` really downloads receipt
+    # images from the Graph API instead of dead-lettering them. Under `fixture`
+    # every real inbound photo dead-lettered loudly rather than fabricating
+    # bytes; that was correct, and it is what this flip ends.
+    #
+    # If this ever goes back to `fixture`, real WhatsApp photos stop arriving
+    # and start filling the DLQ. env.ts also refuses `graph` on an empty token,
+    # so revoking the token in Meta without changing this value fails the boot,
+    # which is the loud failure we want rather than silent data loss.
+    { name = "MEDIA_FETCH", value = "graph" },
     # The web app's public origin — chase.send composition signs portal links
     # as <APP_ORIGIN>/p/<token>. Stated rather than left to the code default so
     # the value survives the day the default constant moves.
