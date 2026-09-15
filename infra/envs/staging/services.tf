@@ -284,6 +284,38 @@ locals {
     # ------------------------------------------------------------------------
     { name = "STATEMENT_READER", value = "textract" },
 
+    # ── D50: the live ledger connection ──────────────────────────────────
+    #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs, no socket opened. No
+    #                        client's books are reachable.
+    #   LEDGER_ADAPTER=http  ⚠ AN APPROVED DOCUMENT REACHES A REAL SET OF
+    #                        BOOKS. Nothing changes for a client until a super
+    #                        admin deliberately connects one — a release with
+    #                        no live connection still goes down the export
+    #                        lane, which is permanent (VT has no API).
+    #
+    # ⚠ env.ts REFUSES TO BOOT on `http` without a 64-hex INTEGRATION_TOKEN_KEY
+    # and at least one vendor application. That is deliberate: the alternative
+    # is a green task that seals every practice's tokens under a placeholder.
+    { name = "LEDGER_ADAPTER", value = "demo" },
+
+    # Sandbox or live BOOKS. `true` points QuickBooks at Sandbox Company GB and
+    # FreeAgent at its sandbox host.
+    #
+    # ⚠ IT CANNOT MAKE XERO SAFE. Xero has no sandbox at all — a developer
+    # connects a REAL organisation — so the only safe Xero target is Xero's own
+    # Demo Company (UK). The connection screen carries that warning because no
+    # environment variable can.
+    { name = "LEDGER_SANDBOX", value = "true" },
+
+    # ⚠ THESE MUST MATCH EACH VENDOR'S REGISTRATION BYTE FOR BYTE, and all four
+    # are registered against this host. A local run needs
+    # http://localhost:3000/... added at the vendor's portal as a SECOND
+    # address; it is not something a config change here can substitute for.
+    { name = "XERO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/xero/callback" },
+    { name = "QBO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/quickbooks/callback" },
+    { name = "SAGE_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/sage/callback" },
+    { name = "FREEAGENT_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/freeagent/callback" },
+
     { name = "SMS_SENDER", value = "aws" },
     # The dedicated UK number every chase and sign-in code originates from.
     # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because
@@ -624,6 +656,30 @@ locals {
     # in compute.tf is a different role and a different list.
     { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:secret_key::" },
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:webhook_secret::" },
+
+    # ── D50: the ledger applications, and the key that seals per-connection
+    # tokens. Same no-IAM-change property as Stripe above — the execution
+    # role's grant is `[for s in aws_secretsmanager_secret.app : s.arn]`, so a
+    # new group in that map is granted by construction.
+    #
+    # ⚠ THIS LIST IS SHARED BY api AND workers, AND BOTH NEED IT. The refresh
+    # sweep runs on workers: a worker that cannot open the vault cannot renew a
+    # connection, and that failure is SILENT for weeks — it surfaces as a
+    # refresh token that aged out while nobody was publishing.
+    #
+    # ⚠ `integration_token_key` must hold a REAL value before the first
+    # connection is made. A placeholder boots perfectly and seals every
+    # practice's tokens under a guessable string. Rotating it later re-seals
+    # nothing; every practice would have to reconnect every client.
+    { name = "INTEGRATION_TOKEN_KEY", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:integration_token_key::" },
+    { name = "XERO_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:xero_client_id::" },
+    { name = "XERO_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:xero_client_secret::" },
+    { name = "QBO_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:qbo_client_id::" },
+    { name = "QBO_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:qbo_client_secret::" },
+    { name = "SAGE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:sage_client_id::" },
+    { name = "SAGE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:sage_client_secret::" },
+    { name = "FREEAGENT_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_id::" },
+    { name = "FREEAGENT_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.

@@ -263,6 +263,42 @@ locals {
     # JS bundle and is public by construction. It lives here so injection is
     # uniform across the three services; do not read its presence as evidence
     # that DSNs need protecting.
+    # D50 — our four LEDGER APPLICATION registrations, never any client's
+    # connection. The SCOPE note at the top of this file still binds and is the
+    # reason this group looks the way it does: a client's Xero refresh token
+    # must never be written here. Per-connection tokens are sealed with
+    # `integration_token_key` below and stored in `integrations.token_ref`,
+    # where RLS is the tenancy boundary rather than IAM.
+    #
+    # ⚠ `integration_token_key` IS NOT A VENDOR CREDENTIAL and is the one value
+    # in this whole file that must never stay a placeholder. It seals every
+    # practice's ledger tokens; a placeholder BOOTS PERFECTLY and seals them all
+    # under a guessable string, and nothing anywhere says so. `openssl rand -hex
+    # 32`. Rotating it later re-seals nothing — every practice would have to
+    # reconnect every client — so it is set once and left alone.
+    #
+    # ⚠ A NEW GROUP rather than keys added to `xero`/`intuit`, which already
+    # exist and hold two of these eight values. `ignore_changes = [secret_string]`
+    # covers the whole attribute, so a key ADDED to an existing group never
+    # reaches AWS (see the note on `local.app_secrets`). A new group is written
+    # once, at creation, which is what these need. The older `xero` and `intuit`
+    # groups are left in place rather than deleted: a destroyed secret's NAME is
+    # reserved for the recovery window, and nothing is gained by racing that.
+    ledger = {
+      description = "D50 ledger application credentials - Xero, QuickBooks, Sage, FreeAgent - plus the key that seals per-connection tokens"
+      values = {
+        integration_token_key   = "PLACEHOLDER_INTEGRATION_TOKEN_KEY"
+        xero_client_id          = "PLACEHOLDER_XERO_CLIENT_ID"
+        xero_client_secret      = "PLACEHOLDER_XERO_CLIENT_SECRET"
+        qbo_client_id           = "PLACEHOLDER_QBO_CLIENT_ID"
+        qbo_client_secret       = "PLACEHOLDER_QBO_CLIENT_SECRET"
+        sage_client_id          = "PLACEHOLDER_SAGE_CLIENT_ID"
+        sage_client_secret      = "PLACEHOLDER_SAGE_CLIENT_SECRET"
+        freeagent_client_id     = "PLACEHOLDER_FREEAGENT_CLIENT_ID"
+        freeagent_client_secret = "PLACEHOLDER_FREEAGENT_CLIENT_SECRET"
+      }
+    }
+
     sentry = {
       description = "Sentry EU error-tracking DSNs, one per app (Kickoff 4.9, D24)"
       values = {
