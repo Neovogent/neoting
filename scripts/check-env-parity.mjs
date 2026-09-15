@@ -144,19 +144,26 @@ const ECS_ONLY = {
 // kept the `demo` value from an entry forty lines further down. Nothing
 // anywhere reported a problem.
 //
-// Counted per FILE rather than per container: a name legitimately appears once
-// per service list (api, workers, migrate), so the check is that no name
-// appears more often than there are lists that can hold it. Anything above the
-// number of distinct `secrets`/`environment` blocks is a duplicate.
+// ⚠ THE CEILING IS 1, AND THE FIRST VERSION OF THIS CHECK GOT IT WRONG. It was
+// written with a ceiling of 4 — "a name may appear once per service list" —
+// and proven with an injected FIVE copies, so it passed its own test while
+// being unable to catch the two-entry bug it was written for. Measured instead
+// of assumed: every name in services.tf appears exactly ONCE except
+// SERVICE_NAME, which is genuinely set per service and is the whole allowlist.
+// If a second name ever earns a place here, add it with its reason — do not
+// raise the ceiling, because the ceiling is what catches the real shape.
+const REPEATED_BY_DESIGN = new Set([
+  'SERVICE_NAME', // one per task definition (api, workers, migrate, email-intake), each a different value
+]);
+
 function duplicateEnvNames(tf) {
   const counts = new Map();
   for (const m of tf.matchAll(/\{\s*name\s*=\s*"([A-Z][A-Z0-9_]*)"/g)) {
     counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
   }
-  // `local.injected_secrets` and `local.migration_secrets` are the two shared
-  // lists; a name may appear in both, plus once inline per service block.
-  const CEILING = 4;
-  return [...counts.entries()].filter(([, n]) => n > CEILING).map(([name, n]) => `${name} (${n}x)`);
+  return [...counts.entries()]
+    .filter(([name, n]) => n > 1 && !REPEATED_BY_DESIGN.has(name))
+    .map(([name, n]) => `${name} (${n}x)`);
 }
 
 const failures = [];
