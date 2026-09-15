@@ -639,6 +639,35 @@ describe.runIf(enabled)('breaking it on purpose', () => {
     expect(await owner.integration.count({ where: { businessId: BIZ } })).toBe(0);
   });
 
+  /**
+   * ⚠ **The state every environment is in the day this ships.** The lane is off
+   * and `INTEGRATION_TOKEN_KEY` is empty — `env.ts` only gates that at boot for
+   * `LEDGER_ADAPTER=http`, so this controller still serves, and `parseVaultKey`
+   * throws on an empty string. Unguarded that is a 500 on a deployment where
+   * nothing is wrong.
+   */
+  test('with NO sealing key: the tab still renders, and the acts that need one refuse readably', async () => {
+    const integrationId = await connect();
+    const keyless = new LedgerConnectionsService(app, { ...env(), INTEGRATION_TOKEN_KEY: '' }, toStandIn());
+
+    // ⚠ Reading must still work. A practice has to be able to SEE a client's
+    // connections and export destinations on a deployment that has no key, and
+    // nothing on that path opens a sealed blob.
+    const listed = await keyless.list(CTX, BIZ);
+    expect(listed.data.some((row) => row.vendor === 'freeagent')).toBe(true);
+    // Nothing is offerable, because no application is configured either.
+    expect(listed.connectable).toEqual([]);
+
+    // ⚠ And switching one OFF must work, for the same reason: a practice that
+    // wants a connection gone must not be held up by our configuration.
+    await expect(keyless.disconnect(CTX, integrationId)).resolves.toMatchObject({ isActive: false });
+
+    // What genuinely needs the key says so, in a sentence that does not blame
+    // the client and does not claim their books are broken.
+    await expect(detailOf(keyless.sync(CTX, integrationId))).resolves.toMatch(/not set up to connect/i);
+    await expect(detailOf(keyless.authorise(CTX, BIZ, 'freeagent'))).resolves.toMatch(/not set up to connect/i);
+  });
+
   test('reconnecting REPLACES the connection rather than colliding with it', async () => {
     const first = await connect();
     // `@@unique([businessId, kind])` — a create here would violate it at exactly

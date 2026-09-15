@@ -73,6 +73,34 @@ export class LedgerConnectionsService {
     private readonly fetchImpl: typeof fetch = globalThis.fetch,
   ) {}
 
+  /**
+   * The sealing key, or a refusal a person can act on.
+   *
+   * ⚠ **`env.ts` only gates this at boot when `LEDGER_ADAPTER=http`**, which is
+   * the right place for the case that matters. But every environment running
+   * the lane OFF still serves this controller — the Connections tab has to
+   * render a client's export destinations either way — and `parseVaultKey`
+   * throws on an empty string. Unguarded that is a 500 on a deployment where
+   * nothing is wrong, which is the failure `publishes` calls "a failure with no
+   * reason attached".
+   *
+   * `list` and `disconnect` deliberately do NOT call this: neither opens a
+   * sealed blob, and a practice must be able to see and switch off a connection
+   * on a deployment that has lost its key.
+   */
+  private vaultKey(): Buffer {
+    try {
+      return vaultKeyFor(this.env);
+    } catch {
+      throw new AppException(
+        'NT-SRV-001',
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Accounting software connections are not switched on',
+        'This deployment is not set up to connect accounting software yet. Nothing is wrong with this client — approved documents are still released for export.',
+      );
+    }
+  }
+
   /** The whole Connections screen in one read: what is connected, and what could be. */
   async list(ctx: ScopeContext, businessId: string): Promise<IntegrationList> {
     const rows = await scopedDb(this.prisma, ctx, async (db) => {
@@ -145,7 +173,7 @@ export class LedgerConnectionsService {
       if (discovered !== null) vendor = { ...vendor, ...discovered };
     }
 
-    const key = vaultKeyFor(this.env);
+    const key = this.vaultKey();
     const state = signState({ b: businessId, v: slug, a: ctx.actorId }, key);
     return {
       authorisationUrl: authorizeUrl(vendor, credentials, state),
@@ -170,7 +198,7 @@ export class LedgerConnectionsService {
     slug: VendorSlug,
     params: Readonly<Record<string, string>>,
   ): Promise<{ readonly businessId: string; readonly integrationId: string }> {
-    const key = vaultKeyFor(this.env);
+    const key = this.vaultKey();
     const stateParam = params['state'];
     if (stateParam === undefined) throw badCallback('That connection link is not one this server issued.');
     const state = verifyState(stateParam, key);
@@ -250,7 +278,7 @@ export class LedgerConnectionsService {
     const tokens = new LedgerTokenStore(
       this.prisma,
       ctx,
-      vaultKeyFor(this.env),
+      this.vaultKey(),
       (slug) => credentialsFor(this.env, slug),
       this.fetchImpl,
     );
