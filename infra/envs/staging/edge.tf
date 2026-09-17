@@ -45,6 +45,14 @@ locals {
   # §11.9 rules the second one out.
   edge_api_host = "api.${local.domain}"
 
+  # ⚠ THE HOST THE PRACTICE'S SESSION COOKIE LIVES ON, which is why it is a
+  # local and not typed inline. `APP_ORIGIN` below is built from it, and so are
+  # the four ledger OAuth callbacks in services.tf — they must land on the same
+  # host as the session or the callback authenticates nobody (the full trap is
+  # written out beside them). Not `local.domain`: this name is a different
+  # second-level label, deliberately (owner, 8 Sep 2026 — one public name).
+  app_host = "neoacc.neovogent.com"
+
   # ⚠ D5, SETTLED 15 AUG 2026: production takes the APEX and staging moves to
   # `staging.`. This is the first half of that move, and it is deliberately
   # ADDITIVE rather than a rename.

@@ -75,6 +75,33 @@ a staged rotation can be built; it does not exist.
 | `ledger-connections.*` | the connect/sync/disconnect surface |
 | `refresh-scheduler.ts` | keeps an **idle** connection's refresh token alive |
 
+## ⚠ The callback must live on the host that holds the SESSION
+
+Found 17 Sep 2026, on the first consent that got far enough to fail properly.
+
+`LedgerConnectionsController.callback` calls `context.require()` — the vendor's
+redirect has to arrive carrying the practice's session. The session cookie is
+set with **no `domain`** (`auth-tenancy/auth.controller.ts`), so it is
+**host-only**, and the web app calls the API **same-origin**
+(`VITE_API_BASE_URL` is deliberately unset in `deploy-web.yml`). The cookie
+therefore exists on `neoacc.neovogent.com` and nowhere else.
+
+The four applications were registered against `api.neoting.neovogent.com`. Both
+names serve the same API behind CloudFront, so every request *worked* — except
+the one that needed a cookie. Every vendor's consent ended on
+`?connectionError=Authentication+required`, after a correctly formed request and
+a completed sign-in, which reads like a broken integration and is a hostname.
+
+⚠ **`SameSite` is a red herring here and cost time.** `lax` already permits a
+top-level GET navigation; a **host-only** cookie is not sent to a different host
+at any `SameSite` value. Do not go looking at the cookie flags.
+
+The fix is `local.app_host` in `infra/envs/staging/edge.tf`, which
+`APP_ORIGIN` and all four `*_REDIRECT_URI` values are now built from, plus one
+re-registration per vendor portal. ⚠ **A redirect URI must match byte for byte**,
+so the portals and the task definition move together or the consent 400s at the
+vendor instead.
+
 ## ⚠ The four things most likely to be got wrong next
 
 1. **Rotation.** Xero, QuickBooks and Sage retire the old refresh token the
