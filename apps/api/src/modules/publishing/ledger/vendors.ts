@@ -220,6 +220,14 @@ const BY_KIND = new Map<IntegrationKind, VendorConfig>(
 );
 
 /** Whether an `integrations` row is a LEDGER connection rather than an export destination. */
+/**
+ * The four as `IntegrationKind` values, for a Prisma `in` filter.
+ *
+ * Derived from `VENDORS` rather than typed out again, so a fifth platform is
+ * added in exactly one place.
+ */
+export const LEDGER_KINDS: readonly IntegrationKind[] = Object.values(VENDORS).map((vendor) => vendor.kind);
+
 export function isLedgerKind(kind: IntegrationKind): boolean {
   return BY_KIND.has(kind);
 }

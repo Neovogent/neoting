@@ -157,6 +157,15 @@ export function matchAccount(items: readonly ReferenceItem[], categoryCode: stri
   const byCode = usable.find((item) => item.code !== null && item.code.trim() === wanted);
   if (byCode !== undefined) return byCode;
 
+  // ⚠ By the vendor's own ID, because that is what a connected client's chart
+  // CODE now is when the vendor gives its accounts no code of their own —
+  // QuickBooks' `AcctNum` is optional and most sandbox accounts have none.
+  // Without this the chart would offer a category that could never resolve, and
+  // the publish would refuse "nothing to code this to" on a code the product
+  // itself had just handed the accountant.
+  const byId = usable.find((item) => item.id === wanted);
+  if (byId !== undefined) return byId;
+
   const normalised = normalise(wanted);
   const byName = usable.find((item) => normalise(item.name) === normalised);
   return byName ?? null;

@@ -71,6 +71,16 @@ export { type LedgerAdapterFactory, selectLedgerAdapter } from './select-ledger-
  * internals — `selectLedgerAdapter` is how an adapter is obtained, and the
  * connection SURFACE is HTTP.
  */
-export { isLedgerKind, VENDOR_SLUGS, type VendorSlug, vendorForKind } from './ledger/vendors.js';
+export { isLedgerKind, LEDGER_KINDS, VENDOR_SLUGS, type VendorSlug, vendorForKind } from './ledger/vendors.js';
+/**
+ * ⚠ The `reference_syncs.listKind` values the ledger lane writes.
+ *
+ * On the seam since 17 Sep 2026 because `rules-suggestions` reads
+ * `LEDGER_LIST_KINDS.accounts`: a connected client CODES AGAINST THE VENDOR'S
+ * OWN ACCOUNTS, so the chart of accounts has to find the row this lane wrote.
+ * The alternative was a second copy of the string in another module, which is
+ * how the two lists silently stop being the same list.
+ */
+export { LEDGER_LIST_KINDS, type ReferenceItem } from './ledger/reference-sync.js';
 export { LedgerConnectionsModule } from './ledger/ledger-connections.module.js';
 export { LEDGER_ADAPTER } from './tokens.js';
