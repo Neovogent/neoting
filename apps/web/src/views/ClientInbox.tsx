@@ -20,6 +20,7 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
 import { applyToEach, softDeleteDocument } from '../api/document-lifecycle';
 import { errorLabel } from '../api/slices';
+import { liveLedger, useIntegrations } from '../api/integrations';
 import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readiness';
 import { receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
@@ -225,6 +226,12 @@ const m = defineMessages({
     defaultMessage: 'Extraction running',
   },
   targetVtFile: { id: 'analytics.clientInbox.targetVtFile', defaultMessage: 'VT import file' },
+  /**
+   * ⚠ The client HAS a live ledger connection, so a release creates entries in
+   * their books rather than producing a file. This column said "VT import file"
+   * unconditionally until 17 Sep 2026.
+   */
+  targetLedger: { id: 'analytics.clientInbox.targetLedger', defaultMessage: '{vendor}' },
   releasedForExport: { id: 'analytics.clientInbox.releasedForExport', defaultMessage: 'Released for export' },
   failedPublish: { id: 'analytics.clientInbox.failedPublish', defaultMessage: 'Release' },
   failedExtraction: { id: 'analytics.clientInbox.failedExtraction', defaultMessage: 'Extraction' },
@@ -409,6 +416,12 @@ export function ClientInbox({ client, kind, onPreview }: {
   kind: DocKind;
   onPreview: (doc: Document) => void;
 }) {
+  // ⚠ WHICH EGRESS this client's releases use. The Ready tab's "Releases to"
+  // column and the publish dialog both describe the act about to be approved,
+  // and both said "VT import file" over a live connection until 17 Sep 2026.
+  // Read here rather than per-row: it is one answer for the whole client.
+  const { integrations } = useIntegrations({ enabled: true, businessId: client.id });
+  const ledger = useMemo(() => liveLedger(integrations), [integrations]);
   const {
     documents, duplicates, mandatoryFields, ingest, sheetImports, updateDocumentStatus, retryDocument,
     deleteDocuments, startConversation, statsFor, documentsSource, documentsLoading, documentsError,
@@ -939,10 +952,16 @@ export function ClientInbox({ client, kind, onPreview }: {
          ...mandatoryCols,
          flagCell,
          {
+           // ⚠ WHERE an approved release actually goes. The server decides
+           // (`resolveTarget`); this column must agree with it, and a hardcoded
+           // answer told an accountant a file would be produced while a live
+           // QuickBooks connection was about to receive the bill (17 Sep 2026).
            key: 'target', label: intl.formatMessage(m.columnPublishTo),
            render: () => (
              <span className="text-zinc-400">
-               {intl.formatMessage(m.targetVtFile)}
+               {ledger === null
+                 ? intl.formatMessage(m.targetVtFile)
+                 : intl.formatMessage(m.targetLedger, { vendor: ledger.label })}
              </span>
            ),
          },

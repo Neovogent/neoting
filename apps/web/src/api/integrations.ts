@@ -91,6 +91,32 @@ export function useIntegrations({ enabled, businessId }: UseIntegrationsOptions)
 }
 
 /**
+ * The client's LIVE ledger connection, or null.
+ *
+ * ⚠ **This is the predicate that decides which egress a release uses, so it
+ * exists once.** `publish.batch` picks the ledger lane over the export file
+ * whenever the client has one of these, and until 17 Sep 2026 the release
+ * screens did not ask: the inbox column was hardcoded to "VT import file" and
+ * the publish dialog to "for export", so an accountant was told a file would be
+ * produced immediately before a bill was created in the client's real books.
+ *
+ * The server is still the authority — `resolveTarget` decides, and the review
+ * card the super admin echoes is rendered from the SERVER's answer. This is
+ * what the screens leading up to that card say, and the two must agree.
+ *
+ * Both halves matter: `isActive` (not switched off) AND `isConnected` (the
+ * consent actually finished — a vendor row with no sealed credentials is never
+ * adopted by a release, so a screen must not promise it either).
+ */
+export function liveLedger(integrations: readonly Integration[]): Integration | null {
+  return (
+    integrations.find(
+      (row) => row.vendor !== null && row.vendor !== undefined && row.isActive && row.isConnected === true,
+    ) ?? null
+  );
+}
+
+/**
  * Start a consent journey and hand back where the browser must go.
  *
  * ⚠ **The caller navigates the TOP-LEVEL window.** Every one of the four vendors

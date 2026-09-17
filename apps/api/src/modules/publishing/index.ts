@@ -71,6 +71,6 @@ export { type LedgerAdapterFactory, selectLedgerAdapter } from './select-ledger-
  * internals — `selectLedgerAdapter` is how an adapter is obtained, and the
  * connection SURFACE is HTTP.
  */
-export { isLedgerKind, VENDOR_SLUGS, type VendorSlug } from './ledger/vendors.js';
+export { isLedgerKind, VENDOR_SLUGS, type VendorSlug, vendorForKind } from './ledger/vendors.js';
 export { LedgerConnectionsModule } from './ledger/ledger-connections.module.js';
 export { LEDGER_ADAPTER } from './tokens.js';

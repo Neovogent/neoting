@@ -8,6 +8,7 @@ import {
   disconnectConnection,
   type Integration,
   type LedgerVendor,
+  liveLedger,
   startConnection,
   syncConnection,
   useIntegrations,
@@ -118,7 +119,7 @@ export function ClientConnections({ client }: { client: Client }) {
 
   const ledgers = integrations.filter((row) => row.vendor !== null && row.vendor !== undefined);
   const exports_ = integrations.filter((row) => row.vendor === null || row.vendor === undefined);
-  const live = ledgers.some((row) => row.isActive && row.isConnected === true);
+  const live = liveLedger(integrations) !== null;
 
   async function connect(vendor: LedgerVendor, label: string): Promise<void> {
     setBusy(vendor);

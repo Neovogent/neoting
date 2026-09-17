@@ -75,6 +75,42 @@ a staged rotation can be built; it does not exist.
 | `ledger-connections.*` | the connect/sync/disconnect surface |
 | `refresh-scheduler.ts` | keeps an **idle** connection's refresh token alive |
 
+## ⚠ THE RELEASE SCREENS SAID "for export" OVER A LIVE CONNECTION
+
+Found 17 Sep 2026 by driving a real release against Sandbox Company GB, and it
+is the worst thing this lane has done so far.
+
+D42 gave `publish.batch` one egress and one sentence: *Published means approved
+and released for export; nothing leaves Neo Accounting on its own.* D50 added a
+SECOND egress and left that sentence everywhere. So with QuickBooks connected:
+
+| Screen | What it said |
+|---|---|
+| Ready tab, "Releases to" | `VT import file` — hardcoded, took no argument |
+| Publish dialog title | *Release 1 item for export* |
+| Publish dialog body | *Nothing leaves Neo Accounting on its own* |
+| **The SERVER's review card** | *Release 1 document for export* · *nothing here reaches accounting software* |
+
+The last row is the serious one. That card is what D44 puts the firm's super
+admin in front of, and its hash is what they echo on approve — so the product
+was asking a human to authorise an act by describing its exact opposite.
+
+**The rule is symmetric and both halves are load-bearing.** The export arm must
+never say *posted*, *synced* or *sent to*; the ledger arm must never say *file*,
+*for export* or *nothing reaches accounting software*. `render-summary.test.ts`
+now enforces BOTH directions — the export test was there from the start, and
+nothing enforced the mirror, which is why this survived.
+
+⚠ **An undeterminable lane names NO destination**, and that is deliberate.
+Defaulting to "export" is what produced the defect: the older arm is not the
+safer guess, it is the one that understates what approving does.
+
+The lane rides `RenderContext.release`, resolved at FIRST REVIEW from
+`resolveTarget` — the executor's own function, exported rather than restated,
+because two copies of "which lane is this" can disagree and the card would then
+describe an act other than the one approve performs. Not the payload: a
+connection can be made or revoked between propose and approve.
+
 ## ⚠ The callback must live on the host that holds the SESSION
 
 Found 17 Sep 2026, on the first consent that got far enough to fail properly.

@@ -65,7 +65,33 @@ export interface RenderContext {
    * what was approved.
    */
   readonly workflow?: RenderedWorkflow;
+  /**
+   * ⚠ **Which egress a `publish.batch` will actually use**, read by the SERVICE
+   * at first review and frozen into the stored render.
+   *
+   * Before this existed the card said *"Release N documents for export"* and
+   * *"nothing here reaches accounting software"* on EVERY release — including
+   * one about to create a bill in the client's real books, because D50 gave
+   * `publish.batch` a second egress and this file kept D42's only sentence.
+   * That is the worst place in the product to be wrong: the release card is
+   * the one screen D44 puts a human in front of, and it was describing the
+   * opposite of the act being approved.
+   *
+   * It rides this seam rather than the payload because the payload is written
+   * at PROPOSE time and a connection can be made or revoked before anyone
+   * approves. The lane has to be true when it is read, then frozen — the
+   * correction advisory's rule, for the same reason.
+   *
+   * Absent means *could not be determined*, and the card then says only what it
+   * knows. It never guesses "export", because guessing that is the bug.
+   */
+  readonly release?: RenderedRelease;
 }
+
+/** Where an approved release will actually send the entries. */
+export type RenderedRelease =
+  | { readonly lane: 'ledger'; readonly vendor: string }
+  | { readonly lane: 'export' };
 
 /** Exactly what the card needs to describe a workflow, and nothing more. */
 export interface RenderedWorkflow {
@@ -209,7 +235,7 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
       const gross = penceToMoney(preview['grossPence'], code);
       const vat = penceToMoney(preview['vatPence'], code);
       const mixed = code === null;
-      const entries = entryPreviewSections(payload['entryPreview']);
+      const entries = entryPreviewSections(payload['entryPreview'], context.release);
       // Item 29(b): the review that approved gross £994 / VAT £9,000 displayed
       // both numbers neutrally, and the refusal sat at the bottom of the card.
       // A document that will produce NO export line is now in the TITLE, so it
@@ -218,10 +244,17 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         ? payload['entryPreview']['refusals'].length
         : 0;
       const refusalSuffix = refusalCount === 0 ? '' : ` (⚠ ${count(refusalCount, 'document')} will produce no export line)`;
+      // ⚠ D50: WHERE the entries go is the first thing the card must say, and
+      // until 17 Sep 2026 it always said "for export". `release` is frozen at
+      // first review; absent, the card names no destination at all rather than
+      // asserting the one that happens to be older.
+      const lane = context.release;
+      const destination =
+        lane === undefined ? '' : lane.lane === 'ledger' ? ` into ${lane.vendor}` : ' for export';
       return summary(
         mixed
-          ? `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat} (mixed currencies)${refusalSuffix}`
-          : `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat}${refusalSuffix}`,
+          ? `Release ${count(ids.length, 'document')}${destination} — gross ${gross}, VAT ${vat} (mixed currencies)${refusalSuffix}`
+          : `Release ${count(ids.length, 'document')}${destination} — gross ${gross}, VAT ${vat}${refusalSuffix}`,
         [
         // ⚠ Checks lead the card — see entryChecksSection.
         ...entryChecksSection(payload['entryPreview']),
@@ -621,17 +654,23 @@ function summary(title: string, sections: readonly RenderedSection[]): RenderedS
  * opinion about the file, and a confident second opinion on a review card is
  * worse than no card at all.
  *
- * ⚠ **D42 vocabulary is load-bearing here, not stylistic.** This release has no
- * ledger connection: the file is downloaded and the accountant imports it
- * themselves. Nothing in these strings may say or imply posted, synced, sent, or
- * that anything reaches accounting software on its own. `render-summary.test.ts`
- * reads the rendered strings and fails on the vocabulary, mirroring
- * `apps/web/src/views/ExportView.test.tsx`.
+ * ⚠ **The vocabulary is load-bearing here, not stylistic, and it CUTS BOTH
+ * WAYS since D50.** On the EXPORT lane the file is downloaded and the
+ * accountant imports it themselves, so nothing may say or imply posted, synced,
+ * sent, or that anything reaches accounting software on its own. On the LEDGER
+ * lane every one of those things is true, and the export sentence becomes the
+ * lie — it told a super admin that nothing would reach accounting software
+ * immediately before a bill was created in the client's books. `render-summary.test.ts`
+ * reads the rendered strings and fails on the vocabulary in both directions.
+ *
+ * ⚠ The export lane's own strings are UNCHANGED. Export is permanent (VT
+ * Transaction+ has no API), and an edit that treats this arm as legacy is a D50
+ * misreading.
  *
  * Absent `entryPreview` renders nothing rather than an apology — a payload
  * written before the field existed still reviews, with the card it always had.
  */
-function entryPreviewSections(value: unknown): RenderedSection[] {
+function entryPreviewSections(value: unknown, release?: RenderedRelease): RenderedSection[] {
   if (!isObject(value)) return [];
   const columns = stringArray(value['columns']);
   const documents = Array.isArray(value['documents']) ? value['documents'] : [];
@@ -644,19 +683,25 @@ function entryPreviewSections(value: unknown): RenderedSection[] {
     0,
   );
 
+  const toLedger = release !== undefined && release.lane === 'ledger';
   sections.push({
-    heading: 'The accounting entry this release will put in the import file',
+    heading: toLedger
+      ? `The accounting entry this release will create in ${release.vendor}`
+      : 'The accounting entry this release will put in the import file',
     entries: [
-      { label: 'Import file', value: targetName(value['target']) },
-      { label: 'Columns, in the order the file writes them', value: columns.join(' · ') },
+      // The export TARGET is a file format and means nothing on the ledger
+      // lane, so it is omitted there rather than relabelled into a fiction.
+      ...(toLedger ? [] : [{ label: 'Import file', value: targetName(value['target']) }]),
+      { label: toLedger ? 'Fields, in the order they are sent' : 'Columns, in the order the file writes them', value: columns.join(' · ') },
       // Rows, not documents: a document coded across two nominals is two lines,
       // and the number an accountant reconciles against their own software's
       // preview is the line count.
-      { label: 'Lines the file will carry', value: String(totalRows) },
+      { label: toLedger ? 'Lines the entry will carry' : 'Lines the file will carry', value: String(totalRows) },
       {
         label: 'What approving does',
-        value:
-          'Releases these documents for export. The file is produced when you download it on the Export screen, and you import it yourself — nothing here reaches accounting software.',
+        value: toLedger
+          ? `Creates these entries in this client's ${release.vendor} books, with the source document attached, and records the reference ${release.vendor} gives back. This changes the client's books — it is not a file you import yourself.`
+          : 'Releases these documents for export. The file is produced when you download it on the Export screen, and you import it yourself — nothing here reaches accounting software.',
       },
     ],
   });

@@ -57,17 +57,20 @@ test('publish.batch renders the server-computed preview with integer-only money 
   const summary = renderSummary('publish.batch', {
     documentIds: ['doc_1', 'doc_2'],
     preview: { itemCount: 2, grossPence: 8_492_500, vatPence: 99, currency: 'GBP' },
-  });
-  // "Release … for export", never "Publish … to <vendor>". D42: this release
-  // has no ledger connection, and *Published* is an internal state meaning
-  // approved and released for export.
+  }, { release: { lane: 'export' } });
+  // "Release … for export", never "Publish … to <vendor>", because THIS client
+  // has no ledger connection — which is now something the card is TOLD rather
+  // than something it assumes. ⚠ The lane rides `RenderContext` and the caller
+  // resolves it at first review; a `publish.batch` rendered without it names no
+  // destination at all, deliberately, because guessing "export" over a live
+  // connection is the defect this parameter exists to close.
   expect(summary.title).toBe('Release 2 documents for export — gross £84925.00, VAT £0.99');
   // Negative pence and sub-pound values format by string arithmetic — no float
   // ever touches a monetary value, even in a formatter.
   const credit = renderSummary('publish.batch', {
     documentIds: ['doc_1'],
     preview: { itemCount: 1, grossPence: -150, vatPence: 5, currency: 'GBP' },
-  });
+  }, { release: { lane: 'export' } });
   expect(credit.title).toBe('Release 1 document for export — gross -£1.50, VAT £0.05');
 });
 
@@ -84,7 +87,7 @@ test('a batch with no single currency renders no symbol at all, and the card say
   const summary = renderSummary('publish.batch', {
     documentIds: ['doc_1', 'doc_2'],
     preview: { itemCount: 2, grossPence: 5_435_251, vatPence: 0, currency: null },
-  });
+  }, { release: { lane: 'export' } });
 
   expect(summary.title).toBe('Release 2 documents for export — gross 54352.51, VAT 0.00 (mixed currencies)');
   // The reason is ON the card, not left to be inferred from a missing glyph.
@@ -101,7 +104,7 @@ test('a foreign but SINGLE currency keeps its own symbol — the fix is not "ste
   const summary = renderSummary('publish.batch', {
     documentIds: ['doc_1'],
     preview: { itemCount: 1, grossPence: 5_435_251, vatPence: 0, currency: 'USD' },
-  });
+  }, { release: { lane: 'export' } });
 
   expect(summary.title).toBe('Release 1 document for export — gross $54352.51, VAT $0.00');
   expect(summary.title).not.toContain('£');
@@ -318,12 +321,12 @@ test('a payload with no entry preview still reviews — the card falls back, it 
  * is server-rendered, so this is the surface where the rule has to hold — the
  * browser renders whatever these strings say.
  */
-test('the publish review card never claims anything is transmitted (D42)', () => {
+test('the publish review card never claims anything is transmitted (D42) — EXPORT lane', () => {
   const summary = renderSummary('publish.batch', {
     documentIds: ['doc_1'],
     preview: { itemCount: 1, grossPence: 5_435_251, vatPence: 0, currency: 'USD' },
     entryPreview: VT_ENTRY_PREVIEW,
-  });
+  }, { release: { lane: 'export' } });
 
   const rendered = `${summary.title} ${summary.sections
     .map((section) => `${section.heading} ${section.entries.map((entry) => `${entry.label} ${entry.value}`).join(' ')}`)
@@ -346,6 +349,65 @@ test('the publish review card never claims anything is transmitted (D42)', () =>
 
   // And it says the true thing, positively.
   expect(rendered).toContain('Releases these documents for export');
+});
+
+/**
+ * ⚠ **THE MIRROR OF THE RULE ABOVE, and the test that would have caught the
+ * 17 Sep 2026 defect.**
+ *
+ * D42's rule — never say posted/synced/sent on the export arm — was enforced
+ * here from the start. D50 added a SECOND egress where all of those things are
+ * true, and nothing enforced the other direction, so the card went on saying
+ * *"Release N documents for export … nothing here reaches accounting software"*
+ * over a live QuickBooks connection. A super admin was being asked to approve
+ * an act described as its own opposite, on the one screen D44 exists to put a
+ * human in front of.
+ *
+ * Measured on staging against Sandbox Company GB before it was fixed.
+ */
+test('the publish review card SAYS the books will change on the ledger lane (D50)', () => {
+  const summary = renderSummary('publish.batch', {
+    documentIds: ['doc_1'],
+    preview: { itemCount: 1, grossPence: 48_240, vatPence: 0, currency: 'GBP' },
+    entryPreview: VT_ENTRY_PREVIEW,
+  }, { release: { lane: 'ledger', vendor: 'QuickBooks Online' } });
+
+  const rendered = `${summary.title} ${summary.sections
+    .map((section) => `${section.heading} ${section.entries.map((entry) => `${entry.label} ${entry.value}`).join(' ')}`)
+    .join(' ')}`;
+
+  // The vendor is NAMED, in the title, where it cannot be scrolled past.
+  expect(summary.title).toBe('Release 1 document into QuickBooks Online — gross £482.40, VAT £0.00');
+
+  // ⚠ Every one of these was on the card over a live connection.
+  for (const forbidden of [
+    /for export/i,
+    /import file/i,
+    /nothing here reaches accounting software/i,
+    /you import it yourself/i,
+    /Export screen/i,
+  ]) {
+    expect(rendered).not.toMatch(forbidden);
+  }
+
+  // And it says the true thing, positively — including that this is NOT a file.
+  expect(rendered).toContain("Creates these entries in this client's QuickBooks Online books");
+  expect(rendered).toContain("This changes the client's books");
+});
+
+/**
+ * ⚠ Absent lane renders NO destination rather than defaulting to "for export".
+ * Defaulting is what produced the defect: the older arm is not the safer guess,
+ * it is the one that understates what approving does.
+ */
+test('an undeterminable lane names no destination at all', () => {
+  const summary = renderSummary('publish.batch', {
+    documentIds: ['doc_1'],
+    preview: { itemCount: 1, grossPence: 100, vatPence: 0, currency: 'GBP' },
+  });
+
+  expect(summary.title).toBe('Release 1 document — gross £1.00, VAT £0.00');
+  expect(summary.title).not.toMatch(/for export/i);
 });
 
 test('update-coding names every field being set', () => {
