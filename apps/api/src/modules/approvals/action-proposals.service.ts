@@ -46,17 +46,22 @@ import {
   ProposalExecutionRefused,
   ProposalNotImplementedError,
   type PublishGateway,
+  resolveTarget,
   runDedupeFollowUp,
   runPublishFollowUp,
   transitionDocument,
 } from '../validation-dedupe/index.js';
+// ⚠ The vendor's LABEL, for the release card. `modules/publishing` is imported
+// here already (this is the composition root that hands it the gateway), so
+// this closes no cycle — see `publish-batch.ts`'s header for the one that would.
+import { vendorForKind } from '../publishing/index.js';
 import { assertCanApprove, requiresReleaseAuthority, resolveActor } from './assert-can.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
 import { proposalIdentity } from './proposal-identity.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
 import { toWorkflow } from './approval-workflows.service.js';
-import { KIND_LABEL, renderSummary, type RenderedWorkflow } from './render-summary.js';
+import { KIND_LABEL, renderSummary, type RenderedRelease, type RenderedWorkflow } from './render-summary.js';
 import { toActionProposal } from './to-action-proposal.js';
 
 type ListProposalsQuery = z.infer<typeof listActionProposalsQueryParams>;
@@ -418,6 +423,41 @@ export class ActionProposalsService {
   }
 
   /**
+   * Which egress an approved `publish.batch` will actually use.
+   *
+   * ⚠ **It asks `resolveTarget`, the executor's OWN function, and does not
+   * restate the rule.** Two copies of "which lane is this" are two things that
+   * can disagree, and the card would then describe an act other than the one
+   * approve performs — which is the whole defect this exists to close.
+   *
+   * ⚠ `resolveTarget` THROWS for states an execution must refuse (a
+   * destination switched off, a connection never finished). A renderer refuses
+   * nothing: the approve path will raise the same refusal a moment later, with
+   * the executor's own wording, and a card that guessed "export" in the
+   * meantime would be the original lie again. So a throw renders NO
+   * destination, and the card says only what it knows.
+   */
+  private async readReleaseLane(
+    db: ScopedClient,
+    businessId: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<RenderedRelease | undefined> {
+    if (businessId === null) return undefined;
+    const requested = typeof payload['integrationId'] === 'string' ? payload['integrationId'] : null;
+    try {
+      const target = await resolveTarget(db, businessId, requested, this.publishing.ledgerLaneEnabled);
+      if (target.via === 'export') return { lane: 'export' };
+      const vendor = vendorForKind(target.kind);
+      // A ledger row whose kind this build does not know is not describable,
+      // and inventing a name for a system about to receive a client's money is
+      // worse than naming none.
+      return vendor === null ? undefined : { lane: 'ledger', vendor: vendor.label };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * [Read review] — renders exactly what will change and records both
    * `reviewedAt` and the hash of what was rendered. Idempotent by nature:
    * a second call returns the STORED summary and hash, and `reviewedAt`
@@ -457,8 +497,17 @@ export class ActionProposalsService {
       // empty one, and the executor refuses on approve.
       const workflowContext =
         row.kind === 'policy.activate' ? await readWorkflowForReview(db, payload as { workflowId?: unknown }) : undefined;
+      // ⚠ D50: WHICH EGRESS this release will use, read now and frozen into the
+      // render. Until 17 Sep 2026 the card said "for export" on every release,
+      // including one about to create a bill in the client's real books — see
+      // `RenderContext.release`. Read at FIRST REVIEW rather than at propose
+      // time because a connection can be made or revoked in between.
+      const releaseContext =
+        row.kind === 'publish.batch' ? await this.readReleaseLane(db, row.businessId, payload) : undefined;
       const context =
-        workflowContext !== undefined
+        releaseContext !== undefined
+          ? { release: releaseContext }
+          : workflowContext !== undefined
           ? { workflow: workflowContext }
           : row.kind === 'document.update-coding'
           ? {

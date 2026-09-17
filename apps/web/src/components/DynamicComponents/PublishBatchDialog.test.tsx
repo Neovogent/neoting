@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { NtProblemError } from '@neoting/contracts';
@@ -87,11 +88,21 @@ function doc(over: Partial<Document> = {}): Document {
   };
 }
 
+/**
+ * ⚠ The provider is not decoration. Since 17 Sep 2026 this dialog READS the
+ * client's connections (`useIntegrations`) to decide whether an approved
+ * release produces a VT import file or creates entries in the client's real
+ * books — it said "for export" over a live QuickBooks connection until then.
+ * With no connection loaded the query resolves to nothing, which is the export
+ * lane, which is what every assertion below already expects.
+ */
 function open(selection: Document[]) {
   return render(
-    <AppIntlProvider>
-      <PublishBatchDialog selection={selection} onClose={vi.fn()} />
-    </AppIntlProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <AppIntlProvider>
+        <PublishBatchDialog selection={selection} onClose={vi.fn()} />
+      </AppIntlProvider>
+    </QueryClientProvider>,
   );
 }
 

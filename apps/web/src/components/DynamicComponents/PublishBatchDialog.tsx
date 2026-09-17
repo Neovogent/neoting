@@ -4,6 +4,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
 import { holdsReleaseAuthority } from '../../api/auth';
+import { liveLedger, useIntegrations } from '../../api/integrations';
 import { currency } from '../../lib/resolver';
 import { commonActions } from '../../i18n/common';
 import type { Document } from '../../lib/types';
@@ -102,6 +103,21 @@ const m = defineMessages({
     id: 'publish.batchDialog.title',
     defaultMessage: '{count, plural, one {Release # item for export} other {Release # items for export}}',
   },
+  /**
+   * ⚠ The LEDGER lane's title (D50). The client has a live connection, so an
+   * approved release creates entries in their real books — the export sentences
+   * below are false for them, and saying them here is how a super admin ends up
+   * approving an act described as its own opposite.
+   */
+  titleLedger: {
+    id: 'publish.batchDialog.titleLedger',
+    defaultMessage: '{count, plural, one {Release # item into {vendor}} other {Release # items into {vendor}}}',
+  },
+  meaningLedger: {
+    id: 'publish.batchDialog.meaningLedger',
+    defaultMessage:
+      'Approving creates these entries in this client’s {vendor} books, with the source document attached. This changes their books — it is not a file you import yourself.',
+  },
   subtitle: { id: 'publish.batchDialog.subtitle', defaultMessage: '{client} · Ready costs and sales' },
   // ⚠ D42, stated on the surface that stages the release rather than only on
   // the one that consumes it. This dialog is where a person decides to make
@@ -194,6 +210,22 @@ const m = defineMessages({
       'An approved batch leaves its documents Published — approved and released for export. The file itself is built on the Export screen: pick {client} and the period, and download it there. Nothing leaves Neo Accounting on its own.',
   },
   openExport: { id: 'publish.batchDialog.openExport', defaultMessage: 'Open the Export screen' },
+  /**
+   * ⚠ The LEDGER lane's version of the block above. Same rule — true whether
+   * the batch was approved or cancelled, so it says where the entries GO, never
+   * what has happened. The Export screen is deliberately not offered: on this
+   * lane the entries are in the client's books, and pointing at a file would
+   * send an accountant to import a second copy of what was just created.
+   */
+  ledgerTitle: {
+    id: 'publish.batchDialog.ledgerTitle',
+    defaultMessage: 'Where these entries go',
+  },
+  ledgerDetail: {
+    id: 'publish.batchDialog.ledgerDetail',
+    defaultMessage:
+      'An approved batch is created in {client}’s {vendor} books, each entry carrying its source document, and the reference {vendor} gives back is recorded against it. A document stays Ready until {vendor} confirms — nothing here claims their books moved before they did.',
+  },
   nextBatch: { id: 'publish.batchDialog.nextBatch', defaultMessage: 'Next client ({remaining} left)' },
 });
 
@@ -243,6 +275,17 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
       notReadyDocs: selection.filter((d) => d.status !== 'ready' && d.status !== 'published'),
     };
   }, [selection]);
+
+  // ⚠ WHICH EGRESS this batch will use. `resolveTarget` on the server is the
+  // authority and the review card is rendered from ITS answer; this dialog is
+  // the screen immediately before that card, and the two must agree.
+  //
+  // ⚠ Above the "nothing to release" early return, and keyed off `batches`
+  // rather than the selected batch, because hooks run in the same order on
+  // every render — placing it lower reads better and is a rules-of-hooks error.
+  const businessId = batches[index]?.businessId ?? '';
+  const { integrations } = useIntegrations({ enabled: businessId !== '', businessId });
+  const ledger = useMemo(() => liveLedger(integrations), [integrations]);
 
   const batch = batches[index];
 
@@ -351,7 +394,9 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
           </div>
           <div className="min-w-0">
             <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">
-              {intl.formatMessage(m.title, { count: eligible.length })}
+              {ledger === null
+                ? intl.formatMessage(m.title, { count: eligible.length })
+                : intl.formatMessage(m.titleLedger, { count: eligible.length, vendor: ledger.label })}
             </h3>
             <p className="text-[12px] text-zinc-500 mt-1 font-semibold">
               {intl.formatMessage(m.subtitle, { client: clientName })}
@@ -360,7 +405,11 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
         </div>
 
         <div className="p-6 space-y-5">
-          <p className="text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(m.meaning)}</p>
+          <p className="text-[12px] text-zinc-500 leading-relaxed">
+            {ledger === null
+              ? intl.formatMessage(m.meaning)
+              : intl.formatMessage(m.meaningLedger, { vendor: ledger.label })}
+          </p>
 
           {batches.length > 1 && (
             <p className="text-[12px] text-zinc-500">
@@ -435,18 +484,24 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
 
           {decided && (
             <div className="flex flex-col gap-3 border border-white/10 bg-raised/40 rounded-[24px] p-5">
-              <p className="text-sm font-bold text-white">{intl.formatMessage(m.exportTitle)}</p>
+              <p className="text-sm font-bold text-white">
+                {intl.formatMessage(ledger === null ? m.exportTitle : m.ledgerTitle)}
+              </p>
               <p className="text-[12.5px] text-zinc-400 leading-relaxed">
-                {intl.formatMessage(m.exportDetail, { client: clientName })}
+                {ledger === null
+                  ? intl.formatMessage(m.exportDetail, { client: clientName })
+                  : intl.formatMessage(m.ledgerDetail, { client: clientName, vendor: ledger.label })}
               </p>
               <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={goToExport}
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover rounded-full transition-colors"
-                >
-                  <Download size={16} />
-                  {intl.formatMessage(m.openExport)}
-                </button>
+                {ledger === null && (
+                  <button
+                    onClick={goToExport}
+                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover rounded-full transition-colors"
+                  >
+                    <Download size={16} />
+                    {intl.formatMessage(m.openExport)}
+                  </button>
+                )}
                 {remaining > 0 && (
                   <button
                     onClick={() => {

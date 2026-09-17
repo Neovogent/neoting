@@ -729,7 +729,28 @@ function minimumRefusal(refusals: readonly PublishItemRefusal[]): string {
  * seeded `XERO` rows since long before D42, and they must not be silently
  * adopted by a release.
  */
-async function resolveTarget(
+/**
+ * ⚠ **Exported since 17 Sep 2026 so the REVIEW CARD can name the lane.**
+ *
+ * The card a super admin echoes used to say *"released for export … nothing
+ * here reaches accounting software"* on every release, including one that was
+ * about to create a bill in the client's books. That is the D42 vocabulary rule
+ * inverted: the export arm must never say *posted*, and the ledger arm must
+ * never say *file*.
+ *
+ * It is exported rather than re-implemented beside the renderer because two
+ * copies of "which lane is this" are two things that can disagree, and the more
+ * permissive one wins on the day it matters (`assert-can.ts`'s header, applied).
+ * The renderer's caller resolves it at FIRST REVIEW and freezes it, the way the
+ * correction advisory and the workflow are frozen — a connection can be made or
+ * revoked between propose and approve, so propose time is the wrong moment to
+ * ask.
+ *
+ * ⚠ It still THROWS `ProposalExecutionRefused` for the states an execution must
+ * refuse. A renderer has no business refusing anything, so the review path
+ * catches and renders the neutral description instead.
+ */
+export async function resolveTarget(
   db: ScopedClient,
   businessId: string,
   requested: string | null,
@@ -829,7 +850,7 @@ function hasCredentials(tokenRef: string | null | undefined): boolean {
  * lane is permanent. This is a SECOND egress, and every reader of this type
  * should take the `export` arm as the default rather than the legacy one.
  */
-type ReleaseTarget =
+export type ReleaseTarget =
   | { readonly via: 'export'; readonly destination: ExportDestination | null }
   | { readonly via: 'ledger'; readonly integrationId: string; readonly kind: IntegrationKind };
 

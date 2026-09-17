@@ -43,6 +43,8 @@ export {
   computePublishBatchPayload,
   type ExportEntryPreviewer,
   type PublishGateway,
+  resolveTarget,
+  type ReleaseTarget,
 } from './proposals/publish-batch.js';
 export { type ChaseComposeConfig, CHASE_LINK_TTL_SECONDS, computeChaseSendPayload } from './proposals/compose-chase-send.js';
 // The creation-time half of bank.remove-statement (4 Sep 2026): the engine
