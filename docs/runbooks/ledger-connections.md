@@ -175,44 +175,60 @@ does not, and cannot until its app is changed.**
 | **FreeAgent** | ✅ reaches `login.sandbox.freeagent.com` — the SANDBOX host, so `LEDGER_SANDBOX=true` is doing its job |
 | **Xero** | ❌ **`Error: invalid_scope`** before any sign-in |
 
-### ⚠ Xero: the app is missing the two scopes the feature needs
+### Xero: it was our scope string, not Xero's settings — corrected 17 Sep 2026
 
-Probing each scope separately against `login.xero.com/identity/connect/authorize`
-with our own client id:
+`accounting.transactions` **does not exist for this app and never did.** Xero
+replaced the broad scopes with granular ones on **2 March 2026**; our app was
+created on 13 September 2026, so it was assigned the granular set only. The
+Configuration page confirms it — a read-only list with `accounting.invoices` on
+it and `accounting.transactions` absent. There is no toggle, because there is
+nothing to toggle.
 
-| Scope | Xero's answer |
+Xero's own mapping (`documentation/guides/oauth2/scopes`):
+
+| Retired | Replaced by |
 |---|---|
-| `openid` | ✅ granted |
-| `accounting.contacts` | ✅ granted |
-| `accounting.settings` | ✅ granted |
-| `accounting.attachments` | ✅ granted |
-| `app.connections` | ✅ granted |
-| `profile` | ❌ invalid_scope |
-| `email` | ❌ invalid_scope |
-| **`offline_access`** | ❌ **invalid_scope** |
-| **`accounting.transactions`** | ❌ **invalid_scope** |
+| `accounting.transactions` | `accounting.invoices` · `accounting.payments` · `accounting.banktransactions` · `accounting.manualjournals` |
 
-The last two are not cosmetic:
+We post ACCPAY **Invoices** and touch none of the other three, so
+`accounting.invoices` is the whole replacement. The requested set is now:
 
-- **`accounting.transactions`** is what lets us create a bill at all. Without
-  it there is no point connecting.
-- **`offline_access`** is what returns a refresh token. Without it a connection
-  dies thirty minutes after it is made and can never be renewed.
+```
+openid profile email offline_access
+accounting.invoices accounting.contacts accounting.settings.read accounting.attachments
+```
 
-⚠ `docs/research/ledger-api-build-reference.md` §1 states that
-`accounting.transactions` is in the granted list. **That is not what Xero
-answers today**, and the reference doc should be corrected once the app is.
+Two things changed beyond the swap:
 
-**The fix is in the Xero portal, not in this codebase**
-(`developer.xero.com/app/manage` → the app → Configuration → scopes): enable
-`accounting.transactions` and `offline_access`. The scope set this product
-requests is the correct one for what it does, so it is deliberately NOT narrowed
-to what happens to be granted — a connection that cannot post a bill or renew
-itself would be worse than no connection, and would fail later and less
-legibly.
+- **`accounting.settings.read` rather than `accounting.settings`.** Accounts and
+  TaxRates are the only things we want and we only ever GET them.
+- **`app.connections` is still NOT requested**, and must not be. It is a
+  **non-tenanted** scope, valid only with the client-credentials grant — asking
+  for it in an authorisation-code flow turns a working consent back into
+  `invalid_scope`. `resolveOrgRef` reads `/connections` with an ordinary
+  tenanted token.
 
-Until then, pressing Connect on Xero sends a practice to a Xero error page. That
-is Xero refusing our request, not our code failing.
+#### ⚠ The 15 Sep probe in this runbook was wrong, and here is the trap
+
+It probed each scope **alone** and recorded `profile`, `email` and
+`offline_access` as `invalid_scope` alongside `accounting.transactions`. Three of
+those four readings were artefacts of the method: `profile`, `email` and
+`offline_access` are OIDC modifiers that are only valid **in the presence of
+`openid`**, so a solo probe of any of them is malformed by construction. Only
+`accounting.transactions` was genuinely refused.
+
+The cost of believing it was real: a day spent on a portal setting that does not
+exist, and a plan to ask the owner to change something he could not have changed.
+**Probe a scope set the way the product actually sends it**, never scope by
+scope.
+
+⚠ `docs/research/ledger-api-build-reference.md` §1 still says
+`accounting.transactions` is granted, and it is corrected in place. Note that
+`docs/research/accounting-platform-api-access-guide.md` § said the right
+thing **before the build started** — "Neoting will be a new app →
+`accounting.transactions` is not what you should ask for", with the
+`accounting.invoices` mapping in a table. The research was read, and this one
+line of it was not carried into the code.
 
 ## Step 5 — prove it, per vendor
 

@@ -13,7 +13,7 @@ const TOKENS: LedgerTokens = {
   refreshToken: 'refresh-1',
   accessExpiresAt: '2026-09-15T12:00:00.000Z',
   refreshExpiresAt: '2026-11-14T12:00:00.000Z',
-  scope: 'accounting.transactions accounting.attachments',
+  scope: 'accounting.invoices accounting.attachments',
 };
 
 describe('the sealing key', () => {
