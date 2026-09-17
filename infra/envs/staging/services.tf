@@ -312,14 +312,34 @@ locals {
     # environment variable can.
     { name = "LEDGER_SANDBOX", value = "true" },
 
-    # ⚠ THESE MUST MATCH EACH VENDOR'S REGISTRATION BYTE FOR BYTE, and all four
-    # are registered against this host. A local run needs
-    # http://localhost:3000/... added at the vendor's portal as a SECOND
-    # address; it is not something a config change here can substitute for.
-    { name = "XERO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/xero/callback" },
-    { name = "QBO_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/quickbooks/callback" },
-    { name = "SAGE_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/sage/callback" },
-    { name = "FREEAGENT_REDIRECT_URI", value = "https://${local.edge_api_host}/v1/integrations/freeagent/callback" },
+    # ⚠ THESE MUST MATCH EACH VENDOR'S REGISTRATION BYTE FOR BYTE, and a local
+    # run needs http://localhost:3000/... added at the vendor's portal as a
+    # SECOND address; it is not something a config change here can substitute
+    # for.
+    #
+    # ⚠ **THEY MUST ALSO BE ON `local.app_host`, NOT `local.edge_api_host`, and
+    # that is a correctness requirement rather than a preference** (17 Sep 2026).
+    # The callback is the ONE API route a vendor's browser redirect enters, and
+    # `LedgerConnectionsController.callback` calls `context.require()` — it
+    # needs the practice's session. That session cookie is set with NO `domain`
+    # (`auth-tenancy/auth.controller.ts`), so it is HOST-ONLY, and the web app
+    # calls the API same-origin (`VITE_API_BASE_URL` is deliberately unset in
+    # deploy-web.yml) — so the cookie lives on `neoacc.neovogent.com` and on
+    # nothing else.
+    #
+    # Pointed at `api.neoting.neovogent.com` the browser therefore arrives
+    # carrying no cookie at all, and EVERY vendor's consent ends on
+    # `?connectionError=Authentication+required` — measured on QuickBooks, 17
+    # Sep 2026, after a correctly formed request and a completed sign-in.
+    # `SameSite` is a red herring: `lax` already permits a top-level GET, and
+    # a host-only cookie is not sent to a different host at any SameSite value.
+    #
+    # Both names resolve to the same API behind CloudFront, so moving the
+    # callback costs one re-registration per portal and no routing change.
+    { name = "XERO_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/xero/callback" },
+    { name = "QBO_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/quickbooks/callback" },
+    { name = "SAGE_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/sage/callback" },
+    { name = "FREEAGENT_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/freeagent/callback" },
 
     { name = "SMS_SENDER", value = "aws" },
     # The dedicated UK number every chase and sign-in code originates from.
@@ -349,7 +369,7 @@ locals {
     # way to know which of our hostnames are ours. app.neoting.neovogent.com
     # stays an alias on the distribution so links already sent keep resolving —
     # it is simply not what new ones are minted on.
-    { name = "APP_ORIGIN", value = "https://neoacc.neovogent.com" },
+    { name = "APP_ORIGIN", value = "https://${local.app_host}" },
     { name = "OTP_MODE", value = "totp" },
     # ⚠ SWITCHED ON 15 Sep 2026, on the owner's instruction. Landed at `demo`
     # first so a wrong secret KEY NAME would surface as a task that fails to

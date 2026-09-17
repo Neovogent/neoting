@@ -230,6 +230,34 @@ thing **before the build started** — "Neoting will be a new app →
 `accounting.invoices` mapping in a table. The research was read, and this one
 line of it was not carried into the code.
 
+### ⚠ The redirect URI must be on the APP's host, not the API's — 17 Sep 2026
+
+Every vendor's consent ended on `?connectionError=Authentication+required`,
+after a correctly formed request and a completed vendor sign-in. Nothing about
+the OAuth was wrong; the callback simply could not see who was connecting.
+
+| | |
+|---|---|
+| The callback needs a session | `LedgerConnectionsController.callback` calls `context.require()` |
+| The session cookie is **host-only** | set with no `domain` in `auth-tenancy/auth.controller.ts` |
+| It lives on the APP host | the web app calls the API same-origin — `VITE_API_BASE_URL` is unset in `deploy-web.yml` |
+| The callbacks pointed at the API host | `api.neoting.neovogent.com`, a different host |
+| So the browser arrived with no cookie | and `context.require()` refused, correctly |
+
+⚠ **Do not go looking at `SameSite`.** `lax` already permits a top-level GET
+navigation, and a host-only cookie is not sent to a different host at ANY
+`SameSite` value. That is a wrong lead this failure invites.
+
+Both hostnames serve the same API behind CloudFront, so the whole fix is:
+
+1. `local.app_host` in `infra/envs/staging/edge.tf`; `APP_ORIGIN` and the four
+   `*_REDIRECT_URI` values are built from it.
+2. Register `https://neoacc.neovogent.com/v1/integrations/<vendor>/callback` at
+   each of the four portals. **ADD it rather than replacing** the old one where
+   the portal allows several — a byte-for-byte mismatch fails at the vendor,
+   and keeping both means the task definition and the portals need not land in
+   the same second.
+
 ## Step 5 — prove it, per vendor
 
 For each of Xero, QuickBooks, Sage and FreeAgent:
