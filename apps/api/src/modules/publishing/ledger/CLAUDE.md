@@ -145,12 +145,23 @@ credentials in `/neoting/staging/ledger`, all four offered on the client
 Connections tab. The boot gates passed, which is what proves the sealing key and
 the applications are genuinely valid rather than merely present.
 
-⚠ **Three of four reach their real consent screen; Xero does not.** Xero's app
-is not granted `accounting.transactions` (create a bill) or `offline_access`
-(get a refresh token), and answers `invalid_scope` before any sign-in. The fix
-is in Xero's portal, not here — the scope set this module requests is the
-correct one, and narrowing it would buy a connection that cannot post or renew.
-Measured scope by scope in `docs/runbooks/ledger-connections.md`.
+✅ **All four reach their real consent screen since 17 Sep 2026.** Xero's
+`invalid_scope` was OUR scope string: `accounting.transactions` is a BROAD scope,
+retired for every app created after 2 March 2026, and this app was created on
+13 September. Xero's granular replacement for creating a bill is
+**`accounting.invoices`**; `vendors.ts` now asks for that.
+
+⚠ **Two traps left behind by getting that wrong**, both recorded in
+`docs/runbooks/ledger-connections.md`:
+
+1. **Never probe Xero scopes one at a time.** `offline_access`, `profile` and
+   `email` are OIDC modifiers valid only alongside `openid`, so a solo probe of
+   any of them answers `invalid_scope` and means nothing. The 15 Sep probe read
+   three false refusals that way and cost a day aimed at a portal setting that
+   does not exist.
+2. **`app.connections` must stay OUT of the request** even though it is granted
+   and `resolveOrgRef` calls that endpoint. It is non-tenanted — client
+   credentials only — and adding it re-breaks the consent.
 
 ⚠ **No transaction has appeared in any vendor's own screen yet.** All four stop
 at the vendor's sign-in for want of a test company to consent as. That is the
@@ -173,10 +184,11 @@ infra PR lands them in the task definitions with REAL values.
 
 ## TODO
 
-- [ ] **Xero: enable `accounting.transactions` and `offline_access` on the app.**
-      Blocks Xero entirely; nothing in this codebase can work around it, and
-      `docs/research/ledger-api-build-reference.md` §1 is wrong about the
-      current grant.
+- [x] **DONE, 17 Sep 2026 — Xero's `invalid_scope`.** It was not a portal
+      grant. `accounting.transactions` → `accounting.invoices` in `vendors.ts`;
+      both research docs corrected. ⚠ `accounting-platform-api-access-guide.md`
+      had the right mapping in a table BEFORE the build and it was not carried
+      into the code — the research was read, that line was not applied.
 - [ ] The four vendor screenshots — the acceptance evidence the brief asks for.
       Blocked on a test company per vendor to consent as, not on code.
 - [ ] The infra PR: a `ledger` secret group + the four redirect URIs and

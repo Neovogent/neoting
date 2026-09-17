@@ -73,9 +73,29 @@ export const VENDORS: Readonly<Record<VendorSlug, VendorConfig>> = {
    * only safe target. `LEDGER_SANDBOX=true` cannot make Xero safe, so the
    * connection screen says so instead.
    *
-   * ⚠ Granular scopes only: our app was created on 13 September 2026, after
-   * Xero's 2 March 2026 cutover. `accounting.attachments` is granted, which is
-   * what makes D43 reachable through the API at all.
+   * ⚠ **GRANULAR SCOPES ONLY, and `accounting.transactions` IS NOT ONE.** Our
+   * app was created on 13 September 2026, after Xero's 2 March 2026 cutover, so
+   * the broad scopes were never assigned to it — the Configuration page lists
+   * the granular set and nothing else. Requesting the broad name is answered
+   * `invalid_scope` on the authorize URL, BEFORE any sign-in, which reads like a
+   * bad client id and is not one. Measured against the live app 17 Sep 2026.
+   *
+   * The mapping Xero publishes (documentation/guides/oauth2/scopes):
+   * `accounting.transactions` → `accounting.invoices` + `.payments` +
+   * `.banktransactions` + `.manualjournals`. We post ACCPAY **Invoices** and
+   * touch none of the other three, so `accounting.invoices` is the whole of it.
+   *
+   * ⚠ **`app.connections` must NOT be requested here** even though it is on the
+   * app's granted list and `resolveOrgRef` calls that endpoint. It is a
+   * NON-TENANTED scope, usable only with the client-credentials grant; asking
+   * for it in an authorisation-code flow is how you turn a working consent back
+   * into `invalid_scope`. A normal tenanted access token reads `/connections`.
+   *
+   * `accounting.settings.read` rather than `accounting.settings`: Accounts and
+   * TaxRates are the only things we want from it and we only ever GET them.
+   *
+   * ✅ `accounting.attachments` is granted, which is what makes D43 reachable
+   * through the API at all.
    */
   xero: {
     kind: 'XERO',
@@ -84,7 +104,7 @@ export const VENDORS: Readonly<Record<VendorSlug, VendorConfig>> = {
     authorizeUrl: 'https://login.xero.com/identity/connect/authorize',
     tokenUrl: 'https://identity.xero.com/connect/token',
     scope:
-      'openid profile email offline_access accounting.transactions accounting.contacts accounting.settings accounting.attachments',
+      'openid profile email offline_access accounting.invoices accounting.contacts accounting.settings.read accounting.attachments',
     apiBase: 'https://api.xero.com/api.xro/2.0',
     tokenEndpointAuth: 'basic',
     refreshRotates: true,
