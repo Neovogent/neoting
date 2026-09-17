@@ -7,6 +7,11 @@ import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
 import { AppException } from '../../../common/problem/problem.js';
 import { type BusinessTypeProfile, readBusinessProfile } from '../../clients-team-settings/index.js';
+// ⚠ A connected client codes against the VENDOR'S accounts, so this module now
+// reads the ledger lane's synced list. New edge, and a safe one: `publishing`
+// does not import this module (its `reference-sync.ts` only NAMES this file in
+// a comment), so nothing closes a cycle.
+import { isLedgerKind, LEDGER_KINDS, LEDGER_LIST_KINDS } from '../../publishing/index.js';
 import { ChartAccountSchema } from './account.js';
 import { type ChartBasis, type ChartCategory, type ChartOfAccounts, chartOfAccountsFor, toCategories } from './chart-of-accounts.js';
 import { BUSINESS_PROFILE_IDS } from './profiles.js';
@@ -98,7 +103,26 @@ export type ChartSource =
   /** Written by this call. */
   | 'SEEDED'
   /** Derived and returned, but NOT written: this client has no integration row to hang it on. */
-  | 'UNSTORED';
+  | 'UNSTORED'
+  /**
+   * ⚠ **The client is CONNECTED, so the categories are the VENDOR'S OWN
+   * ACCOUNTS** — read from the ledger lane's `reference_syncs` row, not derived
+   * and not the accountant's stored chart.
+   *
+   * Before this existed the two vocabularies never met. Neoting coded to its
+   * own derived chart (`COS_FOOD_AND_DRINK`); the vendor had its own accounts
+   * with its own names; `matchAccount` compared one to the other and found
+   * nothing, so **every publish to every one of the four refused** with *"does
+   * not match any account in this client's chart of accounts"*. Measured on
+   * QuickBooks Sandbox Company GB, 17 Sep 2026 — a correctly coded, correctly
+   * read £482.40 Bidfood invoice that could not be published by anyone.
+   *
+   * The fix is not a mapping table between two charts. It is to stop having
+   * two: once a client's books are in Xero/QuickBooks/Sage/FreeAgent, THOSE
+   * accounts are the client's chart, and coding to anything else is coding to a
+   * fiction. What the market does, arrived at by necessity.
+   */
+  | 'LEDGER';
 
 export interface ClientChartOfAccounts extends ChartOfAccounts {
   readonly businessId: string;
@@ -192,6 +216,15 @@ export class ChartOfAccountsService {
     // whether anything had read the chart before.
     const profile = readBusinessProfile(business.contextQuestionnaire);
 
+    // ⚠ A LIVE LEDGER CONNECTION WINS, and it wins over the accountant's stored
+    // chart too. See `ChartSource['LEDGER']` for why this is a replacement
+    // rather than a mapping. It is read FIRST because every path below it
+    // answers a question this one has already settled.
+    const fromLedger = await readLedgerAccounts(db, businessId);
+    if (fromLedger !== null) {
+      return { ...derive(profile, businessId), categories: fromLedger, source: 'LEDGER' };
+    }
+
     const integration = await db.integration.findFirst({
       where: { businessId },
       orderBy: { createdAt: 'asc' },
@@ -248,6 +281,69 @@ export class ChartOfAccountsService {
     }
   }
 }
+
+/**
+ * The vendor's own accounts as this client's coding categories, or null when
+ * there is no live connection to read them from.
+ *
+ * ⚠ **The `code` is the vendor's code when it HAS one and its id otherwise.**
+ * QuickBooks' `AcctNum` is optional and most accounts carry none, so a
+ * code-only rule would drop most of a QuickBooks chart on the floor. The id is
+ * always present and always exact, and `matchAccount` resolves both — so
+ * whatever an accountant picks here is findable at publish time by
+ * construction, which is the property the old two-vocabulary arrangement
+ * could not offer at all.
+ *
+ * ⚠ **An EMPTY synced list is treated as "no connection", not as "no
+ * accounts".** A connection whose first sync has not run yet would otherwise
+ * leave the client with a chart of nothing and every document uncodeable —
+ * failing worse than the problem being fixed. They fall through to the derived
+ * chart until the sync lands.
+ *
+ * ⚠ Inactive accounts are dropped: a client's archived nominal is not
+ * something to start coding new documents to.
+ */
+async function readLedgerAccounts(db: ScopedClient, businessId: string): Promise<ChartCategory[] | null> {
+  // ⚠ `findFirst` with the whole predicate in the WHERE, not findMany + filter.
+  // The live connection is the one the release lane would adopt: a ledger kind,
+  // switched on, holding sealed credentials — a vendor row without them is
+  // never adopted by a publish (`publish-batch.ts`'s `hasCredentials`), so a
+  // chart must not be built from one either.
+  const live = await db.integration.findFirst({
+    where: { businessId, isActive: true, kind: { in: [...LEDGER_KINDS] }, tokenRef: { not: null } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, kind: true, tokenRef: true },
+  });
+  if (live === null || !isLedgerKind(live.kind) || live.tokenRef === null || live.tokenRef === '') return null;
+
+  const row = await db.referenceSync.findUnique({
+    where: { integrationId_listKind: { integrationId: live.id, listKind: LEDGER_LIST_KINDS.accounts } },
+    select: { payload: true },
+  });
+  const parsed = LedgerAccountsSchema.safeParse(row?.payload ?? null);
+  if (!parsed.success) return null;
+
+  const categories = parsed.data.items
+    .filter((item) => item.active !== false)
+    .map((item) => ({ code: item.code !== null && item.code.trim() !== '' ? item.code.trim() : item.id, name: item.name }));
+  return categories.length === 0 ? null : categories;
+}
+
+/**
+ * ⚠ Parsed, never trusted. This payload was written from a VENDOR'S response,
+ * and `apps/api/CLAUDE.md`'s rule is Zod at every boundary — a stored blob that
+ * came off somebody else's API is a boundary however long ago it landed.
+ */
+const LedgerAccountsSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().min(1),
+      code: z.string().nullable().optional().transform((value) => value ?? null),
+      name: z.string().min(1),
+      active: z.boolean().optional(),
+    }),
+  ),
+});
 
 /** A parsed business-type profile → a chart. The `null` path is documented in `chart-of-accounts.ts`. */
 function derive(profile: BusinessTypeProfile | null, businessId: string): Omit<ClientChartOfAccounts, 'source'> {
