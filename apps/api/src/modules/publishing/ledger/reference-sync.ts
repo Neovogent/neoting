@@ -58,6 +58,20 @@ export const ReferenceItemSchema = z.object({
   name: z.string(),
   /** Tax rates only: the percentage as an integer in basis points — 20% is 2000. No floats. */
   rateBasisPoints: z.number().int().nullable().optional(),
+  /**
+   * ⚠ **Tax codes only: this code is a REVERSE CHARGE**, and must never be put
+   * on an ordinary domestic purchase.
+   *
+   * Found in QuickBooks' books on 18 Sep 2026. A Plymouth plumbing merchant's
+   * £86.40 invoice was posted against **`20.0% ECG`** — EC Goods — because the
+   * matcher picked a code by its RATE and QuickBooks UK has several at 20%.
+   * ECG posts +20% and −20%, nets to zero VAT, and would put a wrong figure on
+   * the client's VAT return while looking entirely ordinary on the bill.
+   *
+   * It is a structural fact, not a reading of the name: a reverse-charge code
+   * carries MORE THAN ONE rate detail, and they cancel.
+   */
+  reverseCharge: z.boolean().optional(),
   /** Whether the vendor still offers this entry for new transactions. */
   active: z.boolean().optional(),
 });
@@ -264,7 +278,19 @@ export function documentRateBasisPoints(totalPence: number, taxPence: number): n
  * are different taxes rather than different roundings.
  */
 export function matchTaxRate(items: readonly ReferenceItem[], basisPoints: number): ReferenceItem | null {
-  const usable = items.filter((item) => item.active !== false && item.rateBasisPoints !== null);
+  const usable = items.filter(
+    (item) =>
+      item.active !== false &&
+      item.rateBasisPoints !== null &&
+      item.rateBasisPoints !== undefined &&
+      // ⚠ **A reverse-charge code is never selected here.** See
+      // `ReferenceItem.reverseCharge`: an EC-goods code nets to zero, so it
+      // matches a zero-rated document perfectly and is still the wrong answer
+      // for a domestic purchase. Reverse charge is a fact about the TRANSACTION
+      // that this product does not yet establish, so it is refused rather than
+      // guessed — the accountant sets it in the vendor until it does.
+      item.reverseCharge !== true,
+  );
   return usable.find((item) => Math.abs((item.rateBasisPoints ?? -1) - basisPoints) <= 1) ?? null;
 }
 
