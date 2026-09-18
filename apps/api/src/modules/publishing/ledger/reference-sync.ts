@@ -171,6 +171,47 @@ export function matchAccount(items: readonly ReferenceItem[], categoryCode: stri
   return byName ?? null;
 }
 
+/**
+ * The VAT rate this document actually carries, in basis points.
+ *
+ * ⚠ **Derived from the paper, never assumed.** 2000 is the standard UK rate and
+ * also the wrong answer for most of a food wholesaler's delivery, which is
+ * largely zero-rated — posting 20% on it would put VAT in a client's books that
+ * they never paid and that nothing downstream would flag.
+ *
+ * Integer arithmetic throughout: a rate is not money, but it is computed FROM
+ * money, and `tax * 10000 / net` in integers cannot drift the way a float
+ * division would. Net is the gross minus the tax, because `totalPence` is the
+ * GROSS figure a human read off the document and approved.
+ *
+ * A zero or negative net means there is nothing to charge VAT on, and the
+ * honest rate is zero rather than a division nobody can defend.
+ */
+export function documentRateBasisPoints(totalPence: number, taxPence: number): number {
+  const net = totalPence - taxPence;
+  if (net <= 0) return 0;
+  return Math.round((taxPence * 10_000) / net);
+}
+
+/**
+ * The vendor's tax code for a rate, or null when they publish nothing that
+ * matches.
+ *
+ * ⚠ **Null is a REFUSAL, not a licence to send the standard rate.** The caller
+ * fails the item with a sentence naming the rate it wanted; a vendor that
+ * offers no zero-rate code is a real situation and guessing past it writes a
+ * VAT figure into somebody's books on our authority.
+ *
+ * ⚠ **The tolerance is 1 basis point, and it is not slack** — it absorbs the
+ * rounding in `documentRateBasisPoints` (a £482.40 gross at 20% lands a point
+ * either side depending on the pence), and nothing wider, because 1750 and 2000
+ * are different taxes rather than different roundings.
+ */
+export function matchTaxRate(items: readonly ReferenceItem[], basisPoints: number): ReferenceItem | null {
+  const usable = items.filter((item) => item.active !== false && item.rateBasisPoints !== null);
+  return usable.find((item) => Math.abs((item.rateBasisPoints ?? -1) - basisPoints) <= 1) ?? null;
+}
+
 /** Find a supplier the client already has, so publishing does not create a second one. */
 export function matchSupplier(items: readonly ReferenceItem[], supplierName: string): ReferenceItem | null {
   const wanted = normalise(supplierName);
