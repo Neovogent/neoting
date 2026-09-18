@@ -27,7 +27,19 @@ export interface VendorLedger {
   resolveOrgRef(api: VendorApi, callbackParams: Readonly<Record<string, string>>): Promise<string | null>;
 
   /** Pull the client's own lists. Called at connect and by the sync schedule. */
-  fetchLists(api: VendorApi, connection: ResolvedConnection, since: Date | null): Promise<ReferenceLists>;
+  /**
+   * ⚠ **Say whether the answer is a DELTA.** A vendor that can return only what
+   * changed since `since` (QuickBooks' Change Data Capture) must set
+   * `delta: true`, because the writer REPLACES a full list and MERGES a delta —
+   * and replacing with a delta is what emptied a live client's chart of
+   * accounts on 18 Sep 2026. Omitted means the whole list, which is what the
+   * other three always return.
+   */
+  fetchLists(
+    api: VendorApi,
+    connection: ResolvedConnection,
+    since: Date | null,
+  ): Promise<{ lists: ReferenceLists; delta?: boolean }>;
 
   /** Post one bill with its receipt. A per-item failure is a RESULT, never a throw. */
   publish(context: PublishContext): Promise<LedgerPublishResult>;

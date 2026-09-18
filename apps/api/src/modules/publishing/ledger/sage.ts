@@ -105,7 +105,8 @@ export const sageLedger: VendorLedger = {
       api.get(itemsOf(BankAccountSchema), '/bank_accounts'),
     ]);
 
-    return {
+    // The whole list every time — no delta protocol on this platform.
+    return { lists: {
       [LEDGER_LIST_KINDS.accounts]: (accounts.$items ?? []).map((account) => ({
         id: account.id,
         code: account.nominal_code === undefined ? null : String(account.nominal_code),
@@ -131,7 +132,7 @@ export const sageLedger: VendorLedger = {
         name: account.displayed_as ?? account.id,
         active: true,
       })),
-    };
+    } };
   },
 
   async publish(context) {

@@ -7,7 +7,7 @@ import {
   penceToDecimalString,
   penceToWireNumber,
 } from './ledger-money.js';
-import { documentRateBasisPoints, matchTaxRate } from './reference-sync.js';
+import { documentRateBasisPoints, matchTaxRate, mergeItems } from './reference-sync.js';
 
 describe('outbound — pence to the wire', () => {
   it('writes two decimal places, always', () => {
@@ -126,5 +126,42 @@ describe('tax rate derivation', () => {
     expect(matchTaxRate(codes, 2001)?.id).toBe('4');
     expect(matchTaxRate(codes, 1999)?.id).toBe('4');
     expect(matchTaxRate(codes, 1900)).toBeNull();
+  });
+});
+
+/**
+ * ⚠ **The regression guard for the worst bug this lane has produced.**
+ *
+ * QuickBooks' Change Data Capture returns what MOVED since the last sync. The
+ * writer replaced the stored list with it, so a manual Sync on a live
+ * connection — 0 accounts changed, 2 suppliers, 0 tax codes — wrote exactly
+ * that and **76 accounts became 0**. The client's chart of accounts ceased to
+ * exist, behind a 200 and a green "OK" on the connection card.
+ */
+describe('a delta must never replace a list', () => {
+  const stored = [
+    { id: '1', code: null, name: 'Purchases', active: true },
+    { id: '2', code: null, name: 'Repair and maintenance', active: true },
+    { id: '3', code: null, name: 'Rent', active: true },
+  ];
+
+  test('an EMPTY delta leaves every stored row alone', () => {
+    expect(mergeItems(stored, [])).toHaveLength(3);
+  });
+
+  test('a delta updates what it names and keeps what it does not', () => {
+    const merged = mergeItems(stored, [{ id: '2', code: null, name: 'Repairs', active: true }]);
+    expect(merged).toHaveLength(3);
+    expect(merged.find((item) => item.id === '2')?.name).toBe('Repairs');
+    expect(merged.find((item) => item.id === '3')?.name).toBe('Rent');
+  });
+
+  test('a delta adds rows the stored list has never seen', () => {
+    const merged = mergeItems(stored, [{ id: '9', code: null, name: 'Insurance', active: true }]);
+    expect(merged).toHaveLength(4);
+  });
+
+  test('nothing stored means the incoming list IS the list', () => {
+    expect(mergeItems([], stored)).toHaveLength(3);
   });
 });

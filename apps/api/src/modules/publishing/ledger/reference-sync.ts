@@ -97,19 +97,75 @@ export async function writeReferenceLists(
   integrationId: string,
   lists: ReferenceLists,
   cursor: string | null = null,
+  mode: ReferenceWriteMode = 'replace',
 ): Promise<number> {
   let written = 0;
   for (const [listKind, items] of Object.entries(lists)) {
     if (items === undefined) continue;
-    const payload = { version: REFERENCE_PAYLOAD_VERSION, items, cursor };
+    const merged = mode === 'merge' ? await mergeOver(db, integrationId, listKind as LedgerListKind, items) : items;
+    const payload = { version: REFERENCE_PAYLOAD_VERSION, items: merged, cursor };
     await db.referenceSync.upsert({
       where: { integrationId_listKind: { integrationId, listKind } },
       create: { integrationId, listKind, payload },
       update: { payload, syncedAt: new Date() },
     });
-    written += items.length;
+    written += merged.length;
   }
   return written;
+}
+
+/**
+ * ⚠ **`merge` exists because a DELTA overwrote a full list and emptied it.**
+ *
+ * QuickBooks' Change Data Capture returns only what MOVED since the last sync —
+ * which is the whole point of it, and Intuit meters reads — and this writer
+ * replaced the stored list with it. On 18 Sep 2026 a manual Sync on a live
+ * connection returned *0 accounts, 2 suppliers, 0 tax codes* and wrote exactly
+ * that: **76 accounts became 0**, and the client's chart of accounts ceased to
+ * exist. No error, a 200, and a green "OK" on the connection.
+ *
+ * A delta is merged over what is stored; a full list still replaces, because a
+ * full list is the whole truth and merging one would resurrect rows the vendor
+ * has stopped returning.
+ */
+export type ReferenceWriteMode = 'replace' | 'merge';
+
+/**
+ * Stored items with the incoming ones written over them, keyed by vendor id.
+ *
+ * ⚠ **A row the delta does not mention SURVIVES.** That is the entire point;
+ * the alternative is the bug this exists to close.
+ *
+ * ⚠ It cannot see DELETIONS, and that is a known and deliberate shortfall: a
+ * merge keeps an account the client has since archived, so it stays codeable
+ * until the next full sync. That is a smaller wrong than deleting a client's
+ * whole chart, and it is why `syncIntegration` still forces a full read when
+ * the stored list is empty.
+ */
+async function mergeOver(
+  db: ScopedClient,
+  integrationId: string,
+  listKind: LedgerListKind,
+  incoming: readonly ReferenceItem[],
+): Promise<readonly ReferenceItem[]> {
+  const stored = await readReferenceList(db, integrationId, listKind);
+  return mergeItems(stored?.items ?? [], incoming);
+}
+
+/**
+ * The merge itself, pure so it can be tested without a database.
+ *
+ * Nothing stored means the incoming list IS the list. Otherwise every stored
+ * row survives unless the delta names it.
+ */
+export function mergeItems(
+  stored: readonly ReferenceItem[],
+  incoming: readonly ReferenceItem[],
+): readonly ReferenceItem[] {
+  if (stored.length === 0) return incoming;
+  const byId = new Map(stored.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, item);
+  return [...byId.values()];
 }
 
 /**

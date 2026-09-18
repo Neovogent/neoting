@@ -118,7 +118,8 @@ export const xeroLedger: VendorLedger = {
       api.get(TaxRatesSchema, '/TaxRates'),
     ]);
 
-    return {
+    // The whole list every time — no delta protocol on this platform.
+    return { lists: {
       [LEDGER_LIST_KINDS.accounts]: (accounts.Accounts ?? []).map((account) => ({
         id: account.AccountID,
         code: account.Code ?? null,
@@ -145,7 +146,7 @@ export const xeroLedger: VendorLedger = {
       [LEDGER_LIST_KINDS.bankAccounts]: (accounts.Accounts ?? [])
         .filter((account) => account.Type === 'BANK')
         .map((account) => ({ id: account.AccountID, code: account.Code ?? null, name: account.Name, active: true })),
-    };
+    } };
   },
 
   async publish(context) {

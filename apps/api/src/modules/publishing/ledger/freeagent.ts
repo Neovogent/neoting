@@ -130,7 +130,8 @@ export const freeAgentLedger: VendorLedger = {
       active: true,
     }));
 
-    return {
+    // The whole list every time — no delta protocol on this platform.
+    return { lists: {
       [LEDGER_LIST_KINDS.accounts]: accounts,
       [LEDGER_LIST_KINDS.suppliers]: (contacts.contacts ?? []).map((contact) => ({
         id: contact.url,
@@ -148,7 +149,7 @@ export const freeAgentLedger: VendorLedger = {
       // line, not a code to pick. An empty list is the honest answer rather
       // than an invented one.
       [LEDGER_LIST_KINDS.taxRates]: [],
-    };
+    } };
   },
 
   async publish(context) {
