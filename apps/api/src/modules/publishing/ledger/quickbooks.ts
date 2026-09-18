@@ -151,7 +151,29 @@ export const quickBooksLedger: VendorLedger = {
       // ⚠ **`delta: true` is load-bearing.** CDC answers with what MOVED, not
       // with the lists. Returned as if it were the whole truth it overwrote a
       // live client's 76 accounts with the 0 that had changed (18 Sep 2026).
-      if (changed !== null) return { lists: changed, delta: true };
+      if (changed !== null) {
+        // ⚠ **TAX CODES ARE ALWAYS READ IN FULL, never from CDC.** A tax code's
+        // real rate lives on a TaxRate entity and CDC cannot carry the join —
+        // so a code arriving through the delta would be written with the NAME
+        // fallback and no `reverseCharge` marker, which makes `20.0% ECG`
+        // selectable again and silently undoes the fix that stopped a domestic
+        // purchase being posted as an EC acquisition.
+        //
+        // Two extra metered calls on a delta sync. CDC still carries Accounts
+        // and Vendors, which are the lists that actually churn and the reason
+        // it exists.
+        const [taxCodes, taxRates] = await Promise.all([
+          query(api, connection, 'select * from TaxCode maxresults 200'),
+          query(api, connection, 'select * from TaxRate maxresults 200'),
+        ]);
+        return {
+          lists: {
+            ...changed,
+            ...taxLists(taxCodes.QueryResponse?.TaxCode ?? [], taxRates.QueryResponse?.TaxRate ?? []),
+          },
+          delta: true,
+        };
+      }
     }
 
     // ⚠ TaxRate is read ALONGSIDE TaxCode and joined below. It is one extra
@@ -340,7 +362,6 @@ async function changeDataCapture(
                     .object({
                       Account: z.array(AccountSchema).optional(),
                       Vendor: z.array(VendorSchema).optional(),
-                      TaxCode: z.array(TaxCodeSchema).optional(),
                     })
                     .passthrough(),
                 )
@@ -354,7 +375,8 @@ async function changeDataCapture(
 
   try {
     const body = await api.get(CdcSchema, path(connection, 'cdc'), {
-      entities: 'Account,Vendor,TaxCode',
+      // ⚠ No TaxCode. CDC cannot carry the TaxRate join its rate depends on.
+      entities: 'Account,Vendor',
       changedSince: since.toISOString(),
       minorversion: MINOR_VERSION,
     });
@@ -362,7 +384,9 @@ async function changeDataCapture(
     return toLists(
       groups.flatMap((group) => group.Account ?? []),
       groups.flatMap((group) => group.Vendor ?? []),
-      groups.flatMap((group) => group.TaxCode ?? []),
+      // ⚠ No tax codes: CDC was not asked for them, because their rate needs a
+      // TaxRate join it cannot carry. `fetchLists` reads them in full instead.
+      [],
     );
   } catch {
     return null;
@@ -427,7 +451,6 @@ function toLists(
   taxCodes: readonly z.infer<typeof TaxCodeSchema>[],
   taxRates: readonly z.infer<typeof TaxRateSchema>[] = [],
 ): ReferenceLists {
-  const rateById = new Map(taxRates.map((rate) => [rate.Id, percentToBasisPoints(rate.RateValue)]));
   return {
     [LEDGER_LIST_KINDS.accounts]: accounts.map((account) => ({
       id: account.Id,
@@ -441,28 +464,35 @@ function toLists(
       name: vendor.DisplayName ?? vendor.CompanyName ?? vendor.Id,
       active: vendor.Active !== false,
     })),
+    ...taxLists(taxCodes, taxRates),
+    [LEDGER_LIST_KINDS.bankAccounts]: accounts
+      .filter((account) => account.AccountType === 'Bank')
+      .map((account) => ({ id: account.Id, code: account.AcctNum ?? null, name: account.Name, active: account.Active !== false })),
+  };
+}
+
+/**
+ * The tax-code list, with each code's REAL purchase rate.
+ *
+ * ⚠ Its own function because it is read on BOTH sync paths — the full query and
+ * the CDC delta — and for the same reason: the rate lives on a TaxRate entity,
+ * CDC cannot carry that join, and a code written from its name alone loses the
+ * `reverseCharge` marker that stops `20.0% ECG` being put on a domestic bill.
+ * One place, so the two paths cannot drift apart.
+ */
+function taxLists(
+  taxCodes: readonly z.infer<typeof TaxCodeSchema>[],
+  taxRates: readonly z.infer<typeof TaxRateSchema>[],
+): ReferenceLists {
+  const rateById = new Map(taxRates.map((rate) => [rate.Id, percentToBasisPoints(rate.RateValue)]));
+  return {
     [LEDGER_LIST_KINDS.taxRates]: taxCodes.map((code) => ({
       id: code.Id,
       code: code.Id,
       name: code.Name,
-      // ⚠ **The rate comes out of the NAME, because QuickBooks does not put
-      // it on the TaxCode.** A TaxCode points at TaxRate entities through
-      // Purchase/SalesTaxRateList, so the alternative is a second query and a
-      // join for a number a UK company's own naming already states —
-      // "20.0% S", "0.0% Z", "Exempt", "No VAT". A name we cannot read yields
-      // null, and a null rate is never matched rather than guessed at.
-      //
-      // ⚠ Read from the code's own PURCHASE rate details, joined to TaxRate.
-      // The name is the FALLBACK and nothing more: "20.0% S" and "20.0% ECG"
-      // are both "20%" by name, and posting a domestic invoice against the
-      // second one nets the VAT to zero and misstates the client's return.
-      // That happened, in QuickBooks, on 18 Sep 2026.
       ...taxCodeRate(code, rateById),
       active: code.Active !== false,
     })),
-    [LEDGER_LIST_KINDS.bankAccounts]: accounts
-      .filter((account) => account.AccountType === 'Bank')
-      .map((account) => ({ id: account.Id, code: account.AcctNum ?? null, name: account.Name, active: account.Active !== false })),
   };
 }
 
