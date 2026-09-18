@@ -2,7 +2,13 @@ import { z } from 'zod';
 
 import { LedgerApiError, type VendorApi } from './ledger-http.js';
 import { penceFromWire, penceToWireNumber } from './ledger-money.js';
-import { LEDGER_LIST_KINDS, matchSupplier, type ReferenceLists } from './reference-sync.js';
+import {
+  documentRateBasisPoints,
+  LEDGER_LIST_KINDS,
+  matchSupplier,
+  matchTaxRate,
+  type ReferenceLists,
+} from './reference-sync.js';
 import type { ResolvedConnection } from './token-store.js';
 import {
   accountFor,
@@ -134,6 +140,20 @@ export const quickBooksLedger: VendorLedger = {
       return fromApiError(error);
     }
 
+    // ⚠ Derived from what the document says, then matched against what THIS
+    // client's QuickBooks actually offers. A miss refuses the item with the
+    // rate named; it does not fall back to the standard rate, because most of a
+    // food wholesaler's delivery is zero-rated and a plausible 20% is the
+    // hardest kind of wrong to notice afterwards.
+    const wantedRate = documentRateBasisPoints(context.request.totalPence, context.request.taxPence);
+    const taxCode = matchTaxRate(context.taxRates, wantedRate);
+    if (taxCode === null) {
+      return failed(
+        `This client's ${context.connection.vendor.label} has no tax code at ${(wantedRate / 100).toFixed(2)}%, which is the rate this document works out at. Add one in ${context.connection.vendor.label} and sync the connection, or correct the document's tax figure.`,
+        false,
+      );
+    }
+
     const bill = {
       VendorRef: { value: vendorId },
       TxnDate: dateOrToday(context.request),
@@ -151,7 +171,15 @@ export const quickBooksLedger: VendorLedger = {
           // ⚠ `Amount` only. `UnitPrice` would override it.
           Amount: penceToWireNumber(context.request.totalPence),
           Description: context.request.supplierName,
-          AccountBasedExpenseLineDetail: { AccountRef: { value: account.id } },
+          AccountBasedExpenseLineDetail: {
+            AccountRef: { value: account.id },
+            // ⚠ **MANDATORY, and its absence is why the first real post was
+            // refused** (18 Sep 2026): "Business Validation Error: All items
+            // need a tax rate. Please add one where it's missing." A UK
+            // QuickBooks company is VAT-enabled and every expense line must
+            // name a code. Derived from the document, never defaulted.
+            TaxCodeRef: { value: taxCode.id },
+          },
         },
       ],
       TxnTaxDetail: { TotalTax: penceToWireNumber(context.request.taxPence) },
@@ -296,6 +324,18 @@ async function changeDataCapture(
   }
 }
 
+/**
+ * "20.0% S" -> 2000 · "0.0% Z" -> 0 · "Exempt" / "No VAT" / "Out of Scope" -> 0.
+ *
+ * ⚠ Anything else is **null**, which `matchTaxRate` then never selects. A code
+ * whose rate we cannot read is not a code we may put on a client's bill.
+ */
+function taxCodeRateBasisPoints(name: string): number | null {
+  const percent = /([0-9]+(?:\.[0-9]+)?)\s*%/.exec(name);
+  if (percent !== null) return Math.round(Number.parseFloat(percent[1] ?? '0') * 100);
+  return /(exempt|no vat|zero|out of scope)/i.test(name) ? 0 : null;
+}
+
 function toLists(
   accounts: readonly z.infer<typeof AccountSchema>[],
   vendors: readonly z.infer<typeof VendorSchema>[],
@@ -318,9 +358,17 @@ function toLists(
       id: code.Id,
       code: code.Id,
       name: code.Name,
-      // QuickBooks keeps the percentage on a TaxRate behind the code, not on
-      // the code itself. Null is the honest answer rather than a guess.
-      rateBasisPoints: null,
+      // ⚠ **The rate comes out of the NAME, because QuickBooks does not put
+      // it on the TaxCode.** A TaxCode points at TaxRate entities through
+      // Purchase/SalesTaxRateList, so the alternative is a second query and a
+      // join for a number a UK company's own naming already states —
+      // "20.0% S", "0.0% Z", "Exempt", "No VAT". A name we cannot read yields
+      // null, and a null rate is never matched rather than guessed at.
+      //
+      // ⚠ This replaced a hardcoded `null` whose own comment said the rate
+      // "is not on the code itself" and left it there — which is why the first
+      // real post to QuickBooks had no tax code to choose and was refused.
+      rateBasisPoints: taxCodeRateBasisPoints(code.Name),
       active: code.Active !== false,
     })),
     [LEDGER_LIST_KINDS.bankAccounts]: accounts
