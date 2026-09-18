@@ -65,7 +65,41 @@ const VendorSchema = z
   .object({ Id: z.string().min(1), DisplayName: z.string().optional(), CompanyName: z.string().optional(), Active: z.boolean().optional() })
   .passthrough();
 
-const TaxCodeSchema = z.object({ Id: z.string().min(1), Name: z.string(), Active: z.boolean().optional() }).passthrough();
+/**
+ * ⚠ **`PurchaseTaxRateList` is the whole point of this schema.**
+ *
+ * QuickBooks does not put a percentage on a TaxCode. It points at TaxRate
+ * entities, and a REVERSE-CHARGE code points at two that cancel — which is the
+ * only reliable way to tell `20.0% S` from `20.0% ECG`, both of which are "20%"
+ * by any reading of the name.
+ */
+const TaxCodeSchema = z
+  .object({
+    Id: z.string().min(1),
+    Name: z.string(),
+    Active: z.boolean().optional(),
+    PurchaseTaxRateList: z
+      .object({
+        TaxRateDetail: z
+          .array(
+            z
+              .object({
+                TaxRateRef: z.object({ value: z.string() }).passthrough().optional(),
+                TaxTypeApplicable: z.string().optional(),
+              })
+              .passthrough(),
+          )
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+/** ⚠ `RateValue` is a JSON number — a PERCENTAGE, not money. Never a pence value. */
+const TaxRateSchema = z
+  .object({ Id: z.string().min(1), Name: z.string().optional(), RateValue: z.union([z.number(), z.string()]).optional() })
+  .passthrough();
 
 const QuerySchema = z
   .object({
@@ -74,6 +108,7 @@ const QuerySchema = z
         Account: z.array(AccountSchema).optional(),
         Vendor: z.array(VendorSchema).optional(),
         TaxCode: z.array(TaxCodeSchema).optional(),
+        TaxRate: z.array(TaxRateSchema).optional(),
       })
       .passthrough()
       .optional(),
@@ -119,10 +154,14 @@ export const quickBooksLedger: VendorLedger = {
       if (changed !== null) return { lists: changed, delta: true };
     }
 
-    const [accounts, vendors, taxCodes] = await Promise.all([
+    // ⚠ TaxRate is read ALONGSIDE TaxCode and joined below. It is one extra
+    // metered call per full sync, and it is what stopped a domestic purchase
+    // being posted as an EC acquisition — see `taxCodeRate`.
+    const [accounts, vendors, taxCodes, taxRates] = await Promise.all([
       query(api, connection, 'select * from Account maxresults 1000'),
       query(api, connection, 'select * from Vendor maxresults 1000'),
       query(api, connection, 'select * from TaxCode maxresults 200'),
+      query(api, connection, 'select * from TaxRate maxresults 200'),
     ]);
 
     return {
@@ -130,6 +169,7 @@ export const quickBooksLedger: VendorLedger = {
         accounts.QueryResponse?.Account ?? [],
         vendors.QueryResponse?.Vendor ?? [],
         taxCodes.QueryResponse?.TaxCode ?? [],
+        taxRates.QueryResponse?.TaxRate ?? [],
       ),
     };
   },
@@ -330,7 +370,47 @@ async function changeDataCapture(
 }
 
 /**
- * "20.0% S" -> 2000 · "0.0% Z" -> 0 · "Exempt" / "No VAT" / "Out of Scope" -> 0.
+ * What a tax code actually charges on a PURCHASE, and whether it is a reverse
+ * charge.
+ *
+ * ⚠ **The structure decides, not the name.** A reverse-charge code
+ * (`20.0% ECG`) carries MORE THAN ONE purchase rate detail and they cancel: the
+ * net is zero and the code is not usable on a domestic invoice. A standard code
+ * carries one. Both are called "20%" by any reading of the words, which is how
+ * a Plymouth plumbing merchant's bill came to be posted as an EC acquisition.
+ *
+ * Falls back to the name only when the join yields nothing — an older sandbox,
+ * a company with no TaxRate rows, a shape Intuit changes. A fallback rate is
+ * still never marked reverse-charge, because the name cannot establish that;
+ * what it can do is keep a single-rate company working.
+ */
+function taxCodeRate(
+  code: z.infer<typeof TaxCodeSchema>,
+  rateById: ReadonlyMap<string, number | null>,
+): { rateBasisPoints: number | null; reverseCharge?: boolean } {
+  const details = code.PurchaseTaxRateList?.TaxRateDetail ?? [];
+  const resolved = details
+    .map((detail) => (detail.TaxRateRef === undefined ? null : rateById.get(detail.TaxRateRef.value) ?? null))
+    .filter((value): value is number => value !== null);
+
+  if (resolved.length === 0) return { rateBasisPoints: taxCodeRateBasisPoints(code.Name) };
+
+  const net = resolved.reduce((total, value) => total + value, 0);
+  // ⚠ More than one purchase rate IS the reverse-charge signal. It is not about
+  // the net being zero: a code that charges twice for any other reason is
+  // equally something this product has no business choosing unattended.
+  return { rateBasisPoints: net, ...(resolved.length > 1 ? { reverseCharge: true } : {}) };
+}
+
+/** A percentage off the wire to basis points. ⚠ A RATE, never money. */
+function percentToBasisPoints(value: number | string | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
+}
+
+/**
+ * The FALLBACK: "20.0% S" -> 2000 · "0.0% Z" -> 0 · "Exempt" / "No VAT" -> 0.
  *
  * ⚠ Anything else is **null**, which `matchTaxRate` then never selects. A code
  * whose rate we cannot read is not a code we may put on a client's bill.
@@ -345,7 +425,9 @@ function toLists(
   accounts: readonly z.infer<typeof AccountSchema>[],
   vendors: readonly z.infer<typeof VendorSchema>[],
   taxCodes: readonly z.infer<typeof TaxCodeSchema>[],
+  taxRates: readonly z.infer<typeof TaxRateSchema>[] = [],
 ): ReferenceLists {
+  const rateById = new Map(taxRates.map((rate) => [rate.Id, percentToBasisPoints(rate.RateValue)]));
   return {
     [LEDGER_LIST_KINDS.accounts]: accounts.map((account) => ({
       id: account.Id,
@@ -370,10 +452,12 @@ function toLists(
       // "20.0% S", "0.0% Z", "Exempt", "No VAT". A name we cannot read yields
       // null, and a null rate is never matched rather than guessed at.
       //
-      // ⚠ This replaced a hardcoded `null` whose own comment said the rate
-      // "is not on the code itself" and left it there — which is why the first
-      // real post to QuickBooks had no tax code to choose and was refused.
-      rateBasisPoints: taxCodeRateBasisPoints(code.Name),
+      // ⚠ Read from the code's own PURCHASE rate details, joined to TaxRate.
+      // The name is the FALLBACK and nothing more: "20.0% S" and "20.0% ECG"
+      // are both "20%" by name, and posting a domestic invoice against the
+      // second one nets the VAT to zero and misstates the client's return.
+      // That happened, in QuickBooks, on 18 Sep 2026.
+      ...taxCodeRate(code, rateById),
       active: code.Active !== false,
     })),
     [LEDGER_LIST_KINDS.bankAccounts]: accounts

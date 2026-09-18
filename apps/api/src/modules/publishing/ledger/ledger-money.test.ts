@@ -165,3 +165,34 @@ describe('a delta must never replace a list', () => {
     expect(mergeItems([], stored)).toHaveLength(3);
   });
 });
+
+/**
+ * ⚠ **The regression guard for a WRONG VAT RETURN.**
+ *
+ * A Plymouth plumbing merchant's £86.40 invoice was posted into QuickBooks
+ * against `20.0% ECG` — EC Goods — because the matcher chose a code by its RATE
+ * and QuickBooks UK offers several at 20%. ECG posts +20% and −20%, nets to
+ * zero VAT, and looks entirely ordinary on the bill while misstating the
+ * client's return. Seen in QuickBooks' own books, 18 Sep 2026.
+ */
+describe('a reverse-charge code is never chosen for an ordinary purchase', () => {
+  const codes = [
+    { id: '4', code: '4', name: '20.0% S', rateBasisPoints: 2000, active: true },
+    { id: '8', code: '8', name: '20.0% ECG', rateBasisPoints: 0, reverseCharge: true, active: true },
+    { id: '5', code: '5', name: '0.0% Z', rateBasisPoints: 0, active: true },
+  ];
+
+  test('20% picks the STANDARD code, not EC goods', () => {
+    expect(matchTaxRate(codes, 2000)?.name).toBe('20.0% S');
+  });
+
+  test('zero-rated picks the ZERO code, not the reverse charge that also nets to zero', () => {
+    expect(matchTaxRate(codes, 0)?.name).toBe('0.0% Z');
+  });
+
+  test('with ONLY a reverse-charge code available it refuses rather than using it', () => {
+    const onlyReverse = codes.filter((c) => c.reverseCharge === true);
+    expect(matchTaxRate(onlyReverse, 0)).toBeNull();
+    expect(matchTaxRate(onlyReverse, 2000)).toBeNull();
+  });
+});
