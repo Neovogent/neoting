@@ -296,15 +296,21 @@ export class LedgerConnectionsService {
     );
     const connection = await tokens.connection(integrationId);
 
+    // ⚠ **An EMPTY stored list forces a FULL read**, whatever the timestamp
+    // says. A delta can only ever be applied over something, and a connection
+    // whose accounts are gone — because an earlier build wrote a delta over
+    // them (18 Sep 2026), or because the first sync half-failed — must be able
+    // to repair itself by pressing Sync rather than by reconnecting.
     const since = await scopedDb(this.prisma, ctx, async (db) => {
       const accounts = await readReferenceList(db, integrationId, LEDGER_LIST_KINDS.accounts);
-      return accounts?.syncedAt ?? null;
+      if (accounts === null || accounts.items.length === 0) return null;
+      return accounts.syncedAt ?? null;
     });
 
-    let lists: ReferenceLists;
+    let fetched: { lists: ReferenceLists; delta?: boolean };
     try {
       // ⚠ The vendor round trip, outside every transaction.
-      lists = await LEDGERS[connection.vendor.slug].fetchLists(
+      fetched = await LEDGERS[connection.vendor.slug].fetchLists(
         new VendorApi(connection, this.fetchImpl),
         connection,
         since,
@@ -321,7 +327,9 @@ export class LedgerConnectionsService {
     }
 
     return scopedDb(this.prisma, ctx, async (db) => {
-      await writeReferenceLists(db, integrationId, lists);
+      // ⚠ A DELTA MERGES; a full list replaces. Replacing with a delta is what
+      // turned 76 accounts into 0 on a live connection.
+      await writeReferenceLists(db, integrationId, fetched.lists, null, fetched.delta === true ? 'merge' : 'replace');
       const row = await db.integration.update({
         where: { id: integrationId },
         data: { lastSyncAt: new Date(), health: 'OK', lastErrorAt: null, lastErrorMessage: null },

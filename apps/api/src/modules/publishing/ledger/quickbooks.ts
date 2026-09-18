@@ -113,7 +113,10 @@ export const quickBooksLedger: VendorLedger = {
     // exactly the cost the reference doc says to design out from the start.
     if (since !== null) {
       const changed = await changeDataCapture(api, connection, since);
-      if (changed !== null) return changed;
+      // ⚠ **`delta: true` is load-bearing.** CDC answers with what MOVED, not
+      // with the lists. Returned as if it were the whole truth it overwrote a
+      // live client's 76 accounts with the 0 that had changed (18 Sep 2026).
+      if (changed !== null) return { lists: changed, delta: true };
     }
 
     const [accounts, vendors, taxCodes] = await Promise.all([
@@ -122,11 +125,13 @@ export const quickBooksLedger: VendorLedger = {
       query(api, connection, 'select * from TaxCode maxresults 200'),
     ]);
 
-    return toLists(
-      accounts.QueryResponse?.Account ?? [],
-      vendors.QueryResponse?.Vendor ?? [],
-      taxCodes.QueryResponse?.TaxCode ?? [],
-    );
+    return {
+      lists: toLists(
+        accounts.QueryResponse?.Account ?? [],
+        vendors.QueryResponse?.Vendor ?? [],
+        taxCodes.QueryResponse?.TaxCode ?? [],
+      ),
+    };
   },
 
   async publish(context) {
