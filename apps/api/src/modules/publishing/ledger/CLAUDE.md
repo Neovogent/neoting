@@ -146,8 +146,8 @@ the opposite of what the code assumed.
 
 | Vendor | What goes on the line | Tax | Proven by |
 |---|---|---|---|
-| **QuickBooks** | the **NET** (`totalPence − taxPence`), `GlobalTaxCalculation: 'TaxExcluded'` | a `TaxCodeRef` the client actually has, matched on the code's REAL rate | a £899.99 invoice recorded at **£1,079.99** when sent as gross-inclusive |
-| **FreeAgent** | the **GROSS**, inside `bill_items[]` | `sales_tax_rate` as a percentage; the read-back is **NEGATIVE** on a purchase | a £156.00 bill recorded at **£0.00**, then at **£130.00** |
+| **QuickBooks** | the **NET** (`totalPence − taxPence`), `GlobalTaxCalculation: 'TaxExcluded'` | a `TaxCodeRef` the client actually has, matched on the code's REAL rate | a £899.99 invoice recorded at **£1,079.99** when sent as gross-inclusive. ✅ **Re-proven correct 20 Sep 2026** — `NT-29SSIAUO2XTGB`, £130.00 + £26.00 VAT = £156.00 on Intuit's own Bill screen, receipt attached |
+| **FreeAgent** | the **GROSS**, inside `bill_items[]` | `sales_tax_rate` as a percentage; the read-back is **NEGATIVE** on a purchase | a £156.00 bill recorded at **£0.00**, then at **£130.00**. ✅ **Proven correct 20 Sep 2026** — `WOL-1099`, £86.40 inc £14.40 VAT on FreeAgent's own Bills screen, paperclip showing |
 | **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | not yet posted live |
 | **Sage** | not yet posted live | | |
 
@@ -328,7 +328,20 @@ further than the local one did.
       had the right mapping in a table BEFORE the build and it was not carried
       into the code — the research was read, that line was not applied.
 - [ ] The four vendor screenshots — the acceptance evidence the brief asks for.
-      Blocked on a test company per vendor to consent as, not on code.
+      **TWO OF FOUR DONE (20 Sep 2026)**, each a full walk: upload → code →
+      Read review → Approve → the vendor's own screen showing the right pence,
+      the right VAT and the receipt attached.
+      - [x] **FreeAgent** — `WOL-1099`, Wolseley, £86.40 inc £14.40.
+      - [x] **QuickBooks** — `NT-29SSIAUO2XTGB`, London Linen Co, £130.00 net +
+            £26.00 VAT = £156.00, `3.4b-london-linen-2026-08-26.pdf` attached,
+            and `reconcile` raised NO warning, which is the first time silence
+            from it has been evidence rather than absence of it.
+      - [ ] **Xero** — blocked on two-factor setup on the Neoting Sandbox Ltd
+            login, not on code. The adapter is written and its scopes are fixed.
+      - [ ] **Sage** — parked at the owner's instruction: the portal refuses
+            `@neovogent.com` addresses, a trial wants a card, and the Start plan
+            cannot take purchase invoices at all (which is the fallback path in
+            `sage.ts`, itself unexercised).
 - [ ] The infra PR: a `ledger` secret group + the four redirect URIs and
       `LEDGER_SANDBOX` on `services.tf`, then drop the twelve allowlist entries.
 - [ ] The **QuickBooks App Assessment Questionnaire** (~1 hour). Every answer is
