@@ -100,6 +100,11 @@ const CreatedBillSchema = z.object({
     .passthrough(),
 });
 
+/** ⚠ FreeAgent signs purchase tax negative; the magnitude is what we compare. */
+function absoluteOrNull(value: number | null): number | null {
+  return value === null ? null : Math.abs(value);
+}
+
 export const freeAgentLedger: VendorLedger = {
   async resolveOrgRef(api) {
     // FreeAgent's token is already company-specific, so there is nothing to
@@ -188,14 +193,20 @@ export const freeAgentLedger: VendorLedger = {
       // `bill_items[].total_value` are the required pair, and a bill with no
       // items is a bill with no value.
       //
-      // ⚠ `total_value` on an ITEM is the NET, with `sales_tax_rate` adding the
-      // VAT — the same shape QuickBooks needed after its own inclusive/exclusive
-      // lesson. Both halves come from integer pence we already hold; the rate is
-      // derived from the document rather than assumed.
+      // ⚠ **`total_value` on an ITEM is the GROSS — the OPPOSITE of QuickBooks,
+      // and measured rather than assumed.** Sent as the net (£130.00) with a 20%
+      // rate, FreeAgent recorded the bill at £130.00 with VAT of £21.67: it had
+      // taken the figure as tax-INCLUSIVE and found the 20% within it. The gross
+      // is what it wants, and `sales_tax_rate` then describes what is already in
+      // there.
+      //
+      // ⚠ Do not "make the four consistent" by sending the net here. They are
+      // not consistent, and each one was established by reading back what the
+      // vendor actually stored.
       bill_items: [
         {
           category: account.id,
-          total_value: penceToDecimalString(context.request.totalPence - context.request.taxPence),
+          total_value: penceToDecimalString(context.request.totalPence),
           sales_tax_rate: (documentRateBasisPoints(context.request.totalPence, context.request.taxPence) / 100).toFixed(1),
           description: context.request.supplierName,
         },
@@ -237,7 +248,11 @@ export const freeAgentLedger: VendorLedger = {
       context.request,
       {
         totalPence: amountOrNull(created.bill.total_value, 'total'),
-        taxPence: amountOrNull(created.bill.sales_tax_value, 'VAT'),
+        // ⚠ **ABSOLUTE.** FreeAgent signs the tax on a PURCHASE negative — a
+        // correctly recorded £26.00 of VAT reads back as `-26.0`. Compared
+        // signed, every correct bill would raise a "recalculated" alarm, and an
+        // alarm that cries wolf on every success is worse than none.
+        taxPence: absoluteOrNull(amountOrNull(created.bill.sales_tax_value, 'VAT')),
       },
       context.connection.vendor.label,
     );
