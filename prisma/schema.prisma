@@ -1412,6 +1412,10 @@ model Integration {
 
   kind             IntegrationKind
   orgRef           String?         @map("org_ref")
+  /// What the vendor CALLS those books. Additive, nullable, and written only at
+  /// connect: a GUID answers none of the questions the connection screen's own
+  /// warning asks. Null for QuickBooks, which gives no name on the callback.
+  orgName          String?         @map("org_name")
   tokenRef         String?         @map("token_ref")
   tokenExpiresAt   DateTime?       @map("token_expires_at")
   health           String?

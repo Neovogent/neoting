@@ -28,7 +28,7 @@ import {
 } from './reference-sync.js';
 import { sageLedger } from './sage.js';
 import { LedgerTokenStore, persistConnection, type ResolvedConnection } from './token-store.js';
-import type { VendorLedger } from './vendor-ledger.js';
+import type { ResolvedOrg, VendorLedger } from './vendor-ledger.js';
 import { vendorForKind, type VendorConfig, type VendorSlug } from './vendors.js';
 import { xeroLedger } from './xero.js';
 
@@ -260,14 +260,14 @@ export class LedgerConnectionsService {
     // one is a connection that cannot be used.
     const ledger = LEDGERS[slug];
     const probe: ResolvedConnection = { integrationId: '', vendor, orgRef: null, accessToken: tokens.accessToken };
-    let orgRef: string | null;
+    let org: ResolvedOrg | null;
     try {
-      orgRef = await ledger.resolveOrgRef(new VendorApi(probe, this.fetchImpl), params);
+      org = await ledger.resolveOrgRef(new VendorApi(probe, this.fetchImpl), params);
     } catch (cause) {
       this.logger.error(`${vendor.label} callback: could not read the organisation — ${describe(cause)}`);
       throw badCallback(`${vendor.label} did not say which set of books was connected. Try connecting again.`);
     }
-    if (orgRef === null) {
+    if (org === null) {
       throw badCallback(`${vendor.label} did not say which set of books was connected. Try connecting again.`);
     }
 
@@ -275,7 +275,14 @@ export class LedgerConnectionsService {
       assertCan(await resolveActor(db, ctx), 'business.integrations.manage');
       const business = await db.business.findUnique({ where: { id: state.b }, select: { id: true } });
       if (business === null) throw badCallback('That client is no longer reachable.');
-      return persistConnection(db, { businessId: state.b, kind: vendor.kind, orgRef, tokens, vaultKey: key });
+      return persistConnection(db, {
+        businessId: state.b,
+        kind: vendor.kind,
+        orgRef: org.ref,
+        orgName: org.name ?? null,
+        tokens,
+        vaultKey: key,
+      });
     });
 
     // ⚠ The first sync runs HERE, not lazily at the first publish. A practice
@@ -418,7 +425,7 @@ function toDto(row: IntegrationRow, referenceCounts: NonNullable<Integration['re
     vendor: vendor?.slug ?? null,
     label: vendor?.label ?? row.kind,
     orgRef: row.orgRef,
-    connectedOrganisation: null,
+    connectedOrganisation: row.orgName,
     isActive: row.isActive,
     isConnected: row.tokenRef !== null && row.tokenRef !== '',
     health: isHealth(row.health) ? row.health : 'UNKNOWN',

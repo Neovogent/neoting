@@ -37,13 +37,28 @@ import {
  * running Dext plus one other tool cannot add us, and the limit is invisible
  * until it blocks the consent screen.
  *
- * ⚠ **Bills are created as DRAFT.** Xero's own approval workflow belongs to the
- * practice, and a tool that posted straight to AUTHORISED would be skipping a
- * control somebody chose. Changing this is one line here, deliberately not an
- * environment variable — a setting that decides whether a client's books move
- * on their own should be a pull request, not a task-definition edit.
+ * ⚠ **Bills are created as AUTHORISED, and this line is the reason to read the
+ * paragraph rather than skim it.** It said DRAFT until 20 Sep 2026, on the
+ * argument that Xero's own approval workflow belongs to the practice. Driving a
+ * real document through the product killed that argument: a DRAFT bill is not
+ * in the books. It is absent from the P&L, absent from the VAT return, and
+ * absent from Bills to pay until a human opens Xero and approves it a second
+ * time — while the publish dialog had already told the accountant *"Approving
+ * creates these entries in this client's Xero books"*, `reconcile` had compared
+ * the figures and said nothing, and the document sat PUBLISHED. Every number
+ * was right and the sentence was false.
+ *
+ * Two things settle it. The product's approval IS the control — D44 reserves
+ * release for the firm's super admin, so a second approval inside Xero is the
+ * same person agreeing twice. And QuickBooks and FreeAgent both post live, so
+ * DRAFT made one Approve button mean two different things depending on which
+ * vendor a client happened to use.
+ *
+ * ⚠ Still deliberately NOT an environment variable. A setting that decides
+ * whether a client's books move on their own belongs in a pull request, not in
+ * a task-definition edit — that part of the original reasoning stands.
  */
-const INVOICE_STATUS = 'DRAFT';
+const INVOICE_STATUS = 'AUTHORISED';
 
 /** The tenant list — a separate host from the accounting API, so it is named in full. */
 const CONNECTIONS_URL = 'https://api.xero.com/connections';
@@ -108,7 +123,9 @@ export const xeroLedger: VendorLedger = {
     // consented for two organisations gets the first; the connection screen is
     // where a second one becomes a second connection.
     const connections = await api.get(ConnectionsSchema, CONNECTIONS_URL);
-    return connections[0]?.tenantId ?? null;
+    const first = connections[0];
+    if (first === undefined) return null;
+    return { ref: first.tenantId, ...(first.tenantName === undefined ? {} : { name: first.tenantName }) };
   },
 
   async fetchLists(api) {

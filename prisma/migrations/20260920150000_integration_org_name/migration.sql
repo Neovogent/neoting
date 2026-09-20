@@ -1,0 +1,12 @@
+-- What the vendor CALLS the connected books.
+--
+-- Additive, nullable, no backfill. The connection screen rendered `org_ref` under
+-- the heading "Organisation", which for Xero is a tenant GUID and for QuickBooks a
+-- realm id — on the one card whose own warning reads "unless you mean to write to
+-- this client's real books". A practice could not tell from it which set of books
+-- they had just connected.
+--
+-- Existing rows stay NULL and the screen falls back to the ref, exactly as before;
+-- the name arrives on the next connect. NULL is also permanent for QuickBooks,
+-- which hands back a realm id with no company name attached to it.
+ALTER TABLE "integrations" ADD COLUMN "org_name" TEXT;

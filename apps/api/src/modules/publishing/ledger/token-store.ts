@@ -270,12 +270,14 @@ export async function persistConnection(
     readonly businessId: string;
     readonly kind: ResolvedConnection['vendor']['kind'];
     readonly orgRef: string | null;
+    readonly orgName: string | null;
     readonly tokens: LedgerTokens;
     readonly vaultKey: Buffer;
   },
 ): Promise<{ readonly id: string }> {
   const data = {
     orgRef: input.orgRef,
+    orgName: input.orgName,
     tokenRef: seal(input.tokens, input.vaultKey),
     tokenExpiresAt: new Date(input.tokens.accessExpiresAt),
     health: 'OK',

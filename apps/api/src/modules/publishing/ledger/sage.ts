@@ -94,7 +94,10 @@ export const sageLedger: VendorLedger = {
     // The business the grant covers. Under Partner Edition a practice's grant
     // covers many, and the first is the one the consent screen selected.
     const businesses = await api.get(itemsOf(BusinessSchema), '/businesses');
-    return businesses.$items?.[0]?.id ?? null;
+    const first = businesses.$items?.[0];
+    if (first === undefined) return null;
+    const name = first.displayed_as;
+    return { ref: first.id, ...(name === undefined || name === '' ? {} : { name }) };
   },
 
   async fetchLists(api) {

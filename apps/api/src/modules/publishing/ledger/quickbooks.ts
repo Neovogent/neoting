@@ -138,8 +138,10 @@ const UploadSchema = z
 export const quickBooksLedger: VendorLedger = {
   async resolveOrgRef(_api, callbackParams) {
     // ⚠ Straight off the callback query string. There is nowhere else it exists.
+    // ⚠ And NO NAME — a realm id arrives with no company attached to it, so
+    // the connection screen falls back to the id for this vendor alone.
     const realmId = callbackParams['realmId'];
-    return realmId !== undefined && realmId.trim() !== '' ? realmId.trim() : null;
+    return realmId !== undefined && realmId.trim() !== '' ? { ref: realmId.trim() } : null;
   },
 
   async fetchLists(api, connection, since) {

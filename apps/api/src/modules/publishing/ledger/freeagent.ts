@@ -111,7 +111,9 @@ export const freeAgentLedger: VendorLedger = {
     // route on — but the company URL is what proves the connection works and
     // is what the connection screen shows a practice.
     const body = await api.get(CompanySchema, '/company');
-    return body.company.url ?? body.company.name ?? null;
+    const ref = body.company.url ?? body.company.name ?? null;
+    if (ref === null) return null;
+    return { ref, ...(body.company.name === undefined ? {} : { name: body.company.name }) };
   },
 
   async fetchLists(api) {

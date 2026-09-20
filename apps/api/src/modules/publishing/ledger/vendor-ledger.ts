@@ -24,7 +24,7 @@ export interface VendorLedger {
    * QuickBooks puts a `realmId` on the callback query string — which is why
    * this takes the callback's parameters as well as an API handle.
    */
-  resolveOrgRef(api: VendorApi, callbackParams: Readonly<Record<string, string>>): Promise<string | null>;
+  resolveOrgRef(api: VendorApi, callbackParams: Readonly<Record<string, string>>): Promise<ResolvedOrg | null>;
 
   /** Pull the client's own lists. Called at connect and by the sync schedule. */
   /**
@@ -43,6 +43,26 @@ export interface VendorLedger {
 
   /** Post one bill with its receipt. A per-item failure is a RESULT, never a throw. */
   publish(context: PublishContext): Promise<LedgerPublishResult>;
+}
+
+/**
+ * Which books were connected — the routing id, and the NAME when the vendor
+ * gives one.
+ *
+ * ⚠ The name is not decoration. The connection screen's own warning is *"unless
+ * you mean to write to this client's real books"*, and until 20 Sep 2026 the
+ * line under it read `e5e7917d-6621-4666-8264-d81ccb7758ea`. A GUID cannot
+ * answer the question the warning asks. Every vendor here hands back a name in
+ * the same response that carries the id — Xero's `tenantName`, Sage's
+ * `displayed_as`, FreeAgent's company `name` — and all of them were discarded
+ * one line after being parsed.
+ *
+ * Optional because QuickBooks genuinely gives none on the callback: the realm
+ * id arrives on a query string with no company attached to it.
+ */
+export interface ResolvedOrg {
+  readonly ref: string;
+  readonly name?: string;
 }
 
 /** Everything one bill needs, resolved before the vendor module is entered. */
