@@ -183,6 +183,24 @@ vendor instead.
   The 1 Dec 2026 breaking change is on BANK-TRANSACTION EXPLANATION attachments
   and does not touch bills, which is what we post.
 
+  ⚠ **PER-BUSINESS, not per-practice — owner's decision, 18 Sep 2026.** The app
+  was registered for the **Accountancy Practice API** ("accountancy practice
+  managers only"), which is one approval covering every client a practice
+  manages. A business account then cannot approve it at all: FreeAgent answers
+  *"This app is only for accountants"* and the consent stops dead.
+
+  The setting is now **off** — "Who may use this app? all users" — and each
+  client connects individually, like Xero and QuickBooks. That also matches
+  what `freeagent.ts` already did: `resolveOrgRef` reads `/company` because
+  *"FreeAgent's token is already company-specific, so there is nothing to route
+  on"*. The adapter was written per-business all along; only the registration
+  disagreed.
+
+  ⚠ The cost is real and was accepted: a practice with fifty clients does fifty
+  consents. Turning the Practice API back on is a checkbox, but it is not a
+  checkbox alone — `resolveOrgRef` would have to list companies and choose one,
+  and `integrations.org_ref` would have to hold that choice.
+
 ## Tests
 
 ```bash
