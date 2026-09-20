@@ -227,7 +227,9 @@ async function resolve(
     return;
   }
 
-  await db.publish.update({
+  // The updated row is captured for its `businessId`, which the notification
+  // below needs and which the job's document projection does not carry.
+  const publishRow = await db.publish.update({
     where: { id: job.publishId },
     data: {
       state: 'SUCCEEDED',
@@ -241,6 +243,35 @@ async function resolve(
     traceId,
     detail: { proposalId, via: 'publish', attempt: job.attempt, externalRef: result.externalRef, attachmentSent: result.attachmentSent },
   });
+
+  // ⚠ **THE LEDGER RECORDED SOMETHING OTHER THAN WHAT WE SENT.**
+  //
+  // The bill landed, so this is not a failure and must not become one — but a
+  // £899.99 invoice went into a client's QuickBooks at £1,079.99 on
+  // 18 Sep 2026 behind a green tick, because `reconcile` computed exactly this
+  // sentence and every adapter threw it away. A discrepancy nobody is told
+  // about is the same as no check at all.
+  //
+  // It goes to the BELL rather than onto the publish row: the accountant is not
+  // watching a release history, and this is the one thing about a successful
+  // publish that needs a person. `event` is a free column and the bell falls
+  // back to a generic line for an event it does not know, so an older web build
+  // still shows it rather than hiding it.
+  if (result.warning !== undefined) {
+    await db.notification.create({
+      data: {
+        businessId: publishRow.businessId,
+        event: 'publish.recalculated',
+        payload: {
+          documentId: document.id,
+          publishId: job.publishId,
+          externalRef: result.externalRef,
+          message: result.warning,
+          traceId,
+        },
+      },
+    });
+  }
 
   // Auto-archive (METH Stage 10: "→ PUBLISHED (locked) → auto-archive via
   // existing executor logic"). Reused, not re-implemented — and it re-reads the

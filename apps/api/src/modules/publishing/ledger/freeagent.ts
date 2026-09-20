@@ -219,10 +219,13 @@ export const freeAgentLedger: VendorLedger = {
       },
       context.connection.vendor.label,
     );
-    // The bill is in the books either way; a recalculation is something a human
-    // must see, not a reason to claim it never landed.
-    if (mismatch !== null) return { ok: true, externalRef: created.bill.url, attachmentSent: attached(created) };
-    return published(created.bill.url, attached(created));
+    // ⚠ The bill is in the books either way; a recalculation is something a
+    // human must see, not a reason to claim it never landed.
+    //
+    // ⚠ This used to BRANCH on the mismatch into two returns that were
+    // identical — so the sentence was computed and dropped, exactly as the
+    // other three adapters dropped it. It now rides the result.
+    return published(created.bill.url, attached(created), mismatch);
   },
 };
 

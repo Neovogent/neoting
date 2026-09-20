@@ -112,6 +112,25 @@ export interface LedgerPublishSuccess {
    * attachment — never silently, per the contract's `Publish.attachmentSent`.
    */
   readonly attachmentSent: boolean;
+  /**
+   * ⚠ **The bill LANDED, but the ledger did not record the figures we sent.**
+   *
+   * One sentence, already written for a human: *"QuickBooks Online recalculated
+   * this transaction: total £899.99 was recorded as £1,079.99."*
+   *
+   * It exists because that happened (18 Sep 2026) and nobody was told.
+   * `reconcile` computed the discrepancy and every adapter threw the answer
+   * away — three discarded the return value outright and the fourth branched on
+   * it into two identical returns. A £899.99 invoice went into a client's books
+   * at £1,079.99 behind a green tick.
+   *
+   * ⚠ **It is NOT a failure and must never be turned into one.** The
+   * transaction is in the books; claiming it failed would be a second lie on
+   * top of the first, and would invite a retry that double-posts. The publish
+   * succeeds, the reference is recorded, and `publish-follow-up.ts` raises a
+   * notification so a human actually sees it.
+   */
+  readonly warning?: string;
 }
 
 /** Why one bill did not land. Both fields are mandatory — see rule 2 above. */
