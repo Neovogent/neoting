@@ -127,7 +127,21 @@ export class LedgerConnectionsService {
       return { integrations, counts };
     });
 
-    const connected = new Set(rows.integrations.map((row) => vendorForKind(row.kind)?.slug).filter(Boolean));
+    // ⚠ **ONLY AN ACTIVE ROW BLOCKS ITS VENDOR, and this was a one-way door.**
+    //
+    // `disconnect` leaves the row in place with `isActive: false` — deliberately,
+    // because the health history and the org it was connected to are worth
+    // keeping. Counting every row here then removed that vendor from
+    // `connectable` forever: the screen showed a dead card with Sync and
+    // Disconnect both greyed out, and no way to connect again. Measured on
+    // FreeAgent, 20 Sep 2026, immediately after a deliberate disconnect.
+    //
+    // `persistConnection` upserts on `businessId_kind` and sets `isActive: true`
+    // with the health reset, so reconnecting reuses the row rather than making a
+    // second one — which is why offering it again is safe.
+    const connected = new Set(
+      rows.integrations.filter((row) => row.isActive).map((row) => vendorForKind(row.kind)?.slug).filter(Boolean),
+    );
     return {
       data: rows.integrations.map((row) => toDto(row, rows.counts.get(row.id) ?? null)),
       connectable: configuredVendors(this.env)

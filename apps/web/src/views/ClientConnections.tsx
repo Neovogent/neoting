@@ -117,7 +117,12 @@ export function ClientConnections({ client }: { client: Client }) {
     return <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(m.syntheticOnly)}</p>;
   }
 
-  const ledgers = integrations.filter((row) => row.vendor !== null && row.vendor !== undefined);
+  // ⚠ A DISCONNECTED ledger row is not shown. It carries no organisation, no
+  // counts and no health — and since the server now offers its vendor under
+  // `connectable` again, leaving it here would put TWO cards for one platform
+  // on the screen: a dead one and a live Connect. The row itself is kept in the
+  // database on purpose; this is about what a practice is asked to look at.
+  const ledgers = integrations.filter((row) => row.vendor !== null && row.vendor !== undefined && row.isActive);
   const exports_ = integrations.filter((row) => row.vendor === null || row.vendor === undefined);
   const live = liveLedger(integrations) !== null;
 
