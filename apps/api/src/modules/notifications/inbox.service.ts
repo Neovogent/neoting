@@ -165,6 +165,12 @@ function toNotificationItem(row: NotificationRow): NotificationItem {
     businessName: row.business.name,
     documentId: payloadString(row.payload, 'documentId'),
     chaseId: payloadString(row.payload, 'chaseId'),
+    // ⚠ The WRITER's own sentence, for an event the bell cannot word itself.
+    // `publish.recalculated` is the first: only the server knows what was sent
+    // to a ledger and what came back. Read the same defensive way as the ids —
+    // a row written by an older build simply has none, and the bell words that
+    // event generically rather than showing nothing.
+    detail: payloadString(row.payload, 'message'),
     createdAt: row.createdAt.toISOString(),
     readAt: row.readAt === null ? null : row.readAt.toISOString(),
   };

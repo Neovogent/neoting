@@ -70,17 +70,18 @@ const m = defineMessages({
 });
 
 /**
- * The server's message off the notification payload, or null.
+ * The server's own sentence for this event, or null.
  *
- * ⚠ Read defensively: `payload` is a `Json` column and this row may have been
- * written by any build. A shape we do not recognise falls back to our own
- * sentence rather than rendering nothing or `[object Object]`.
+ * ⚠ It reads `detail`, a CONTRACTED field — not the payload. The first version
+ * of this dug into `payload`, which the bell's projection deliberately does not
+ * send (it carries trace ids and session ids that have no business on a
+ * screen). So the alarm fired, the server composed the right sentence, and the
+ * screen showed the generic line: measured 20 Sep 2026, on a FreeAgent bill
+ * recorded at £0.00.
  */
 function detailOf(item: NotificationItem): string | null {
-  const payload: unknown = (item as { payload?: unknown }).payload;
-  if (typeof payload !== 'object' || payload === null) return null;
-  const message: unknown = (payload as { message?: unknown }).message;
-  return typeof message === 'string' && message.trim() !== '' ? message : null;
+  const detail = item.detail;
+  return typeof detail === 'string' && detail.trim() !== '' ? detail : null;
 }
 
 function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): string {

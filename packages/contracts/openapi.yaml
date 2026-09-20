@@ -6522,7 +6522,7 @@ components:
 
     NotificationItem:
       type: object
-      required: [id, event, businessId, businessName, documentId, chaseId, createdAt, readAt]
+      required: [id, event, businessId, businessName, documentId, chaseId, detail, createdAt, readAt]
       description: |
         One row of the practice's in-app inbox, projected for the bell. `event`
         is the writer's own name for the fact (`portal.upload`, `chase.closed`,
@@ -6541,6 +6541,20 @@ components:
           description: The document the event is about, when it is about one.
         chaseId:
           type: [string, 'null']
+        detail:
+          type: [string, 'null']
+          maxLength: 300
+          description: |
+            One sentence the WRITER composed, for an event whose meaning the bell
+            cannot word on its own. `publish.recalculated` is the first: only the
+            server knows what was sent to a ledger and what came back, so it
+            writes "QuickBooks Online recalculated this transaction: total
+            £899.99 was recorded as £1,079.99" and the bell renders it verbatim.
+
+            ⚠ Null for every event that needs no sentence, and the bell must
+            still word those itself. This is NOT the payload — the payload
+            carries writer detail (trace ids, session ids, reasons) that has no
+            business on a screen, and it stays where it is.
         createdAt: { type: string, format: date-time }
         readAt:
           type: [string, 'null']

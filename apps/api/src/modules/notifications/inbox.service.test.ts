@@ -103,11 +103,46 @@ test('the list is newest-first, joined to the business name, and the body parses
     businessName: 'Zeplow Inc',
     documentId: 'doc_1',
     chaseId: null,
+    // ⚠ Null for an event the bell can word itself. Present-and-null rather
+    // than absent, so a drift in the projection is a named failure here.
+    detail: null,
     createdAt: NOW.toISOString(),
     readAt: null,
   });
   expect(page.data[1]?.chaseId).toBe('chs_1');
   expect(page.data[1]?.readAt).toBe('2026-09-05T10:00:00.000Z');
+});
+
+/**
+ * ⚠ **The writer's own sentence has to reach the screen.**
+ *
+ * `publish.recalculated` fired correctly on a FreeAgent bill that a ledger
+ * recorded at £0.00 against the £156.00 we sent — and the bell showed a generic
+ * line, because the projection dropped the message and the web was reading a
+ * `payload` field the bell is never sent. The alarm worked and said nothing
+ * useful, which is most of the way to not working.
+ */
+test('a writer’s own sentence travels to the bell as `detail`', async () => {
+  const { service } = fixture([
+    row({
+      id: 'ntf_x',
+      event: 'publish.recalculated',
+      businessId: 'biz_1',
+      payload: {
+        documentId: 'doc_9',
+        message: 'FreeAgent recalculated this transaction: total £156.00 was recorded as £0.00.',
+        // ⚠ Writer detail that must NOT cross: it belongs in the row, not on a screen.
+        traceId: 'trc_secret',
+      },
+    }),
+  ]);
+
+  const { page } = await service.list(CTX, { limit: 10 });
+  expect(page.data[0]?.detail).toBe(
+    'FreeAgent recalculated this transaction: total £156.00 was recorded as £0.00.',
+  );
+  expect(page.data[0]?.documentId).toBe('doc_9');
+  expect(JSON.stringify(page.data[0])).not.toContain('trc_secret');
 });
 
 test('unread=true narrows the where to readAt null; the default where carries no filter', async () => {

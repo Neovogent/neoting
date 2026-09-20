@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { LedgerApiError } from './ledger-http.js';
 import { penceFromWire, penceToDecimalString } from './ledger-money.js';
-import { LEDGER_LIST_KINDS, matchSupplier, type ReferenceItem } from './reference-sync.js';
+import { documentRateBasisPoints, LEDGER_LIST_KINDS, matchSupplier, type ReferenceItem } from './reference-sync.js';
 import {
   accountFor,
   dateOrToday,
@@ -174,10 +174,32 @@ export const freeAgentLedger: VendorLedger = {
       // feature is a real thing with real rules and inventing one here would be
       // worse than not having it.
       due_on: dateOrToday(context.request),
-      total_value: penceToDecimalString(context.request.totalPence),
-      sales_tax_value: penceToDecimalString(context.request.taxPence),
-      category: account.id,
       currency: context.request.currency,
+      // ⚠ **THE MONEY AND THE CATEGORY LIVE ON A BILL ITEM, NOT ON THE BILL.**
+      //
+      // They were sent as top-level attributes until 20 Sep 2026. FreeAgent
+      // accepted that without complaint, attached the receipt, returned a bill
+      // URL — and created a bill worth **£0.00**, listed in their own Bills
+      // screen as "Zero Value". A £156.00 invoice, in the books, for nothing.
+      // Nothing in the response said so; the read-back check below is what
+      // caught it.
+      //
+      // `dev.freeagent.com/docs/bills` is explicit: `bill_items[].category` and
+      // `bill_items[].total_value` are the required pair, and a bill with no
+      // items is a bill with no value.
+      //
+      // ⚠ `total_value` on an ITEM is the NET, with `sales_tax_rate` adding the
+      // VAT — the same shape QuickBooks needed after its own inclusive/exclusive
+      // lesson. Both halves come from integer pence we already hold; the rate is
+      // derived from the document rather than assumed.
+      bill_items: [
+        {
+          category: account.id,
+          total_value: penceToDecimalString(context.request.totalPence - context.request.taxPence),
+          sales_tax_rate: (documentRateBasisPoints(context.request.totalPence, context.request.taxPence) / 100).toFixed(1),
+          description: context.request.supplierName,
+        },
+      ],
     };
 
     // ✅ The attachment on the SAME call — one request, not two, which is why
