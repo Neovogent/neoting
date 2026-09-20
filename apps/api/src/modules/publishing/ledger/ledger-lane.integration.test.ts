@@ -9,7 +9,7 @@ import { scopedDb } from '../../../common/db/scoped-db.js';
 import type { PublishBillRequest } from '../ledger-adapter.js';
 import { HttpLedgerAdapter } from './http-ledger-adapter.js';
 import { LedgerConnectionsService } from './ledger-connections.service.js';
-import type { LedgerEnv } from './ledger-config.js';
+import { type LedgerEnv, vendorConfigForKind } from './ledger-config.js';
 import { signState } from './oauth.js';
 import { LEDGER_LIST_KINDS, readReferenceList } from './reference-sync.js';
 import { LedgerTokenStore } from './token-store.js';
@@ -198,6 +198,16 @@ function env(): LedgerEnv {
  * repoints a vendor exists only for tests and is exactly how a staging
  * deployment ends up talking to something that is not Xero.
  */
+/**
+ * The vendor config this suite's store resolves.
+ *
+ * ⚠ It goes through `vendorConfigForKind(env(), …)` rather than `vendorForKind`
+ * for the reason the production code does: the second returns the STATIC config
+ * and therefore the production host, which is the bug this argument exists to
+ * make impossible (20 Sep 2026).
+ */
+const STANDIN_VENDOR = (kind: Parameters<typeof vendorConfigForKind>[1]) => vendorConfigForKind(env(), kind);
+
 function toStandIn(): typeof fetch {
   return async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -321,7 +331,7 @@ function adapter(read: (key: string) => Promise<Buffer> = async () => TINY_JPEG)
       clientId: 'stand-in-client',
       clientSecret: 'stand-in-secret',
       redirectUri: 'http://localhost:3000/v1/integrations/freeagent/callback',
-    }), toStandIn()),
+    }), STANDIN_VENDOR, toStandIn()),
     read,
     toStandIn(),
   );
@@ -405,7 +415,7 @@ describe.runIf(enabled)('breaking it on purpose', () => {
       clientId: 'stand-in-client',
       clientSecret: 'stand-in-secret',
       redirectUri: 'http://localhost:3000/v1/integrations/freeagent/callback',
-    }), toStandIn());
+    }), STANDIN_VENDOR, toStandIn());
 
     await store.forceRefresh(integrationId);
 
@@ -432,7 +442,7 @@ describe.runIf(enabled)('breaking it on purpose', () => {
       clientId: 'stand-in-client',
       clientSecret: 'stand-in-secret',
       redirectUri: 'http://localhost:3000/v1/integrations/freeagent/callback',
-    }), toStandIn()).forceRefresh(integrationId);
+    }), STANDIN_VENDOR, toStandIn()).forceRefresh(integrationId);
 
     const live = (await owner.integration.findUniqueOrThrow({ where: { id: integrationId } })).tokenRef;
     expect(live).not.toBe(stale);
@@ -462,8 +472,8 @@ describe.runIf(enabled)('breaking it on purpose', () => {
     });
     // Two stores, as two processes would be. Whichever wins, the invariant is
     // the same and it is the one that matters: the stored token is usable.
-    const a = new LedgerTokenStore(app, CTX, VAULT_KEY, credentials, toStandIn());
-    const b = new LedgerTokenStore(app, CTX, VAULT_KEY, credentials, toStandIn());
+    const a = new LedgerTokenStore(app, CTX, VAULT_KEY, credentials, STANDIN_VENDOR, toStandIn());
+    const b = new LedgerTokenStore(app, CTX, VAULT_KEY, credentials, STANDIN_VENDOR, toStandIn());
     await Promise.allSettled([a.forceRefresh(integrationId), b.forceRefresh(integrationId)]);
 
     const row = await owner.integration.findUniqueOrThrow({ where: { id: integrationId } });

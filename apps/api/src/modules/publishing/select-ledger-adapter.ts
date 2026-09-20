@@ -4,7 +4,7 @@ import type { Env } from '../../config/env.js';
 import { selectDocumentStore } from '../ingestion-routing/index.js';
 import { DemoXeroAdapter } from './demo-xero-adapter.js';
 import { HttpLedgerAdapter } from './ledger/http-ledger-adapter.js';
-import { credentialsFor, vaultKeyFor } from './ledger/ledger-config.js';
+import { credentialsFor, vaultKeyFor, vendorConfigForKind } from './ledger/ledger-config.js';
 import { LedgerTokenStore } from './ledger/token-store.js';
 import type { LedgerAdapter } from './ledger-adapter.js';
 
@@ -51,7 +51,9 @@ export function selectLedgerAdapter(env: Env): LedgerAdapterFactory {
     new HttpLedgerAdapter(
       prisma,
       ctx,
-      new LedgerTokenStore(prisma, ctx, vaultKey, credentials),
+      // ⚠ Env-aware vendor config. This is the PUBLISH path: getting it wrong
+      // does not fail, it posts a client's bill into the wrong company.
+      new LedgerTokenStore(prisma, ctx, vaultKey, credentials, (kind) => vendorConfigForKind(env, kind)),
       (s3Key) => documentStore.get(s3Key),
     );
 }

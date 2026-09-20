@@ -4,7 +4,7 @@ import type { PrismaClient } from '../../../common/db/prisma.js';
 import { systemContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
 import { systemActorsByPractice } from '../../../common/db/resolve-system-actor.js';
-import { credentialsFor, type LedgerEnv, vaultKeyFor } from './ledger-config.js';
+import { credentialsFor, type LedgerEnv, vaultKeyFor, vendorConfigForKind } from './ledger-config.js';
 import { LedgerConnectionUnavailable, LedgerTokenStore } from './token-store.js';
 import { isLedgerKind, vendorForKind } from './vendors.js';
 
@@ -100,7 +100,16 @@ export async function runLedgerRefreshSweep(
       if (idleDeadline - now() > IDLE_MARGIN_MS) continue;
 
       checked += 1;
-      const store = new LedgerTokenStore(prisma, ctx, vaultKey, (slug) => credentialsFor(env, slug), fetchImpl, now);
+      const store = new LedgerTokenStore(
+        prisma,
+        ctx,
+        vaultKey,
+        (slug) => credentialsFor(env, slug),
+        // ⚠ Env-aware — a refresh posted to the wrong host is a connection lost.
+        (kind) => vendorConfigForKind(env, kind),
+        fetchImpl,
+        now,
+      );
       try {
         await store.forceRefresh(row.id);
         refreshed += 1;

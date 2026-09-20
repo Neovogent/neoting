@@ -5,7 +5,9 @@ import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
 import { OAuthError, refreshTokens, type VendorCredentials } from './oauth.js';
 import { type LedgerTokens, seal, unseal } from './token-vault.js';
-import { vendorForKind, type VendorConfig, type VendorSlug } from './vendors.js';
+import type { IntegrationKind } from '@prisma/client';
+
+import { type VendorConfig, type VendorSlug } from './vendors.js';
 
 /**
  * The token vault's read/refresh/persist cycle — and the single most likely
@@ -89,6 +91,20 @@ export class LedgerTokenStore {
     /** `INTEGRATION_TOKEN_KEY`, already parsed to 32 bytes. */
     private readonly vaultKey: Buffer,
     private readonly credentials: CredentialsLookup,
+    /**
+     * ⚠ **The vendor config, RESOLVED AGAINST THIS DEPLOYMENT'S ENVIRONMENT.**
+     *
+     * Required, and deliberately not defaulted to `vendorForKind`. This class
+     * used to call that directly, which returns the STATIC config and therefore
+     * the production host — so every call after connect went somewhere the
+     * connect-time token was never issued for. FreeAgent answered 401 on
+     * `/categories` while `/company` had succeeded moments earlier through the
+     * sandbox host (20 Sep 2026), and QuickBooks only appeared to work because
+     * its static base happened to be the sandbox one.
+     *
+     * A default here would put that bug back the first time a call site forgot.
+     */
+    private readonly vendorFor: (kind: IntegrationKind) => VendorConfig | null,
     private readonly fetchImpl: typeof fetch = globalThis.fetch,
     private readonly now: () => number = () => Date.now(),
   ) {}
@@ -151,7 +167,7 @@ export class LedgerTokenStore {
     if (row === null) {
       throw new LedgerConnectionUnavailable('that ledger connection is not reachable for this practice');
     }
-    const vendor = vendorForKind(row.kind);
+    const vendor = this.vendorFor(row.kind);
     if (vendor === null) {
       throw new LedgerConnectionUnavailable(`${row.kind} is an export destination, not a ledger connection`);
     }

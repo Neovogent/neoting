@@ -132,7 +132,14 @@ export const VENDORS: Readonly<Record<VendorSlug, VendorConfig>> = {
     tokenUrl: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
     scope: 'com.intuit.quickbooks.accounting openid profile email',
     // The realm is appended per call; QBO_ENV picks sandbox or production.
-    apiBase: 'https://sandbox-quickbooks.api.intuit.com/v3/company',
+    // ⚠ **PRODUCTION, and it must stay production.** `vendorConfigFor` swaps in
+    // the sandbox host when `LEDGER_SANDBOX` is set, and any code path that
+    // forgets to ask it gets THIS value. Until 20 Sep 2026 this line held the
+    // SANDBOX base, so a forgetful path failed silently in the worst possible
+    // direction: a production deployment would have posted a client's bills
+    // into Intuit's sandbox and reported success. Production here means such a
+    // path 401s in sandbox instead — loud, and in the safe direction.
+    apiBase: 'https://quickbooks.api.intuit.com/v3/company',
     tokenEndpointAuth: 'basic',
     refreshRotates: true,
     // The refresh token itself lives 100 days; it rotates every 24 hours.

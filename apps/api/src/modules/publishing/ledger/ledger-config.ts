@@ -1,7 +1,9 @@
 import type { Env } from '../../../config/env.js';
 import type { VendorCredentials } from './oauth.js';
 import { parseVaultKey } from './token-vault.js';
-import { freeAgentHost, QBO_API_BASE, type VendorConfig, type VendorSlug, VENDORS } from './vendors.js';
+import type { IntegrationKind } from '@prisma/client';
+
+import { freeAgentHost, QBO_API_BASE, type VendorConfig, vendorForKind, type VendorSlug, VENDORS } from './vendors.js';
 
 /**
  * Config → the four applications, in one place.
@@ -80,6 +82,24 @@ export function vendorConfigFor(env: LedgerEnv, slug: VendorSlug): VendorConfig 
     };
   }
   return base;
+}
+
+/**
+ * The same resolution as {@link vendorConfigFor}, keyed by the DATABASE's
+ * `IntegrationKind` rather than by slug.
+ *
+ * ⚠ It exists so that nothing which holds an `integrations` row has a reason to
+ * reach for `vendorForKind`, which returns the STATIC config and therefore the
+ * production host. That is precisely what `token-store.ts` did until
+ * 20 Sep 2026: connect resolved the sandbox host and succeeded, every call
+ * afterwards resolved production and 401'd with a token production had never
+ * issued.
+ *
+ * Null for an export destination — `VT` and `MANUAL` are not ledgers.
+ */
+export function vendorConfigForKind(env: LedgerEnv, kind: IntegrationKind): VendorConfig | null {
+  const base = vendorForKind(kind);
+  return base === null ? null : vendorConfigFor(env, base.slug);
 }
 
 /**

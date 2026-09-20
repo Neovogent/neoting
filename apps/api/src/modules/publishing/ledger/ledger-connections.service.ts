@@ -10,14 +10,7 @@ import { AppException } from '../../../common/problem/problem.js';
 import { assertCan, resolveActor } from '../../approvals/index.js';
 import { freeAgentLedger } from './freeagent.js';
 import { VendorApi } from './ledger-http.js';
-import {
-  configuredVendors,
-  credentialsFor,
-  type LedgerEnv,
-  ledgerLaneEnabled,
-  vaultKeyFor,
-  vendorConfigFor,
-} from './ledger-config.js';
+import { configuredVendors, credentialsFor, type LedgerEnv, ledgerLaneEnabled, vaultKeyFor, vendorConfigFor, vendorConfigForKind } from './ledger-config.js';
 import {
   authorizeUrl,
   exchangeCode,
@@ -306,6 +299,10 @@ export class LedgerConnectionsService {
       ctx,
       this.vaultKey(),
       (slug) => credentialsFor(this.env, slug),
+      // ⚠ Env-AWARE, not `vendorForKind`: the sandbox host lives here and
+      // nowhere else, and losing it sends every post-connect call to the
+      // production API with a sandbox token.
+      (kind) => vendorConfigForKind(this.env, kind),
       this.fetchImpl,
     );
     const connection = await tokens.connection(integrationId);
