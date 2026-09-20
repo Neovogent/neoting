@@ -122,7 +122,7 @@ export class VendorApi {
     }
 
     const text = await response.text();
-    if (!response.ok) throw this.classify(response, text, vendorTraceId);
+    if (!response.ok) throw this.classify(response, text, vendorTraceId, path);
 
     let body: unknown;
     try {
@@ -174,13 +174,23 @@ export class VendorApi {
     return base;
   }
 
-  private classify(response: Response, text: string, vendorTraceId: string | null): LedgerApiError {
+  private classify(response: Response, text: string, vendorTraceId: string | null, path = ''): LedgerApiError {
     const label = this.connection.vendor.label;
-    this.logger.error(`${label} refused with HTTP ${response.status} [${vendorTraceId ?? 'no trace id'}]`);
+    this.logger.error(`${label} refused ${path} with HTTP ${response.status} [${vendorTraceId ?? 'no trace id'}]`);
+
+    // ⚠ **WHICH CALL was refused, in the message a human reads.**
+    //
+    // A connection whose token exchange succeeded and whose FIRST call
+    // succeeded still failed its list sync with a bare "no longer authorised"
+    // (FreeAgent, 20 Sep 2026). That sentence is true of a whole connection and
+    // says nothing about WHICH of four endpoints objected, so it sent a day
+    // into re-consenting an account that was never the problem. An operator
+    // cannot act on a refusal that will not name itself.
+    const on = path === '' ? '' : ` (on ${path})`;
 
     if (response.status === 401) {
       return new LedgerApiError(
-        `The ${label} connection is no longer authorised — reconnect it from the client's Connections screen.`,
+        `The ${label} connection is no longer authorised${on} — reconnect it from the client's Connections screen.`,
         401,
         false,
         vendorTraceId,
@@ -188,7 +198,7 @@ export class VendorApi {
     }
     if (response.status === 403) {
       return new LedgerApiError(
-        `${label} refused this action for this organisation — the connection may not have the permissions it needs.`,
+        `${label} refused this action for this organisation${on} — the connection may not have the permissions it needs.`,
         403,
         false,
         vendorTraceId,
