@@ -148,7 +148,7 @@ the opposite of what the code assumed.
 |---|---|---|---|
 | **QuickBooks** | the **NET** (`totalPence − taxPence`), `GlobalTaxCalculation: 'TaxExcluded'` | a `TaxCodeRef` the client actually has, matched on the code's REAL rate | a £899.99 invoice recorded at **£1,079.99** when sent as gross-inclusive. ✅ **Re-proven correct 20 Sep 2026** — `NT-29SSIAUO2XTGB`, £130.00 + £26.00 VAT = £156.00 on Intuit's own Bill screen, receipt attached |
 | **FreeAgent** | the **GROSS**, inside `bill_items[]` | `sales_tax_rate` as a percentage; the read-back is **NEGATIVE** on a purchase | a £156.00 bill recorded at **£0.00**, then at **£130.00**. ✅ **Proven correct 20 Sep 2026** — `WOL-1099`, £86.40 inc £14.40 VAT on FreeAgent's own Bills screen, paperclip showing |
-| **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | ✅ **Proven correct 20 Sep 2026** — `NT-2FH97ZFSZ021D`, £899.99 gross *Includes VAT 20.00% £150.00* on Xero's own Edit Bill screen, source PDF attached and previewed beside it |
+| **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | ✅ **Proven correct 20 Sep 2026** — `NT-2R1HSW0ES391Z`, **Awaiting Payment**, 72.00 net + 14.40 VAT = £86.40 on Xero's own bill screen, PDF attached. ⚠ That view renders *Tax Exclusive* though we send Inclusive; the arithmetic lands on the same total and the returned `Total`/`TotalTax` matched, so `reconcile` stayed silent. WHY the display differs is NOT established — do not build on it |
 | **Sage** | not yet posted live | | |
 
 ⚠ **Do not "make the four consistent".** They are not consistent. An edit that
@@ -212,6 +212,15 @@ in the additive nullable `integrations.org_name`. The web already read
 `connectedOrganisation ?? orgRef ?? '—'`, so the screen needed no change — the
 server was the whole of the bug. ⚠ Null stays permanent for **QuickBooks**,
 whose realm id arrives on a query string with no company attached to it.
+
+⚠ **Writing it only at connect was a HALF fix, and the deploy proved it.** The
+column shipped, the existing connection read null, and the card still showed the
+GUID — fixing a label would have cost a full consent round trip. `sync()` now
+resolves the name when it is MISSING, in the same pass that reads the lists: one
+extra vendor call, only where needed, outside every transaction, logged and
+dropped on failure, never written back to null. Pressing **Sync lists** turned
+`e5e7917d-…` into `Neoting Sandbox Ltd` on the deployed product. Same self-repair
+principle as the empty-list branch beside it.
 
 ### 3. "Release for export" sat as the heading over "Release 1 document into Xero"
 
@@ -358,10 +367,13 @@ retired for every app created after 2 March 2026, and this app was created on
 - **FreeAgent** — Neoting Sandbox Ltd. Bill `345756`, London Linen Co, coded to
   a FreeAgent category, **receipt attached** (the paperclip on their Bills
   screen).
-- **Xero** — Neoting Sandbox Ltd. Bill `NT-2FH97ZFSZ021D`, Currys Business,
-  `429 - General Expenses`, `20% (VAT on Expenses)`, £899.99 **Includes VAT
-  £150.00**, the source PDF attached and rendered beside the bill. The history
-  line reads *"Attached the file … through the Xero API using Neo Accounting"*.
+- **Xero** — Neoting Sandbox Ltd. Bill `NT-2R1HSW0ES391Z`, Wolseley, Cost of
+  Goods Sold, `20% (VAT on Expenses)`, 72.00 + 14.40 VAT = **£86.40**, PDF
+  attached (*"Attached the file … through the Xero API using Neo Accounting"*).
+  ⚠ The status is what matters: **Awaiting Payment**, with a Make payment
+  button — a real payable. `NT-2FH97ZFSZ021D` sits directly below it in the
+  same list, still a **Draft**, posted twenty minutes earlier by the same code
+  before the fix. That pair is the clearest before/after this lane has.
 
 ⚠ **Sage is the one still owed**, parked on the owner's call: its trial wants a
 card, and its Start plan cannot take purchase invoices at all.
@@ -404,9 +416,13 @@ further than the local one did.
             £26.00 VAT = £156.00, `3.4b-london-linen-2026-08-26.pdf` attached,
             and `reconcile` raised NO warning, which is the first time silence
             from it has been evidence rather than absence of it.
-      - [x] **Xero** — `NT-2FH97ZFSZ021D`, Currys Business, £899.99 gross
-            including £150.00 VAT, PDF attached. Found three defects on the way
-            through; see "THREE MORE THINGS A GREEN SUITE CANNOT SEE" above.
+      - [x] **Xero** — `NT-2R1HSW0ES391Z`, Wolseley, £86.40 (72.00 + 14.40
+            VAT), PDF attached, and **Awaiting Payment** rather than Draft.
+            Found three defects on the way through, all fixed and re-verified on
+            the deployed product; see "THREE MORE THINGS A GREEN SUITE CANNOT
+            SEE" above. ⚠ Suppliers synced 0 → 2 across the walk, because our
+            own bills created the contacts — the earlier `0 suppliers` was an
+            empty organisation, not a broken sync.
       - [ ] **Sage** — parked at the owner's instruction: the portal refuses
             `@neovogent.com` addresses, a trial wants a card, and the Start plan
             cannot take purchase invoices at all (which is the fallback path in
