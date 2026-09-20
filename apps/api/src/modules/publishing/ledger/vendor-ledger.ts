@@ -96,8 +96,13 @@ export function failed(message: string, retryable: boolean): LedgerPublishResult
   return { ok: false, failure: { code: LEDGER_REJECTED, message, retryable } };
 }
 
-export function published(externalRef: string, attachmentSent: boolean): LedgerPublishResult {
-  return { ok: true, externalRef, attachmentSent };
+export function published(
+  externalRef: string,
+  attachmentSent: boolean,
+  /** ⚠ `reconcile`'s sentence, when the ledger did not record what we sent. */
+  warning: string | null = null,
+): LedgerPublishResult {
+  return { ok: true, externalRef, attachmentSent, ...(warning === null ? {} : { warning }) };
 }
 
 /**

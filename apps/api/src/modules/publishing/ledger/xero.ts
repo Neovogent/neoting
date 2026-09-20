@@ -211,7 +211,7 @@ export const xeroLedger: VendorLedger = {
     // receipt reached it, and D43's answer is to say so rather than to pretend.
     const attachmentSent = await attach(context, posted.InvoiceID);
 
-    reconcile(
+    const mismatch = reconcile(
       context.request,
       { totalPence: amountOrNull(posted.Total), taxPence: amountOrNull(posted.TotalTax) },
       context.connection.vendor.label,
@@ -220,7 +220,7 @@ export const xeroLedger: VendorLedger = {
     // The vendor's own reference — the proof the books moved. The invoice
     // number is what an accountant will search for in Xero; the id is what a
     // machine needs. The number when there is one, the id otherwise.
-    return published(posted.InvoiceNumber ?? posted.InvoiceID, attachmentSent);
+    return published(posted.InvoiceNumber ?? posted.InvoiceID, attachmentSent, mismatch);
   },
 };
 

@@ -45,6 +45,22 @@ const m = defineMessages({
     id: 'shell.notificationsBell.clientRegistered',
     defaultMessage: '{business} finished setting up — their workspace is open',
   },
+  // ⚠ **The ledger recorded figures other than the ones we sent.** The bill IS
+  // in the client's books — this is not a failure — but a £899.99 invoice went
+  // into QuickBooks at £1,079.99 on 18 Sep 2026 behind a green tick, because
+  // the check that spotted it had nowhere to report to. This is that place.
+  //
+  // The sentence is the SERVER's, verbatim (`reconcile` composes it and names
+  // both figures), because only the server knows what was sent and what came
+  // back. The bell adds the client's name and nothing else.
+  publishRecalculated: {
+    id: 'shell.notificationsBell.publishRecalculated',
+    defaultMessage: '{business}: {detail}',
+  },
+  publishRecalculatedPlain: {
+    id: 'shell.notificationsBell.publishRecalculatedPlain',
+    defaultMessage: '{business} — the accounting software changed the figures on a release. Check it against the receipt.',
+  },
   genericEvent: { id: 'shell.notificationsBell.genericEvent', defaultMessage: '{event} — {business}' },
   badgeOverflow: {
     id: 'shell.notificationsBell.badgeOverflow',
@@ -52,6 +68,20 @@ const m = defineMessages({
     description: 'The unread badge when the count exceeds two digits.',
   },
 });
+
+/**
+ * The server's message off the notification payload, or null.
+ *
+ * ⚠ Read defensively: `payload` is a `Json` column and this row may have been
+ * written by any build. A shape we do not recognise falls back to our own
+ * sentence rather than rendering nothing or `[object Object]`.
+ */
+function detailOf(item: NotificationItem): string | null {
+  const payload: unknown = (item as { payload?: unknown }).payload;
+  if (typeof payload !== 'object' || payload === null) return null;
+  const message: unknown = (payload as { message?: unknown }).message;
+  return typeof message === 'string' && message.trim() !== '' ? message : null;
+}
 
 function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): string {
   switch (item.event) {
@@ -65,6 +95,14 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
       return intl.formatMessage(m.taskAssigned, { business: item.businessName });
     case 'client.registered':
       return intl.formatMessage(m.clientRegistered, { business: item.businessName });
+    case 'publish.recalculated': {
+      // The server's own sentence when it travelled, our plain one when it did
+      // not — a row written before `message` existed still says something true.
+      const detail = detailOf(item);
+      return detail === null
+        ? intl.formatMessage(m.publishRecalculatedPlain, { business: item.businessName })
+        : intl.formatMessage(m.publishRecalculated, { business: item.businessName, detail });
+    }
     default:
       return intl.formatMessage(m.genericEvent, { event: item.event, business: item.businessName });
   }

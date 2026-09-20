@@ -198,13 +198,13 @@ export const sageLedger: VendorLedger = {
 
     const attachmentSent = await attach(context, created.id, via);
 
-    reconcile(
+    const mismatch = reconcile(
       context.request,
       { totalPence: amountOrNull(created.total_amount), taxPence: amountOrNull(created.tax_amount) },
       context.connection.vendor.label,
     );
 
-    return published(created.displayed_as ?? created.reference ?? created.id, attachmentSent);
+    return published(created.displayed_as ?? created.reference ?? created.id, attachmentSent, mismatch);
   },
 };
 

@@ -283,7 +283,7 @@ export const quickBooksLedger: VendorLedger = {
 
     const attachmentSent = await attach(context, created.Bill.Id);
 
-    reconcile(
+    const mismatch = reconcile(
       context.request,
       {
         totalPence: amountOrNull(created.Bill.TotalAmt),
@@ -292,7 +292,7 @@ export const quickBooksLedger: VendorLedger = {
       context.connection.vendor.label,
     );
 
-    return published(created.Bill.DocNumber ?? created.Bill.Id, attachmentSent);
+    return published(created.Bill.DocNumber ?? created.Bill.Id, attachmentSent, mismatch);
   },
 };
 
