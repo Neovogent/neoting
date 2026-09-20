@@ -148,7 +148,7 @@ the opposite of what the code assumed.
 |---|---|---|---|
 | **QuickBooks** | the **NET** (`totalPence − taxPence`), `GlobalTaxCalculation: 'TaxExcluded'` | a `TaxCodeRef` the client actually has, matched on the code's REAL rate | a £899.99 invoice recorded at **£1,079.99** when sent as gross-inclusive. ✅ **Re-proven correct 20 Sep 2026** — `NT-29SSIAUO2XTGB`, £130.00 + £26.00 VAT = £156.00 on Intuit's own Bill screen, receipt attached |
 | **FreeAgent** | the **GROSS**, inside `bill_items[]` | `sales_tax_rate` as a percentage; the read-back is **NEGATIVE** on a purchase | a £156.00 bill recorded at **£0.00**, then at **£130.00**. ✅ **Proven correct 20 Sep 2026** — `WOL-1099`, £86.40 inc £14.40 VAT on FreeAgent's own Bills screen, paperclip showing |
-| **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | not yet posted live |
+| **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | ✅ **Proven correct 20 Sep 2026** — `NT-2FH97ZFSZ021D`, £899.99 gross *Includes VAT 20.00% £150.00* on Xero's own Edit Bill screen, source PDF attached and previewed beside it |
 | **Sage** | not yet posted live | | |
 
 ⚠ **Do not "make the four consistent".** They are not consistent. An edit that
@@ -162,6 +162,70 @@ ours (£150.00) and booked its own (£180.00).
 ⚠ **`bill_items` is required by FreeAgent.** `category` and `total_value` at the
 top level are accepted, attached to, and returned with a bill URL — and produce
 a bill worth nothing, listed in their own screen as "Zero Value".
+
+## ⚠ THREE MORE THINGS A GREEN SUITE CANNOT SEE — the Xero walk, 20 Sep 2026
+
+Every figure on the Xero bill was right the first time. Three other things were
+not, and each one is the same shape as the eighteen before it: **a plausible
+answer that is wrong and looks ordinary.**
+
+### 1. The bill was a DRAFT, and nothing said so
+
+`NT-2FH97ZFSZ021D` landed in Xero with the right supplier, the right account,
+the right tax rate, £899.99 gross and £150.00 VAT — as a **Draft**, with an
+unpressed Approve button. A draft is not in the books: not on the P&L, not on
+the VAT return, not in Bills to pay, until a human opens Xero and approves it a
+second time.
+
+Meanwhile the publish dialog had told the accountant *"Approving creates these
+entries in this client's Xero books"*, `reconcile` had compared the figures and
+correctly said nothing, the `publishes` row read SUCCEEDED and the document was
+PUBLISHED. **Every number agreed and the sentence was false.** That is worse
+than a wrong number, because a wrong number is visible.
+
+It was deliberate — the old comment argued Xero's own approval workflow belongs
+to the practice — and the owner overruled it on 20 Sep 2026: **post live.** Two
+reasons. D44 already reserves release for the firm's super admin, so approving
+again inside Xero is the same person agreeing twice. And QuickBooks and
+FreeAgent both post live, so DRAFT made one Approve button mean two different
+things depending on which vendor a client happened to use.
+
+`xero.test.ts` pins `Status: 'AUTHORISED'`, `LineAmountTypes: 'Inclusive'` and
+the gross on the line. **The unit suite was entirely green on the day it shipped
+a draft**, because nothing anywhere asserted the shape of the request body.
+
+### 2. The connection screen named the books with a GUID
+
+The Xero card read `Organisation  e5e7917d-6621-4666-8264-d81ccb7758ea`,
+directly under its own warning: *"Xero has no test company of its own. Connect
+their free Demo Company (UK) unless you mean to write to this client's real
+books."* The warning asks a question the line below it cannot answer.
+
+`connectedOrganisation` was **in the contract, described, and hardcoded `null`**
+in `toDto` — the field was designed and never filled. Every vendor hands back a
+name in the same response that carries the id (Xero `tenantName`, Sage
+`displayed_as`, FreeAgent the company `name`), and all three were parsed and
+discarded one line later.
+
+`resolveOrgRef` now returns `ResolvedOrg { ref, name? }`, and the name is stored
+in the additive nullable `integrations.org_name`. The web already read
+`connectedOrganisation ?? orgRef ?? '—'`, so the screen needed no change — the
+server was the whole of the bug. ⚠ Null stays permanent for **QuickBooks**,
+whose realm id arrives on a query string with no company attached to it.
+
+### 3. "Release for export" sat as the heading over "Release 1 document into Xero"
+
+The 17 Sep sweep fixed the review card's TITLE and missed the **kind label**
+above it — a static `ProposalKind → string` map in two places (`render-summary.ts`
+and the web's `proposals.ts`). It is rendered from the kind alone, with no client
+and no connection behind it, so it cannot know the lane; it said `Release for
+export` and sat as a header over a card whose own title read *Release 1 document
+into Xero*.
+
+Both are now `Release documents`, which is true in either lane. ⚠ **Not "into the
+ledger" either** — the API's copy reaches an accountant in a denial email
+("Not approved: …"), where naming the wrong egress is the same lie with a stamp
+on it. The lane is named by the server-rendered title directly below.
 
 ## ⚠ The read-back check is the only reason any of that was found
 
@@ -206,9 +270,10 @@ A check that fires on every correct bill is worse than no check.
   screen says so because no flag can. 6-minute idempotency window (short enough
   that a slow retry duplicates — `InvoiceNumber` is the guard that outlives it).
   ~98 float money fields. Two-uncertified-app limit per organisation, invisible
-  until it blocks. Bills are created **DRAFT** — the practice's own Xero
-  approval workflow is theirs, and that is one line in `xero.ts`, deliberately
-  not an environment variable.
+  until it blocks. ⚠ Bills are created **AUTHORISED** — it said DRAFT until
+  20 Sep 2026; see "THREE MORE THINGS" above, because a DRAFT bill is not in
+  the books and nothing in the product said so. Still one line in `xero.ts` and still
+  deliberately not an environment variable.
 - **QuickBooks Online** — ⚠ **no idempotency at all**; `DocNumber` is the only
   guard. `realmId` arrives on the CALLBACK, not in the token. Reads are metered,
   so reference sync uses **Change Data Capture** after the first pull.
@@ -285,7 +350,7 @@ retired for every app created after 2 March 2026, and this app was created on
    and `resolveOrgRef` calls that endpoint. It is non-tenanted — client
    credentials only — and adding it re-breaks the consent.
 
-✅ **TWO PLATFORMS ARE PROVEN IN THE VENDOR'S OWN SCREEN** (18–20 Sep 2026).
+✅ **THREE PLATFORMS ARE PROVEN IN THE VENDOR'S OWN SCREEN** (18–20 Sep 2026).
 
 - **QuickBooks** — Sandbox Company GB. Bill `NT-395QHPCC8AWKR`, Currys Business,
   coded to Furniture and Equipment, **source PDF attached**. D43 satisfied on a
@@ -293,10 +358,13 @@ retired for every app created after 2 March 2026, and this app was created on
 - **FreeAgent** — Neoting Sandbox Ltd. Bill `345756`, London Linen Co, coded to
   a FreeAgent category, **receipt attached** (the paperclip on their Bills
   screen).
+- **Xero** — Neoting Sandbox Ltd. Bill `NT-2FH97ZFSZ021D`, Currys Business,
+  `429 - General Expenses`, `20% (VAT on Expenses)`, £899.99 **Includes VAT
+  £150.00**, the source PDF attached and rendered beside the bill. The history
+  line reads *"Attached the file … through the Xero API using Neo Accounting"*.
 
-⚠ **Xero and Sage are still owed.** Xero needs two-factor completed on the
-connected organisation; Sage is parked on the owner's call (its trial wants a
-card, and its Start plan cannot take purchase invoices at all).
+⚠ **Sage is the one still owed**, parked on the owner's call: its trial wants a
+card, and its Start plan cannot take purchase invoices at all.
 
 ⚠ **Getting those two bills right took EIGHTEEN fixes**, and not one of them was
 visible to the test suite — every single one needed a real document landing in a
@@ -328,7 +396,7 @@ further than the local one did.
       had the right mapping in a table BEFORE the build and it was not carried
       into the code — the research was read, that line was not applied.
 - [ ] The four vendor screenshots — the acceptance evidence the brief asks for.
-      **TWO OF FOUR DONE (20 Sep 2026)**, each a full walk: upload → code →
+      **THREE OF FOUR DONE (20 Sep 2026)**, each a full walk: upload → code →
       Read review → Approve → the vendor's own screen showing the right pence,
       the right VAT and the receipt attached.
       - [x] **FreeAgent** — `WOL-1099`, Wolseley, £86.40 inc £14.40.
@@ -336,8 +404,9 @@ further than the local one did.
             £26.00 VAT = £156.00, `3.4b-london-linen-2026-08-26.pdf` attached,
             and `reconcile` raised NO warning, which is the first time silence
             from it has been evidence rather than absence of it.
-      - [ ] **Xero** — blocked on two-factor setup on the Neoting Sandbox Ltd
-            login, not on code. The adapter is written and its scopes are fixed.
+      - [x] **Xero** — `NT-2FH97ZFSZ021D`, Currys Business, £899.99 gross
+            including £150.00 VAT, PDF attached. Found three defects on the way
+            through; see "THREE MORE THINGS A GREEN SUITE CANNOT SEE" above.
       - [ ] **Sage** — parked at the owner's instruction: the portal refuses
             `@neovogent.com` addresses, a trial wants a card, and the Start plan
             cannot take purchase invoices at all (which is the fallback path in

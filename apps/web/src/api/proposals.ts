@@ -43,7 +43,13 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'document.split': { id: 'proposals.kindLabel.documentSplit', defaultMessage: 'Split a document' },
   'document.archive': { id: 'proposals.kindLabel.documentArchive', defaultMessage: 'Archive documents' },
   'chase.send': { id: 'proposals.kindLabel.chaseSend', defaultMessage: 'Send chase email' },
-  'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Release for export' },
+  // ⚠ NEITHER LANE'S NAME. There are two egresses now (D50) and this label is
+  // rendered from the kind alone, with no client and no connection behind it —
+  // so it cannot say which. It said "Release for export" and sat as the heading
+  // over a card whose own title read *Release 1 document into Xero*, which is
+  // the export lane's vocabulary rule (D42) broken in the opposite direction.
+  // The lane is named by the proposal's own server-rendered title, right below.
+  'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Release documents' },
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
   'bank.remove-statement': { id: 'proposals.kindLabel.bankRemoveStatement', defaultMessage: 'Remove bank statements' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },

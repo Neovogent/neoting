@@ -130,7 +130,10 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'document.split': 'Split a document',
   'document.archive': 'Archive documents',
   'chase.send': 'Send a chase',
-  'publish.batch': 'Release for export',
+  // ⚠ Lane-neutral on purpose — see the web's matching entry. This one reaches
+  // an accountant in a denial email ("Not approved: …"), where naming the wrong
+  // egress is the same lie with a stamp on it.
+  'publish.batch': 'Release documents',
   'bank.confirm-match': 'Confirm a bank match',
   'bank.remove-statement': 'Remove bank statements',
   'rule.create': 'Create a rule',
