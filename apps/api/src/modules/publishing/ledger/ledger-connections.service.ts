@@ -319,10 +319,14 @@ export class LedgerConnectionsService {
     // whose accounts are gone — because an earlier build wrote a delta over
     // them (18 Sep 2026), or because the first sync half-failed — must be able
     // to repair itself by pressing Sync rather than by reconnecting.
-    const since = await scopedDb(this.prisma, ctx, async (db) => {
+    const state = await scopedDb(this.prisma, ctx, async (db) => {
       const accounts = await readReferenceList(db, integrationId, LEDGER_LIST_KINDS.accounts);
-      if (accounts === null || accounts.items.length === 0) return null;
-      return accounts.syncedAt ?? null;
+      const row = await db.integration.findUnique({ where: { id: integrationId }, select: { orgName: true } });
+      return {
+        since: accounts === null || accounts.items.length === 0 ? null : accounts.syncedAt ?? null,
+        // ⚠ Whether this connection still cannot say WHICH books it is.
+        needsName: row === null || row.orgName === null,
+      };
     });
 
     let fetched: { lists: ReferenceLists; delta?: boolean };
@@ -331,7 +335,7 @@ export class LedgerConnectionsService {
       fetched = await LEDGERS[connection.vendor.slug].fetchLists(
         new VendorApi(connection, this.fetchImpl),
         connection,
-        since,
+        state.since,
       );
     } catch (cause) {
       const message = describe(cause);
@@ -344,13 +348,43 @@ export class LedgerConnectionsService {
       );
     }
 
+    // ⚠ **Sync HEALS the organisation name, and that is the whole reason it is
+    // here rather than only on the connect path.** `org_name` arrived on
+    // 20 Sep 2026; every connection made before it reads null and would show a
+    // bare GUID under "Organisation" until somebody reconnected — a consent
+    // round trip to fix a label. Pressing Sync is enough instead, which is the
+    // same self-repair principle the empty-list branch above is built on.
+    //
+    // Only when it is MISSING: a name that is already stored costs no second
+    // vendor call, and the vendors meter reads. A failure here is logged and
+    // dropped — the lists are what Sync is for, and refusing them over a label
+    // would be the tail wagging the dog. ⚠ QuickBooks answers null by design
+    // (its realm id arrives on a callback that no longer exists here), so this
+    // is a no-op for that vendor every time, cheaply.
+    let orgName: string | null = null;
+    if (state.needsName) {
+      try {
+        const org = await LEDGERS[connection.vendor.slug].resolveOrgRef(new VendorApi(connection, this.fetchImpl), {});
+        orgName = org?.name ?? null;
+      } catch (cause) {
+        this.logger.warn(`${connection.vendor.label} synced but would not name the organisation — ${describe(cause)}`);
+      }
+    }
+
     return scopedDb(this.prisma, ctx, async (db) => {
       // ⚠ A DELTA MERGES; a full list replaces. Replacing with a delta is what
       // turned 76 accounts into 0 on a live connection.
       await writeReferenceLists(db, integrationId, fetched.lists, null, fetched.delta === true ? 'merge' : 'replace');
       const row = await db.integration.update({
         where: { id: integrationId },
-        data: { lastSyncAt: new Date(), health: 'OK', lastErrorAt: null, lastErrorMessage: null },
+        data: {
+          lastSyncAt: new Date(),
+          health: 'OK',
+          lastErrorAt: null,
+          lastErrorMessage: null,
+          // Never written back to null — an absent name leaves what is stored.
+          ...(orgName === null ? {} : { orgName }),
+        },
       });
       return toDto(row, await countLists(db, integrationId));
     });
