@@ -228,15 +228,30 @@ export const quickBooksLedger: VendorLedger = {
       DocNumber: context.docNumber.slice(0, 21),
       PrivateNote: `Neoting reference ${referenceOrDocNumber(context)}`,
       CurrencyRef: { value: context.request.currency },
-      // ⚠ Inclusive, because `totalPence` is the GROSS figure a human read off
-      // the receipt and approved. `TaxExcluded` here would add VAT on top of a
-      // number that already contains it.
-      GlobalTaxCalculation: 'TaxInclusive',
+      // ⚠ **EXCLUSIVE, with the NET on the line — and this reverses what this
+      // file said until 18 Sep 2026.**
+      //
+      // It used to send `TaxInclusive` with the GROSS, reasoning that
+      // `totalPence` is the figure a human read off the receipt and that
+      // exclusive "would add VAT on top of a number that already contains it".
+      // The reasoning was right and the behaviour was the opposite: QuickBooks
+      // took the £899.99 gross, added 20% anyway and recorded the bill at
+      // **£1,079.99**. Seen in QuickBooks' own books — a 20% overstatement of
+      // a client's cost and of what they owe the supplier.
+      //
+      // Exclusive with the net is the shape QuickBooks computes predictably:
+      // net + (tax code's rate) = the gross the human approved. Both halves
+      // come from integer pence we already hold, so nothing is derived from a
+      // rate at the boundary.
+      GlobalTaxCalculation: 'TaxExcluded',
       Line: [
         {
           DetailType: 'AccountBasedExpenseLineDetail',
           // ⚠ `Amount` only. `UnitPrice` would override it.
-          Amount: penceToWireNumber(context.request.totalPence),
+          //
+          // ⚠ The NET — gross minus the tax the document states, in integer
+          // pence. `penceToWireNumber` is still the only boundary.
+          Amount: penceToWireNumber(context.request.totalPence - context.request.taxPence),
           Description: context.request.supplierName,
           AccountBasedExpenseLineDetail: {
             AccountRef: { value: account.id },
@@ -249,7 +264,14 @@ export const quickBooksLedger: VendorLedger = {
           },
         },
       ],
-      TxnTaxDetail: { TotalTax: penceToWireNumber(context.request.taxPence) },
+      // ⚠ **`TxnTaxDetail` is NOT sent.** QuickBooks computes the tax from the
+      // line's own code, and supplying a second figure invites it to disagree
+      // with itself — when both were sent it ignored ours (£150.00) and booked
+      // its own (£180.00). `reconcile` below checks what came BACK against what
+      // the document says, which is the honest place for that comparison.
+      //
+      // ⚠ A rounding disagreement of a penny is therefore possible and is
+      // supposed to surface there rather than be papered over here.
     };
 
     let created: z.infer<typeof CreatedBillSchema>;
