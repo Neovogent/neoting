@@ -138,6 +138,47 @@ re-registration per vendor portal. ⚠ **A redirect URI must match byte for byte
 so the portals and the task definition move together or the consent 400s at the
 vendor instead.
 
+## ⚠ THE MONEY SHAPE IS DIFFERENT ON EVERY PLATFORM — read this before editing any adapter
+
+Each line below was established by POSTING A REAL BILL and reading back what the
+vendor actually stored. None of it came from a document, and two of them are
+the opposite of what the code assumed.
+
+| Vendor | What goes on the line | Tax | Proven by |
+|---|---|---|---|
+| **QuickBooks** | the **NET** (`totalPence − taxPence`), `GlobalTaxCalculation: 'TaxExcluded'` | a `TaxCodeRef` the client actually has, matched on the code's REAL rate | a £899.99 invoice recorded at **£1,079.99** when sent as gross-inclusive |
+| **FreeAgent** | the **GROSS**, inside `bill_items[]` | `sales_tax_rate` as a percentage; the read-back is **NEGATIVE** on a purchase | a £156.00 bill recorded at **£0.00**, then at **£130.00** |
+| **Xero** | gross, `LineAmountTypes: Inclusive` | `TaxType` off the synced rates | not yet posted live |
+| **Sage** | not yet posted live | | |
+
+⚠ **Do not "make the four consistent".** They are not consistent. An edit that
+unifies them will silently misstate somebody's VAT — which is what each of the
+first two did, in opposite directions, on the same afternoon.
+
+⚠ **`TxnTaxDetail` is not sent to QuickBooks and must not be.** Supplying a
+second tax figure invites it to disagree with itself: given both, it ignored
+ours (£150.00) and booked its own (£180.00).
+
+⚠ **`bill_items` is required by FreeAgent.** `category` and `total_value` at the
+top level are accepted, attached to, and returned with a bill URL — and produce
+a bill worth nothing, listed in their own screen as "Zero Value".
+
+## ⚠ The read-back check is the only reason any of that was found
+
+`reconcile` compares what the vendor STORED against what the document says, and
+`publish-follow-up.ts` raises a `publish.recalculated` notification carrying its
+sentence. Both halves are load-bearing and both were once broken:
+
+- Every adapter used to DISCARD `reconcile`'s answer — three ignored the return
+  value, the fourth branched into two identical returns. A £899.99 invoice
+  became £1,079.99 behind a green tick.
+- The notification then could not be READ: the bell's projection drops
+  `payload` (trace ids, session ids), and the web was reading a field it is
+  never sent. `NotificationItem.detail` is the contracted sentence now.
+
+⚠ Compare tax by MAGNITUDE where a vendor signs purchases negative (FreeAgent).
+A check that fires on every correct bill is worse than no check.
+
 ## ⚠ The four things most likely to be got wrong next
 
 1. **Rotation.** Xero, QuickBooks and Sage retire the old refresh token the
@@ -244,9 +285,25 @@ retired for every app created after 2 March 2026, and this app was created on
    and `resolveOrgRef` calls that endpoint. It is non-tenanted — client
    credentials only — and adding it re-breaks the consent.
 
-⚠ **No transaction has appeared in any vendor's own screen yet.** All four stop
-at the vendor's sign-in for want of a test company to consent as. That is the
-acceptance evidence the brief asks for and it is still owed.
+✅ **TWO PLATFORMS ARE PROVEN IN THE VENDOR'S OWN SCREEN** (18–20 Sep 2026).
+
+- **QuickBooks** — Sandbox Company GB. Bill `NT-395QHPCC8AWKR`, Currys Business,
+  coded to Furniture and Equipment, **source PDF attached**. D43 satisfied on a
+  real platform.
+- **FreeAgent** — Neoting Sandbox Ltd. Bill `345756`, London Linen Co, coded to
+  a FreeAgent category, **receipt attached** (the paperclip on their Bills
+  screen).
+
+⚠ **Xero and Sage are still owed.** Xero needs two-factor completed on the
+connected organisation; Sage is parked on the owner's call (its trial wants a
+card, and its Start plan cannot take purchase invoices at all).
+
+⚠ **Getting those two bills right took EIGHTEEN fixes**, and not one of them was
+visible to the test suite — every single one needed a real document landing in a
+real ledger. The recurring shape is *a plausible answer that is wrong and looks
+ordinary*: a bill at the wrong total, a domestic purchase coded as an EC
+acquisition, a delta overwriting a list, a sandbox host lost after connect.
+`docs/runbooks/ledger-connections.md` and the sections above carry them.
 
 ✅ Built and proven against a real database and a real HTTP vendor: the shared
 layer, all four adapters, the connection surface, the refresh sweep, and the
@@ -259,9 +316,9 @@ is registered against `https://api.neoting.neovogent.com/...`, so a laptop needs
 the registered URIs are the staging ones, which is why the live test got
 further than the local one did.
 
-⚠ **Staging does not run this lane**: `LEDGER_ADAPTER=demo` there, and the
-twelve new keys are allowlisted in `scripts/check-env-parity.mjs` until the
-infra PR lands them in the task definitions with REAL values.
+✅ **Staging RUNS this lane**: `LEDGER_ADAPTER=http`, real credentials in
+`/neoting/staging/ledger`, and the four redirect URIs on `local.app_host`.
+(This paragraph used to say the opposite.)
 
 ## TODO
 
