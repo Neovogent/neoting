@@ -123,9 +123,11 @@ and never uploads the objects. Fifteen warnings in the log, a valid empty ZIP on
 the client's disk, and nothing on screen saying so.
 
 The skip is still right and the seed is still the reason. **But an archive where
-EVERY document was skipped is not the same thing as a client with no documents**,
-and today the product cannot tell those apart. Worth closing before a real
-client meets it.
+EVERY document was skipped is not the same thing as a client with no documents.**
+Closed on 23 Sep 2026 at the owner's ruling: `assertArchiveReadable` probes the
+first document BEFORE any header and refuses 503 if storage cannot serve it, and
+a partial archive carries `MISSING-DOCUMENTS.txt`. Both branches were driven —
+every object deleted from MinIO, then two of sixteen.
 
 ## Tests
 
@@ -192,8 +194,11 @@ suite.** Assume the same for both drives until a file is seen in a real one.
 - [ ] The export runner is invoked inline, not on BullMQ — the ledger
       follow-up's exact standing. It is re-drivable from its QUEUED rows, so
       moving it is a worker change with no call-site change.
-- [ ] An all-skipped archive should say so rather than being a valid empty ZIP
-      (see above).
+- [x] **DONE, 23 Sep 2026 (owner's ruling)** — an archive nobody can read now
+      REFUSES 503 before a header is written, and a PARTIAL one carries
+      `MISSING-DOCUMENTS.txt` naming what did not travel. A client with no
+      documents still gets a valid empty archive, which is the opposite case
+      and is not an error.
 - [ ] A sweep for `vault_exports` rows stuck RUNNING because a process died.
       The `@@index([state])` is there for it.
 - [ ] SoT §10's actual Document Vault (`vault_items`) is still unbuilt.
