@@ -67,6 +67,10 @@ export class VaultController {
   async archive(@Headers('authorization') authorization: string | undefined, @Res() res: Response): Promise<void> {
     const facts = await this.resolver.resolveOnboarding(authorization);
     await this.vault.assertEntitledForArchive(facts);
+    // ⚠ BEFORE a single header. Once the 200 is written the status cannot be
+    // taken back, and an unreadable store would otherwise hand the client a
+    // valid, empty, silent ZIP — which is exactly what it did on 21 Sep 2026.
+    await this.vault.assertArchiveReadable(facts);
 
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/zip');

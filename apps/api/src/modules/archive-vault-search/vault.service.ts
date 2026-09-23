@@ -117,9 +117,14 @@ export class VaultService {
   async *archiveEntries(facts: PortalSessionFacts): AsyncGenerator<ZipEntry> {
     const rows = await this.documentsFor(facts);
     const seen = new Map<string, number>();
+    const missing: string[] = [];
+    let sent = 0;
 
     for (const row of rows) {
-      if (row.s3Key === null) continue;
+      if (row.s3Key === null) {
+        missing.push(this.entryName(row, seen));
+        continue;
+      }
       let bytes: Buffer;
       try {
         bytes = await this.store.get(row.s3Key);
@@ -127,9 +132,77 @@ export class VaultService {
         this.logger.warn(
           `vault archive skipped document ${row.id}: ${error instanceof Error ? error.message : 'unreadable'}`,
         );
+        missing.push(this.entryName(row, seen));
         continue;
       }
+      sent += 1;
       yield { name: this.entryName(row, seen), bytes, modifiedAt: row.receivedAt };
+    }
+
+    // ⚠ A PARTIAL ARCHIVE SAYS SO, INSIDE ITSELF.
+    //
+    // The headers went out before the first document was read, so a failure
+    // part-way through cannot become a status code — and silently handing a
+    // client fourteen of their fifteen documents is the shape this lane keeps
+    // producing: plausible, quiet, wrong. The note is the only channel left
+    // once the response has started, and `POST /v1/exports`'s own
+    // `HOW-TO-IMPORT.txt` is the precedent for putting words in the archive.
+    //
+    // It is NOT written when nothing was missing — a file explaining that
+    // nothing went wrong is noise in every archive that is fine.
+    if (missing.length > 0) {
+      yield {
+        name: 'MISSING-DOCUMENTS.txt',
+        bytes: Buffer.from(missingNote(sent, missing), 'utf8'),
+      };
+    }
+  }
+
+  /**
+   * Refuse the download BEFORE a byte of it is written, when nothing in it
+   * could be read.
+   *
+   * ⚠ **This exists because the alternative shipped and was invisible.** Driven
+   * locally on 21 Sep 2026 the archive came back as 22 bytes — a perfectly valid
+   * ZIP holding nothing — because every object was missing from storage. Fifteen
+   * warnings in the log, a file on the client's disk, and nothing anywhere
+   * telling them. The owner ruled on 23 Sep 2026 that it should refuse loudly.
+   *
+   * It probes the FIRST document only, and the ceiling is stated rather than
+   * discovered: reading all of them here would mean fetching the whole archive
+   * twice. What this catches is the real case — object storage unreachable,
+   * misconfigured, or a bucket whose contents never existed — which fails on
+   * the first read as surely as on the fortieth. A store that serves document
+   * one and refuses the rest still produces a partial archive, and that is what
+   * `MISSING-DOCUMENTS.txt` is for.
+   *
+   * ⚠ **A client with NO documents is not an error.** They get a valid empty
+   * archive and always did: a new client pressing Download has done nothing
+   * wrong, and refusing them would be the opposite mistake.
+   *
+   * ponytail: probes one document. If a partial-store failure ever matters more
+   * than the second full read costs, probe every key with a HEAD rather than a
+   * GET — `DocumentStore` would need one.
+   */
+  async assertArchiveReadable(facts: PortalSessionFacts): Promise<void> {
+    const rows = await this.documentsFor(facts);
+    const first = rows.find((row) => row.s3Key !== null);
+    if (first?.s3Key == null) return;
+
+    try {
+      await this.store.get(first.s3Key);
+    } catch (error) {
+      this.logger.error(
+        `vault archive refused for business ${facts.businessId}: the store could not serve ${first.s3Key} — ${
+          error instanceof Error ? error.message : 'unreadable'
+        }`,
+      );
+      throw new AppException(
+        'NT-SRV-001',
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Your documents could not be read',
+        'We could not read your documents from storage, so the download was stopped rather than handing you an empty file. Nothing is lost — please try again shortly, and tell your accountant if it keeps happening.',
+      );
     }
   }
 
@@ -263,6 +336,33 @@ export class VaultService {
     }
     assertMayUseVault(business);
   }
+}
+
+/**
+ * What goes in `MISSING-DOCUMENTS.txt`.
+ *
+ * Plain English and no jargon: this is read by a client, not by us. It names
+ * the count first because that is the question ("did I get everything?"), then
+ * the documents, then what to do — which is tell their accountant, because
+ * there is nothing they can do about a missing object themselves.
+ */
+export function missingNote(sent: number, missing: readonly string[]): string {
+  const lines = [
+    'Some of your documents could not be included in this download.',
+    '',
+    `Included: ${sent}`,
+    `Could not be read: ${missing.length}`,
+    '',
+    'The ones missing from this ZIP are:',
+    ...missing.map((name) => `  - ${name}`),
+    '',
+    'Nothing has been deleted — these documents are still in your portal, and',
+    'your accountant still has them. Please let them know you saw this note.',
+    '',
+  ];
+  // CRLF, not LF: this is a .txt inside a ZIP, and the reader most likely to
+  // open it is Windows Notepad, which renders a lone LF as one long line.
+  return lines.join('\r\n');
 }
 
 /** The drive kinds, as the one list this module filters `integrations` by. */
