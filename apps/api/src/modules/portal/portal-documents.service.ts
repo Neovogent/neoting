@@ -76,7 +76,7 @@ export class PortalDocumentsService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async listDocuments(facts: PortalSessionFacts, query: ListQuery): Promise<Page<PortalDocument>> {
-    const filters = portalVisibleDocuments(facts);
+    const filters = withSearch(portalVisibleDocuments(facts), query.q);
     const request: PageRequest<DocumentRow> = {
       // Newest first, and no other sort. The contract offers none: a client
       // reading "what happened to my receipt" wants the receipt they just sent,
@@ -153,6 +153,32 @@ const RECEIVED_AT = dateField<DocumentRow>('receivedAt', (row) => row.receivedAt
  * `deletedAt: null`, so this list and `PortalSummary.documentsSent` cannot come
  * to disagree about what "sent" means.
  */
+/**
+ * Narrow a client's own list by a search term (D51, the Document Vault add-on).
+ *
+ * ⚠ **Supplier name only, and deliberately so.** It is the field a client
+ * actually remembers — "the one from Wolseley" — and it is the only text on the
+ * row that is theirs rather than the practice's. Searching the internal state,
+ * the category or the failure reason would put the firm's working notes behind
+ * a client's search box, which is the same line `PortalDocument` draws by
+ * omitting them.
+ *
+ * ⚠ **Search is NOT gated on the add-on.** The list was always free; a search
+ * box that 402s makes a client feel their own paperwork has been put behind a
+ * paywall. What the add-on buys is the Vault surface, the ZIP and the Drive
+ * copy — see `archive-vault-search/vault.service.ts`.
+ *
+ * `mode: 'insensitive'` is Postgres `ILIKE`. Prisma escapes the value, so a
+ * client typing `%` searches for a percent sign rather than matching everything
+ * — which is the trap the ledger hit from the other direction with an
+ * unescaped `startsWith`.
+ */
+export function withSearch(where: Prisma.DocumentWhereInput, term: string | undefined): Prisma.DocumentWhereInput {
+  const trimmed = term?.trim() ?? '';
+  if (trimmed === '') return where;
+  return { AND: [where, { supplierName: { contains: trimmed, mode: 'insensitive' } }] };
+}
+
 export function portalVisibleDocuments(facts: PortalSessionFacts): Prisma.DocumentWhereInput {
   return { businessId: facts.businessId, state: { not: PORTAL_HIDDEN_DOCUMENT_STATE }, ...notDeleted() };
 }

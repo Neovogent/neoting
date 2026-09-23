@@ -2800,6 +2800,46 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /portal/vault:
+    get:
+      operationId: getPortalVault
+      summary: The Document Vault's state for this client
+      description: |
+        What the client's Vault tab renders itself from (D51): whether the
+        add-on is active, which cloud drives they have connected, and how the
+        most recent copy-to-Drive run went.
+
+        ⚠ **Its own operation rather than a field on `PortalContext`, and the
+        reason is structural.** The vault lives in `archive-vault-search`, which
+        imports `portal` for the ONE session resolver — putting the vault's
+        state on the portal's own context object would have made the portal
+        import the vault straight back, and two Nest modules that each provide
+        something the other needs at construction time is a cycle that survives
+        exactly until someone calls something during module evaluation.
+
+        ⚠ **`active: false` is the normal answer, not an error.** Most clients
+        have not bought the add-on; the tab shows them what it is and what it
+        costs. Answering 402 here would mean the tab could not render the offer.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      responses:
+        '200':
+          description: The vault's state for this client.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalVault' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /portal/vault/archive:
     get:
       operationId: downloadVaultArchive
@@ -10029,19 +10069,6 @@ components:
             session has no workspace to summarise and must not be handed one.
           oneOf:
             - $ref: '#/components/schemas/PortalSummary'
-            - type: 'null'
-        vault:
-          description: |
-            The Document Vault add-on's state for this business (D51), or null
-            for a session with no `businessId` — a chase session has no vault
-            for the same reason it has no summary.
-
-            ⚠ **Present and `active: false` is the normal case, not an error.**
-            The portal renders the Vault tab from this: inactive shows what the
-            add-on is and what it costs, active shows the documents. A missing
-            field would make "not bought" indistinguishable from "not loaded".
-          oneOf:
-            - $ref: '#/components/schemas/PortalVault'
             - type: 'null'
         expiresAt: { type: string, format: date-time }
 

@@ -9,6 +9,7 @@ import { EnvModule } from './config/env.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
 import { BankingMatchingModule } from './modules/banking-matching/banking-matching.module.js';
+import { ArchiveVaultSearchModule } from './modules/archive-vault-search/archive-vault-search.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { ChaseModule } from './modules/chase/chase.module.js';
 import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
@@ -44,6 +45,7 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
     // CapabilityLinkModule for the one `DocumentLinkService`, so the two are
     // registered here in that order rather than independently.
     ExportsApiModule,
+    ArchiveVaultSearchModule,
     BillingModule,
     ChaseModule,
     ChatFrameworkModule,

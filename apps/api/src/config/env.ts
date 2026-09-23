@@ -492,6 +492,30 @@ const EnvSchema = z.object({
   XERO_CLIENT_SECRET: z.string().default(''),
   XERO_REDIRECT_URI: z.string().default(''),
 
+  // ---- The Document Vault's cloud drives (D51) -----------------------------
+  //
+  // Same shape and same reasoning as the four ledgers above: an unconfigured
+  // drive simply does not appear on the client's Vault tab, so a deployment can
+  // carry Google and not Microsoft, or neither.
+  //
+  // ⚠ **The redirect URI here points at the WEB APP, not at this API** — e.g.
+  // `https://neoacc.neovogent.com/portal/vault/connected`. A portal session is
+  // a bearer token, and a vendor's redirect cannot carry one, so the browser
+  // lands on a page that HAS the bearer and posts the code back. The full
+  // reasoning is in `archive-vault-search/drive-connections.service.ts`, and
+  // pointing this at an API route instead would make the signed state the only
+  // thing authorising a connection.
+  //
+  // ⚠ And it must match the vendor's registration BYTE FOR BYTE, which is the
+  // trap the ledger already paid for twice.
+  GOOGLE_DRIVE_CLIENT_ID: z.string().default(''),
+  GOOGLE_DRIVE_CLIENT_SECRET: z.string().default(''),
+  GOOGLE_DRIVE_REDIRECT_URI: z.string().default(''),
+
+  ONEDRIVE_CLIENT_ID: z.string().default(''),
+  ONEDRIVE_CLIENT_SECRET: z.string().default(''),
+  ONEDRIVE_REDIRECT_URI: z.string().default(''),
+
   QBO_CLIENT_ID: z.string().default(''),
   QBO_CLIENT_SECRET: z.string().default(''),
   QBO_REDIRECT_URI: z.string().default(''),
