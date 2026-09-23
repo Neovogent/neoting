@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Building2, Clock, LogIn, Mail } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -9,6 +9,14 @@ import { LivePortalCapture } from './LivePortalCapture';
 import { LivePortalHome } from './LivePortalHome';
 import { LivePortalSettings } from './LivePortalSettings';
 import { LivePortalUpload } from './LivePortalUpload';
+import { PortalDocumentList } from './PortalDocumentList';
+// ⚠ Lazy, the `LivePortalPeople` rule: the portal is the lightest route in the
+// product and must load on a bad connection in a car park. The Vault tab
+// carries `api/vault.ts` and the four generated vault clients, and most
+// sessions never open it.
+const LivePortalVault = lazy(() =>
+  import('./LivePortalVault').then((mod) => ({ default: mod.LivePortalVault })),
+);
 import type { PortalAsk } from './portalAsk';
 import { hiddenSectionsFor, pathForSection, pathForTab, sectionFromPath, tabFromPath, type PortalTab } from './portalTabs';
 import { useBusinessPortalSession } from './useBusinessPortalSession';
@@ -77,6 +85,10 @@ const m = defineMessages({
   workingLabel: { id: 'portal.liveBusinessPortal.workingLabel', defaultMessage: 'Working…' },
 
   signOutAction: { id: 'portal.liveBusinessPortal.signOutAction', defaultMessage: 'Sign out' },
+  vaultEmpty: {
+    id: 'portal.liveBusinessPortal.vaultEmpty',
+    defaultMessage: 'Nothing here yet. Everything you send your accountant is kept here.',
+  },
 
   // ⚠ The session expiry gets its own sentence, and it blames the session.
   // Before this, the sixty-minute bearer simply began failing and the copy on
@@ -348,6 +360,29 @@ export function LiveBusinessPortal() {
           onClearAsk={() => setAsk(null)}
           onSubscribe={() => void session.startCheckout()}
         />
+      )}
+      {/* ⚠ The token guard is not defensive tidiness: every vault call needs the
+          bearer, and a tab that rendered without one would show an empty vault
+          rather than a signed-out state. `session.token` is non-null whenever
+          this shell is mounted, so the branch simply never draws nothing. */}
+      {tab === 'Vault' && session.token !== null && (
+        <Suspense fallback={null}>
+          <LivePortalVault
+            token={session.token}
+            search={session.documentSearch}
+            onSearch={session.setDocumentSearch}
+          >
+            <PortalDocumentList
+              documents={session.documents}
+              documentsFault={session.documentsFault}
+              sessionToken={session.token}
+              emptyMessage={intl.formatMessage(m.vaultEmpty)}
+              browse
+              onShowMore={session.showMoreDocuments}
+              canShowMore={session.canShowMoreDocuments}
+            />
+          </LivePortalVault>
+        </Suspense>
       )}
       {tab === 'Settings' && (
         <LivePortalSettings

@@ -168,15 +168,39 @@ const RECEIVED_AT = dateField<DocumentRow>('receivedAt', (row) => row.receivedAt
  * paywall. What the add-on buys is the Vault surface, the ZIP and the Drive
  * copy — see `archive-vault-search/vault.service.ts`.
  *
- * `mode: 'insensitive'` is Postgres `ILIKE`. Prisma escapes the value, so a
- * client typing `%` searches for a percent sign rather than matching everything
- * — which is the trap the ledger hit from the other direction with an
- * unescaped `startsWith`.
+ * `mode: 'insensitive'` is Postgres `ILIKE`.
+ *
+ * ⚠ **PRISMA DOES NOT ESCAPE `%` OR `_`, AND THIS WAS MEASURED, NOT ASSUMED.**
+ * The first draft of this function said the opposite in a comment. Driven
+ * against a real database, `?q=%` returned 11 of 15 documents — every row with
+ * a supplier name — because `contains` compiles to `ILIKE '%' || $1 || '%'`
+ * with the parameter interpolated raw. It is the same trap
+ * `publishing/ledger/CLAUDE.md` already records from the other direction
+ * ("Prisma compiles `startsWith` to an UNESCAPED `LIKE` and `_` is a wildcard
+ * there"), which is the part that stings: it was written down and the comment
+ * here contradicted it.
+ *
+ * Not an injection — the value is still a bound parameter — but a client typing
+ * `%` gets their whole file back and a client typing `_` matches any single
+ * character, neither of which is what a search box means. So the three
+ * characters Postgres's default `LIKE` treats specially are escaped, backslash
+ * first or it would escape its own escapes.
  */
 export function withSearch(where: Prisma.DocumentWhereInput, term: string | undefined): Prisma.DocumentWhereInput {
   const trimmed = term?.trim() ?? '';
   if (trimmed === '') return where;
-  return { AND: [where, { supplierName: { contains: trimmed, mode: 'insensitive' } }] };
+  return { AND: [where, { supplierName: { contains: escapeLike(trimmed), mode: 'insensitive' } }] };
+}
+
+/**
+ * Make a user's text literal to Postgres `LIKE`/`ILIKE`.
+ *
+ * Backslash FIRST — escaping it after `%` would double-escape the backslashes
+ * this function had just added, and `\%` would become `\%`, which matches a
+ * literal backslash followed by anything.
+ */
+export function escapeLike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 export function portalVisibleDocuments(facts: PortalSessionFacts): Prisma.DocumentWhereInput {

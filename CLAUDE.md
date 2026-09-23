@@ -30,6 +30,16 @@ These were ID's supersessions. **D42 is now itself superseded by D50**; the othe
 | ~~No ledger API, no auto-publish~~ — ⚠ **superseded by D50.** The second release connects to Xero, QuickBooks Online, Sage and FreeAgent. *Published* meaning approved-and-released-for-export remains true of the **export** lane | Xero + QuickBooks adapters | D42, now superseded by **D50** |
 | Subscription is live at intake: £8.50/month + VAT per client business, paid by the client | Billing deferred | D48 supersedes D26 |
 
+**D51 (21 Sep 2026) — the Document Vault add-on.** £2/month on top of the
+£8.50: a client's own documents, in their own portal, searchable, downloadable
+one at a time or as one ZIP, and copyable into a Google Drive or OneDrive they
+connect themselves. ⚠ **This is NOT SoT §10's Document Vault** — that one is the
+practice's store of leases, insurance and MOTs with expiry reminders, its
+`vault_items` table is untouched, and it remains unbuilt. See
+`apps/api/src/modules/archive-vault-search/CLAUDE.md`. ⚠ Neither drive has yet
+talked to a real Google or Microsoft account: both app registrations are
+outstanding.
+
 The rest of ID in one line each: **D41** gates statement extraction on provable completeness, not confidence · **D43** every released transaction carries a resolvable link to its source document — through a file that is a typable link, through the API it is a real attachment · **D44** accountants compose and edit, only the firm's **super admin** releases · **D45** every intake channel accepts known senders only · **D46** unacceptable documents are flagged, never blocked · **D47** client onboarding asks for no connections · **D49** the prototype UI repo is ID's design source of record.
 
 **Expired, and kept only as a record:** the 18–20 Aug MVP push ran under `METH_MODE.md` (repo root) and produced the 21 Aug client-demo runbook, `docs/DEMO_SCRIPT_2026-08-21.md`. That demo has happened. Neither file governs anything now, neither is the roadmap, and every `// DEMO-MOCK` they left behind is owed a tracked issue. **§24 is the record of ID, which has shipped; `docs/ledger-connect-build-brief.md` is the current plan. Those two files are history.**

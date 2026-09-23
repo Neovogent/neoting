@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Building2, Camera, Home, Moon, Settings, Sun, Upload } from 'lucide-react';
+import { Building2, Camera, FolderLock, Home, Moon, Settings, Sun, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -8,7 +8,7 @@ import { storeTheme } from '../../lib/theme-preference';
 import { PORTAL_TABS, type PortalTab } from './portalTabs';
 
 /**
- * The four-tab chrome both business portals wear.
+ * The five-tab chrome both business portals wear.
  *
  * D49 makes the prototype the design source of record, and the prototype's
  * portal is a four-tab product — Home · Upload · Capture · Settings — not a
@@ -39,6 +39,7 @@ const m = defineMessages({
   tabHome: { id: 'portal.businessPortal.tabHome', defaultMessage: 'Home' },
   tabUpload: { id: 'portal.businessPortal.tabUpload', defaultMessage: 'Upload' },
   tabCapture: { id: 'portal.businessPortal.tabCapture', defaultMessage: 'Capture' },
+  tabVault: { id: 'portal.businessPortal.tabVault', defaultMessage: 'Vault' },
   tabSettings: { id: 'portal.businessPortal.tabSettings', defaultMessage: 'Settings' },
   // The thumb bar gives each label roughly 90px at 360px wide. English fits;
   // German does not, so the short form is its own id a translator can shorten
@@ -46,6 +47,7 @@ const m = defineMessages({
   tabHomeShort: { id: 'portal.businessPortal.tabHome.short', defaultMessage: 'Home' },
   tabUploadShort: { id: 'portal.businessPortal.tabUpload.short', defaultMessage: 'Upload' },
   tabCaptureShort: { id: 'portal.businessPortal.tabCapture.short', defaultMessage: 'Capture' },
+  tabVaultShort: { id: 'portal.businessPortal.tabVault.short', defaultMessage: 'Vault' },
   tabSettingsShort: { id: 'portal.businessPortal.tabSettings.short', defaultMessage: 'Settings' },
   thumbBarLabel: { id: 'portal.businessPortal.thumbBarLabel', defaultMessage: 'Portal' },
   tabBarLabel: { id: 'portal.businessPortal.tabBarLabel', defaultMessage: 'Portal sections' },
@@ -56,6 +58,7 @@ const CHROME: Record<PortalTab, { icon: typeof Home; label: typeof m.tabHome; sh
   Home: { icon: Home, label: m.tabHome, short: m.tabHomeShort },
   Upload: { icon: Upload, label: m.tabUpload, short: m.tabUploadShort },
   Capture: { icon: Camera, label: m.tabCapture, short: m.tabCaptureShort },
+  Vault: { icon: FolderLock, label: m.tabVault, short: m.tabVaultShort },
   Settings: { icon: Settings, label: m.tabSettings, short: m.tabSettingsShort },
 };
 

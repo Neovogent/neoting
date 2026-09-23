@@ -61,7 +61,7 @@ import { slug } from '../../lib/router';
  * section.
  */
 
-export const PORTAL_TABS = ['Home', 'Upload', 'Capture', 'Settings'] as const;
+export const PORTAL_TABS = ['Home', 'Upload', 'Capture', 'Vault', 'Settings'] as const;
 
 export type PortalTab = (typeof PORTAL_TABS)[number];
 
@@ -77,6 +77,12 @@ export const PORTAL_SECTIONS: Readonly<Record<PortalTab, readonly string[]>> = {
   Home: [],
   Upload: [],
   Capture: [],
+  // ⚠ NONE, deliberately — and it is what makes the OAuth return work. A tab
+  // with sections claims an unrecognised trailing segment (`tabFromPath`), so
+  // giving Vault sections would make `/portal/vault/anything` a Vault address.
+  // The drive consent comes back to `/portal/vault?code=…`, a QUERY on the tab's
+  // own address, which needs no segment and no new route.
+  Vault: [],
   // The client's own settings. `People` is why this exists — see the header.
   Settings: ['Business', 'Plan', 'Sending', 'Notifications', 'People', 'Security'],
 };

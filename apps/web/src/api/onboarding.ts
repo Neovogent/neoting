@@ -583,7 +583,21 @@ export const PORTAL_DOCUMENT_PAGES_MAX = 8;
  * status value the enum does not admit fails here rather than rendering as a
  * blank pill three components deep.
  */
-export async function fetchPortalDocuments(sessionToken: string, pages = 1): Promise<PortalSentPage> {
+/**
+ * `search` is the Document Vault's box (D51) and is passed straight to the
+ * server, which matches it against the supplier name.
+ *
+ * ⚠ It is part of the PAGING identity, not a filter applied afterwards: a
+ * cursor minted against one search is meaningless against another, so the
+ * caller re-reads from page one whenever the term changes rather than
+ * appending. `fetchPortalDocuments` re-reads `pages` pages every time for the
+ * same reason the poll does — an appended cursor would be reset on every tick.
+ */
+export async function fetchPortalDocuments(
+  sessionToken: string,
+  pages = 1,
+  search?: string,
+): Promise<PortalSentPage> {
   const rows: PortalSentDocument[] = [];
   let cursor: string | undefined;
   let hasMore = false;
@@ -591,7 +605,17 @@ export async function fetchPortalDocuments(sessionToken: string, pages = 1): Pro
   for (let page = 0; page < Math.max(1, Math.min(pages, PORTAL_DOCUMENT_PAGES_MAX)); page += 1) {
     const body = listPortalDocumentsResponse.parse(
       unwrapBody(
-        await listPortalDocuments({ limit: 50, ...(cursor === undefined ? {} : { cursor }) }, bearer(sessionToken)),
+        await listPortalDocuments(
+          {
+            limit: 50,
+            ...(cursor === undefined ? {} : { cursor }),
+            // Blank is omitted rather than sent: the contract treats an absent
+            // `q` as the unfiltered list, and `?q=` would be a second spelling
+            // of the same request with its own cursor namespace.
+            ...(search === undefined || search.trim() === '' ? {} : { q: search.trim() }),
+          },
+          bearer(sessionToken),
+        ),
       ),
     );
     for (const row of body.data) {

@@ -111,6 +111,9 @@ export interface BusinessPortalSession {
    * the client is looking at stays current.
    */
   readonly showMoreDocuments: () => void;
+  /** The Document Vault's search box (D51). Server-side; changing it re-reads from page one. */
+  readonly documentSearch: string;
+  readonly setDocumentSearch: (next: string) => void;
   /** Whether there is anything left to show — the server's own `hasMore`, capped. */
   readonly canShowMoreDocuments: boolean;
   /** The document list's own failure, kept apart so it cannot fell the screen. */
@@ -201,6 +204,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   const [home, setHome] = useState<BusinessPortalHome | null>(null);
   const [documents, setDocuments] = useState<PortalSentPage | null>(null);
   const [documentPages, setDocumentPages] = useState(1);
+  const [documentSearch, setDocumentSearch] = useState('');
   const [documentsFault, setDocumentsFault] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -346,7 +350,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
     // server that has not caught up; letting its 404 clear the home figures
     // would take the whole portal down for a panel.
     try {
-      const sent = await fetchPortalDocuments(token, documentPages);
+      const sent = await fetchPortalDocuments(token, documentPages, documentSearch);
       if (!alive.current) return;
       setDocuments(sent);
       setDocumentsFault(null);
@@ -358,7 +362,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       }
       setDocumentsFault(messageFor(caught, 'We could not load what you have sent. Nothing is lost.'));
     }
-  }, [token, expire, documentPages]);
+  }, [token, expire, documentPages, documentSearch]);
 
   /* ── the poll ───────────────────────────────────────────────────────────── */
 
@@ -556,6 +560,15 @@ export function useBusinessPortalSession(): BusinessPortalSession {
     documents,
     documentsFault,
     showMoreDocuments,
+    documentSearch,
+    // ⚠ Changing the term resets the depth to one page. A cursor is minted
+    // against a particular query, so pages read under the old term describe a
+    // list that no longer exists — appending them would show rows that do not
+    // match what the box says.
+    setDocumentSearch: (next: string) => {
+      setDocumentSearch(next);
+      setDocumentPages(1);
+    },
     // `hasMore` is the server's word about the LAST page read, so it is exactly
     // "there is another page after what you are looking at". The cap is the
     // second condition: past it, pressing again would read nothing new.

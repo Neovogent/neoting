@@ -5,7 +5,7 @@ import type { DocumentState, Document as DocumentRow } from '@prisma/client';
 import { listPortalDocumentsResponse } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
-import { PortalDocumentsService } from './portal-documents.service.js';
+import { PortalDocumentsService, escapeLike, withSearch } from './portal-documents.service.js';
 import { portalDocumentStatus } from './portal-document-status.js';
 import type { PortalSessionFacts } from './portal-session-context.js';
 
@@ -256,4 +256,44 @@ test('⚠ a cursor minted for ANOTHER client\'s list is refused rather than mis-
   await expect(
     service.listDocuments({ ...FACTS, businessId: 'biz_other' }, query({ limit: 1, cursor: first.pageInfo.nextCursor as string })),
   ).rejects.toMatchObject({ code: 'NT-VAL-001' });
+});
+
+test('withSearch leaves the predicate alone for a blank term, so the list stays the list', () => {
+  const base = { businessId: 'biz_1' };
+  expect(withSearch(base, undefined)).toBe(base);
+  expect(withSearch(base, '')).toBe(base);
+  // Whitespace is blank: a client who taps the box and types a space has not
+  // searched for anything, and `contains: ' '` would hide most of their file.
+  expect(withSearch(base, '   ')).toBe(base);
+});
+
+test('withSearch matches the supplier name, case-insensitively', () => {
+  expect(withSearch({ businessId: 'biz_1' }, ' Bidfood ')).toEqual({
+    AND: [{ businessId: 'biz_1' }, { supplierName: { contains: 'Bidfood', mode: 'insensitive' } }],
+  });
+});
+
+test('⚠ withSearch escapes LIKE wildcards, because Prisma does not', () => {
+  // Measured against a real database on 21 Sep 2026: `?q=%` returned 11 of 15
+  // documents — every row with a supplier name — because `contains`
+  // interpolates the parameter into `ILIKE '%' || $1 || '%'` raw. Not an
+  // injection (it is still bound), but a search box whose `%` means
+  // "everything" is not a search box.
+  expect(withSearch({}, '%')).toEqual({
+    AND: [{}, { supplierName: { contains: '\\%', mode: 'insensitive' } }],
+  });
+  expect(withSearch({}, '_')).toEqual({
+    AND: [{}, { supplierName: { contains: '\\_', mode: 'insensitive' } }],
+  });
+});
+
+test('escapeLike escapes the backslash FIRST, or it would escape its own escapes', () => {
+  // The backslash is doubled, then the percent escaped. The other order yields
+  // a value matching a literal backslash followed by anything.
+  expect(escapeLike('\\%')).toBe('\\\\\\%');
+  expect(escapeLike('a\\b')).toBe('a\\\\b');
+});
+
+test('escapeLike leaves ordinary text untouched — the common case pays nothing', () => {
+  expect(escapeLike("O'Brien & Sons (UK) Ltd.")).toBe("O'Brien & Sons (UK) Ltd.");
 });
