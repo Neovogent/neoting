@@ -169,9 +169,30 @@ the three failures that cost the ledger work days — an invalid client id, a
 exchange, the folder creation or the upload: those need a human to grant
 consent, and that half is owed rather than implied.
 
-⚠ **ONEDRIVE IS NOT REGISTERED.** The Azure portal needs a sign-in nobody
-automated has, so `ONEDRIVE_CLIENT_ID` is empty and every OneDrive connect
-refuses with "not configured on this deployment". The adapter is unexercised.
+✅ **GOOGLE IS PROVEN END TO END — A REAL FILE, IN A REAL DRIVE** (23 Sep 2026).
+Consent granted by the owner → `GOOGLE_DRIVE | OK | has_token=true` → folder
+created → **15 of 15 documents copied, 0 failed** → confirmed in Google's OWN
+Drive UI: the folder "Neo Accounting — 2026-09-23" in My Drive, and a search for
+"Bidfood" returning three PDFs named by date and supplier. That screenshot was
+this file's own standing demand and it is met; the ledger lane's warning below
+still applies to every path a real file has not yet travelled.
+
+⚠ **ONEDRIVE IS NOT REGISTERED, AND IT IS NOT A SIGN-IN PROBLEM.** The owner
+signed into Entra on 23 Sep 2026 and the registration blade answered:
+
+> *"The ability to create applications outside of a directory has been
+> deprecated. You may get a new directory by joining the M365 Developer Program
+> or signing up for Azure."*
+
+A **personal** Microsoft account has no Azure AD tenant, and Microsoft no longer
+issues app registrations without one. So `ONEDRIVE_CLIENT_ID` is empty, every
+OneDrive connect refuses with "not configured on this deployment", and the
+adapter is unexercised. Three ways out, none of them a code change: an Azure
+sign-up (free tier creates a directory), the M365 Developer Program, or any
+work/school account that already has a tenant. ⚠ **Whichever is chosen, the
+tenant stays `common` in `drive-vendors.ts`** — the directory is where the APP
+is registered, not who may sign in to it, and narrowing it would refuse every
+client whose OneDrive is personal.
 
 ⚠ **The ledger work is the standing evidence for what "unexercised" means:
 eighteen fixes to get two bills right, not one of them visible to a green test
@@ -184,16 +205,29 @@ suite.** Assume the same for both drives until a file is seen in a real one.
       (gitignored) and belong in the `ledger`/`auth` secret group on staging.
 - [ ] **Azure app registration for OneDrive** — `Files.ReadWrite` +
       `offline_access`, redirect URI on the WEB APP, `common` tenant so personal
-      and work accounts both connect. Blocked on a portal sign-in.
-- [ ] **Walk a real consent → copy → the file in Google's own Drive UI.** That
-      screenshot is the only acceptance evidence that counts, and it is what the
-      ledger lane's own TODO demanded four times over.
+      and work accounts both connect. ⚠ **Blocked on the OWNER getting a
+      directory**, not on a sign-in — see the deprecation notice above. Nothing
+      in this repo unblocks it.
+- [x] **Walked a real consent → copy → the file in Google's own Drive UI**
+      (23 Sep 2026). 15/15 copied, seen in Drive. The walk is also what found
+      the runner was never invoked — see the TODO below it, which this closed.
 - [ ] ⚠ **Google's unverified-app cap is 100 users** and shows a warning screen.
       Fine for a pilot, not for a hundred practices. Verification is a form and
       a wait, and it should start early.
-- [ ] The export runner is invoked inline, not on BullMQ — the ledger
-      follow-up's exact standing. It is re-drivable from its QUEUED rows, so
-      moving it is a worker change with no call-site change.
+- [x] **The export runner is actually INVOKED** (23 Sep 2026). It was built,
+      tested and wired to nothing: `createExport` wrote a QUEUED row and
+      returned, so the client watched "Waiting to start…" forever while every
+      test passed. `VaultService` takes the runner and fires it post-commit,
+      un-awaited. ⚠ **Pressing the button is the only thing that could have
+      found this** — the row it writes is exactly what the contract describes.
+- [ ] It is still invoked INLINE, not on BullMQ — the ledger follow-up's exact
+      standing. Re-drivable from its QUEUED rows, so moving it is a worker
+      change with no call-site change.
+- [ ] `STRIPE_VAULT_PRICE_ID` is set for sandbox AND live
+      (`price_1UIuMOGMdHp4NCWv0YYB66q3`, £2.00/mo + VAT). ⚠ The live price
+      lives in the PERSONAL Stripe account `acct_1RQtbxGMdHp4NCWv`, beside the
+      live £8.50 — a pre-existing launch blocker `docs/runbooks/stripe-billing.md`
+      already records, not one this add-on introduced.
 - [x] **DONE, 23 Sep 2026 (owner's ruling)** — an archive nobody can read now
       REFUSES 503 before a header is written, and a PARTIAL one carries
       `MISSING-DOCUMENTS.txt` naming what did not travel. A client with no

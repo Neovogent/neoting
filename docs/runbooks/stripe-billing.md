@@ -54,6 +54,31 @@ Created 27 Aug 2026 in the sandbox above:
 | Price | `price_1U8lIsGMdHp4NCWvxj03BBuc` | `unit_amount=850` GBP, monthly, **`tax_behavior=exclusive`** |
 | Tax rate | `txr_1U8lIuGMdHp4NCWvqQoFEvmQ` | 20%, `country=GB`, `tax_type=vat`, **`inclusive=false`** |
 
+### The Document Vault add-on (D51, 23 Sep 2026)
+
+A SECOND subscription ITEM on the same subscription, never a second
+subscription — one invoice, one card, one cancellation, and
+`current_period_end` keeps meaning one thing to the webhook's out-of-order
+guard.
+
+| Object | Sandbox | LIVE |
+|---|---|---|
+| Product | `prod_VJV9A8lwiG4LY2` | `prod_VJXREqDBdE5eaJ` |
+| Price (£2.00/mo, `tax_behavior=exclusive`) | `price_1UIsCKGMdHp4NCWv64ipaW6v` | `price_1UIuMOGMdHp4NCWv0YYB66q3` |
+
+`STRIPE_VAULT_PRICE_ID` selects which. ⚠ **Empty is a valid deployment** and
+means this one does not sell the add-on: every client's `vault_addon` is
+written false and the vault surface refuses with `NT-BIL-003`. It is
+deliberately NOT a boot gate, so adding the add-on to the code before adding it
+to Stripe cannot take an environment down.
+
+⚠ **The live pair is in the same account as the live £8.50 price**
+(`price_1U9R0uGMdHp4NCWv5NFOBvZ9`, "Neo Accounting — GBP 8.50/mo + VAT"), which
+is `acct_1RQtbxGMdHp4NCWv` — the PERSONAL account §0 warns about. That is a
+pre-existing launch blocker, not something the add-on introduced: the add-on
+had to go where the plan already is, or a client would need two subscriptions.
+Moving both is one migration, and it is still owed.
+
 To recreate them in another account:
 
 ```bash

@@ -7,6 +7,8 @@ import { ENV } from '../../config/env.module.js';
 import { type DocumentStore, selectDocumentStore } from '../ingestion-routing/index.js';
 import { PortalModule } from '../portal/index.js';
 import { type DriveConnectionConfig, DriveConnectionsService } from './drive-connections.service.js';
+import { DriveTokenStore } from './drive-token-store.js';
+import { VaultExportRunner } from './vault-export.runner.js';
 import type { DriveSlug } from './drive-vendors.js';
 import { VaultController } from './vault.controller.js';
 import {
@@ -52,8 +54,29 @@ import { VaultService } from './vault.service.js';
     },
     {
       provide: VAULT_SERVICE,
-      useFactory: (prisma: PrismaClient, store: DocumentStore) => new VaultService(prisma, store),
-      inject: [PRISMA, DOCUMENT_STORE],
+      useFactory: (
+        prisma: PrismaClient,
+        store: DocumentStore,
+        config: DriveConnectionConfig,
+        fetchImpl: typeof fetch,
+      ) =>
+        new VaultService(
+          prisma,
+          store,
+          // ⚠ The runner is built HERE rather than being its own provider,
+          // because it needs a per-request tenant context: `DriveTokenStore`
+          // reads a client's sealed tokens through `scopedDb`, so it cannot be
+          // a boot-time singleton. Same reasoning, and the same shape, as
+          // `publishing/select-ledger-adapter.ts`'s factory.
+          new VaultExportRunner(
+            prisma,
+            store,
+            (ctx) =>
+              new DriveTokenStore(prisma, ctx, config.vaultKey, config.credentials, fetchImpl),
+            fetchImpl,
+          ),
+        ),
+      inject: [PRISMA, DOCUMENT_STORE, DRIVE_CONNECTION_CONFIG, DRIVE_FETCH],
     },
     {
       provide: DRIVE_CONNECTIONS,

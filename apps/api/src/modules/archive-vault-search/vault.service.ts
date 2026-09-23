@@ -13,6 +13,7 @@ import { assertMayUseVault, mayUseVault } from '../billing/index.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
 import { type PortalSessionFacts, portalVisibleDocuments, systemScopeFor } from '../portal/index.js';
 import { driveFor } from './drive-vendors.js';
+import type { VaultExportRunner } from './vault-export.runner.js';
 
 /**
  * The Document Vault add-on (D51) — a client's own documents, in their own
@@ -47,6 +48,13 @@ export class VaultService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: DocumentStore,
+    /**
+     * Optional so a unit test can build the service without a drive stack.
+     * ⚠ Absent means an export is created and never driven, which is exactly
+     * the defect this argument was added to fix — so the composition root must
+     * always pass one.
+     */
+    private readonly runner?: VaultExportRunner,
   ) {}
 
   /**
@@ -253,7 +261,7 @@ export class VaultService {
       );
     }
 
-    return scopedDb(this.prisma, systemScopeFor(facts), async (db) => {
+    const { run, started } = await scopedDb(this.prisma, systemScopeFor(facts), async (db) => {
       const connection = await db.integration.findFirst({
         where: { businessId, kind, isActive: true },
         select: { id: true, tokenRef: true },
@@ -271,12 +279,41 @@ export class VaultService {
         where: { businessId, state: { in: ['QUEUED', 'RUNNING'] } },
         orderBy: { createdAt: 'desc' },
       });
-      if (running !== null) return toVaultExport(running);
+      // Already in flight: hand back the same run rather than starting a second.
+      if (running !== null) return { run: toVaultExport(running), started: false };
 
       const documentCount = await db.document.count({ where: portalVisibleDocuments(facts) });
       const created = await db.vaultExport.create({ data: { businessId, kind, documentCount } });
-      return toVaultExport(created);
+      return { run: toVaultExport(created), started: true };
     });
+
+    // ⚠ DRIVEN HERE, AFTER THE ROW IS COMMITTED, AND DELIBERATELY NOT AWAITED.
+    //
+    // Without this the button worked, the row was written QUEUED, and NOTHING
+    // ever ran it — the client watched "Waiting to start…" forever. Found on
+    // 23 Sep 2026 by pressing it, which is the only way it could have been
+    // found: every test passed and the row is exactly what the contract says.
+    //
+    // Not awaited because copying hundreds of files is minutes and the caller
+    // is a phone waiting on a 202. Not lost if this process dies, because the
+    // work list is the QUEUED rows themselves — the same re-drivable shape the
+    // ledger's follow-up uses, and the same reason moving it to BullMQ later is
+    // a worker change with no call-site change.
+    if (started && this.runner !== undefined) {
+      const ctx = systemScopeFor(facts);
+      const documents = await this.documentsFor(facts);
+      void this.runner
+        .run(ctx, run.id, businessId, documents)
+        .catch((error: unknown) =>
+          this.logger.error(
+            `vault export ${run.id} failed outside its own handler: ${
+              error instanceof Error ? error.message : 'unknown'
+            }`,
+          ),
+        );
+    }
+
+    return run;
   }
 
   /**
