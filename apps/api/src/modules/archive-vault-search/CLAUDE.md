@@ -149,20 +149,43 @@ Python's `zipfile` confirming 15 entries with every CRC intact. The add-on gate
 was checked in both directions — off shows the offer and refuses the archive
 with `NT-BIL-003`, on serves it.
 
-⚠ **NEITHER DRIVE HAS EVER TALKED TO A REAL VENDOR.** No Google Cloud project
-and no Azure app registration exist yet, so `GOOGLE_DRIVE_CLIENT_ID` and
-`ONEDRIVE_CLIENT_ID` are empty, every connect refuses with "not configured on
-this deployment", and the adapters are unexercised. The ledger work is the
-standing evidence for what that means: **eighteen fixes to get two bills right,
-not one of them visible to a green test suite.** Assume the same here.
+✅ **GOOGLE IS REGISTERED AND REACHES ITS REAL CONSENT SCREEN** (23 Sep 2026).
+
+| | |
+|---|---|
+| Project | `neo-accounting` ("Neo Accounting"), Google account `revoluon@gmail.com` |
+| Consent screen | app name **Neo Accounting**, audience **External**, status **Testing** |
+| Scope | `drive.file` only — see the note in `drive-vendors.ts` for why that is the whole verification story |
+| Client | "Neo Accounting Document Vault", Web application |
+| Redirect URIs | `http://localhost:5173/portal/vault` and `https://neoacc.neovogent.com/portal/vault` — **the WEB APP, not this API** |
+| Test users | `revoluon@gmail.com`. ⚠ **0 of 100, and the cap is over the app's LIFETIME** |
+
+Proven by pointing a browser at the URL `connections` actually builds: Google
+answered *"Choose an account — to continue to Neo Accounting"*. That rules out
+the three failures that cost the ledger work days — an invalid client id, a
+`redirect_uri_mismatch`, and `invalid_scope`. ⚠ It does NOT prove the token
+exchange, the folder creation or the upload: those need a human to grant
+consent, and that half is owed rather than implied.
+
+⚠ **ONEDRIVE IS NOT REGISTERED.** The Azure portal needs a sign-in nobody
+automated has, so `ONEDRIVE_CLIENT_ID` is empty and every OneDrive connect
+refuses with "not configured on this deployment". The adapter is unexercised.
+
+⚠ **The ledger work is the standing evidence for what "unexercised" means:
+eighteen fixes to get two bills right, not one of them visible to a green test
+suite.** Assume the same for both drives until a file is seen in a real one.
 
 ## TODO
 
-- [ ] **Register the two applications** — a Google Cloud project with the Drive
-      API enabled and `drive.file` on the consent screen, and an Azure app
-      registration with `Files.ReadWrite` + `offline_access`. Then walk a real
-      connect → copy → the file in the vendor's own screen, which is the only
-      acceptance evidence that counts.
+- [x] **Google registered** (23 Sep 2026) — project, Drive API, consent screen,
+      OAuth client, both redirect URIs, one test user. Credentials are in `.env`
+      (gitignored) and belong in the `ledger`/`auth` secret group on staging.
+- [ ] **Azure app registration for OneDrive** — `Files.ReadWrite` +
+      `offline_access`, redirect URI on the WEB APP, `common` tenant so personal
+      and work accounts both connect. Blocked on a portal sign-in.
+- [ ] **Walk a real consent → copy → the file in Google's own Drive UI.** That
+      screenshot is the only acceptance evidence that counts, and it is what the
+      ledger lane's own TODO demanded four times over.
 - [ ] ⚠ **Google's unverified-app cap is 100 users** and shows a warning screen.
       Fine for a pilot, not for a hundred practices. Verification is a form and
       a wait, and it should start early.
