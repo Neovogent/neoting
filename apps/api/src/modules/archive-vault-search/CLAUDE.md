@@ -174,6 +174,31 @@ field-by-field assertion passed, because the writer and the assertion shared the
 same wrong number, and Python's `zipfile` refused the file outright. A reader is
 the only shape that catches it.
 
+## Deployed to staging — 24 Sep 2026
+
+| | |
+|---|---|
+| API | `nt-staging-api:230`, image `d8bce40`, **2/2 tasks running** |
+| Route | `GET /v1/portal/vault` answers `401 NT-OTP-002` — registered, not a 404 |
+| Web | `https://neoacc.neovogent.com/portal/vault` serves 200 |
+| Settings | `GOOGLE_DRIVE_REDIRECT_URI`, `STRIPE_VAULT_PRICE_ID` as env; the client id/secret injected from the `ledger` secret group |
+
+⚠ **2/2 RUNNING IS THE PROOF THE SECRET LANDED, and it is the only proof
+available from outside.** ECS resolves every `valueFrom` before the container
+starts, so a task definition naming a JSON key the secret does not carry fails
+with `ResourceInitializationError` and the service drains to zero — which is
+exactly what broke every main deploy on 1 Sep 2026 (`services.tf` records it).
+The two Google keys were merged into the stored JSON by hand, whole-document,
+BEFORE the Terraform that references them; a partial `put-secret-value` would
+have deleted the eight ledger credentials beside them.
+
+⚠ **NOT verified on staging: the Vault tab itself.** Driving it needs a CLIENT
+portal sign-in, and staging has no usable one — a separate, pre-existing
+blocker. What is proven there is that the route is registered, the SPA serves,
+and the process holds the credentials; what is proven LOCALLY is the whole
+journey through to files in a real Drive. Assume the gap is real until somebody
+signs in: this module's own ledger warning below is the standing reason.
+
 ## Current state, honestly
 
 ✅ **Proven by driving the deployed-shaped local product** (21 Sep 2026), as the
