@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CloudUpload, Download, Link2Off, Search, Unplug } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -141,18 +141,47 @@ export function LivePortalVault({ token, search, onSearch, children }: Props): R
     }
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      // ⚠ THE CONSENT RETURN LANDS HERE, and this is the half that makes the
-      // connection safe. The vendor redirects the BROWSER back to this address
-      // with `code` and `state`; the API is then called WITH the bearer, so the
-      // signed state is never the only thing authorising the write. See
-      // `apps/api/.../drive-connections.service.ts` for the full argument.
-      const query = new URLSearchParams(window.location.search);
-      const code = query.get('code');
-      const state = query.get('state');
-      const refused = query.get('error');
+  /**
+   * The authorisation codes this screen has already spent.
+   *
+   * ⚠ A ref rather than state, and CLAIMED SYNCHRONOUSLY below, because the
+   * thing it guards against happens before any re-render could help. See the
+   * effect's own comment; `InputRow`'s `pendingUtterance` ref is the same shape
+   * for the same reason.
+   */
+  const spentCode = useRef<string | null>(null);
 
+  useEffect(() => {
+    // ⚠ THE CONSENT RETURN LANDS HERE, and this is the half that makes the
+    // connection safe. The vendor redirects the BROWSER back to this address
+    // with `code` and `state`; the API is then called WITH the bearer, so the
+    // signed state is never the only thing authorising the write. See
+    // `apps/api/.../drive-connections.service.ts` for the full argument.
+    const query = new URLSearchParams(window.location.search);
+    const code = query.get('code');
+    const state = query.get('state');
+    const refused = query.get('error');
+
+    // ⚠ READ AND CLAIMED BEFORE THE FIRST `await`, AND THAT ORDERING IS THE
+    // WHOLE FIX. React invokes a mount effect twice under StrictMode; both runs
+    // used to read `window.location.search` while the first was still suspended
+    // on the network, so BOTH posted the same code. The second necessarily
+    // failed — an authorisation code is single-use and the signed state is
+    // consumed on first exchange — and `guard` painted that failure as a red
+    // refusal on top of a connection that had just worked. The client read
+    // "that did not work" about a drive that was connected.
+    //
+    // Stripping the address earlier would not have fixed it: the strip is a
+    // `replaceState`, and the second effect run is already scheduled with the
+    // old address by then. Only a synchronous claim closes the window, and
+    // `LivePortalVault.test.tsx` negative-tests exactly that — without these
+    // four lines it counts two exchanges of one code.
+    if (code !== null) {
+      if (spentCode.current === code) return;
+      spentCode.current = code;
+    }
+
+    void (async () => {
       if (refused !== null) {
         // The client pressed Cancel on the vendor's own screen. Not an error to
         // apologise for — just clear it off the address and carry on.
@@ -412,7 +441,21 @@ function RunLine({ run }: { readonly run: VaultExport }): React.ReactElement {
  */
 function stripConnectionParams(): void {
   const url = new URL(window.location.href);
-  for (const key of ['code', 'state', 'error', 'scope', 'authuser', 'prompt', 'session_state']) {
+  // ⚠ `iss` is Microsoft's, and it is on this list even though OneDrive cannot
+  // be connected yet: an issuer left in the address is a stray query string on
+  // every subsequent render of this tab, and the day the registration lands is
+  // not the day anyone will think to come back for it.
+  for (const key of [
+    'code',
+    'state',
+    'error',
+    'error_description',
+    'scope',
+    'authuser',
+    'prompt',
+    'session_state',
+    'iss',
+  ]) {
     url.searchParams.delete(key);
   }
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
