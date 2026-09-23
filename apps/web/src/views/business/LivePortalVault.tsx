@@ -77,6 +77,19 @@ const m = defineMessages({
   },
   connectGoogle: { id: 'portal.vault.drives.connectGoogle', defaultMessage: 'Connect Google Drive' },
   connectOneDrive: { id: 'portal.vault.drives.connectOneDrive', defaultMessage: 'Connect OneDrive' },
+  connectGoogleSoon: {
+    id: 'portal.vault.drives.connectGoogleSoon',
+    defaultMessage: 'Google Drive — coming soon',
+  },
+  connectOneDriveSoon: {
+    id: 'portal.vault.drives.connectOneDriveSoon',
+    defaultMessage: 'OneDrive — coming soon',
+  },
+  driveNotReady: {
+    id: 'portal.vault.drives.notReady',
+    defaultMessage:
+      'A drive marked “coming soon” is not switched on yet. Everything else here works as normal, and your accountant will tell you when it is ready.',
+  },
   copyNow: { id: 'portal.vault.drives.copy', defaultMessage: 'Copy my documents there' },
   disconnect: { id: 'portal.vault.drives.disconnect', defaultMessage: 'Disconnect' },
   needsReconnect: {
@@ -219,6 +232,21 @@ export function LivePortalVault({ token, search, onSearch, children }: Props): R
     );
   }
 
+  /** Already connected — the row is rendered above rather than a button. */
+  const connected = (kind: 'GOOGLE_DRIVE' | 'ONEDRIVE'): boolean =>
+    vault.destinations.some((d) => d.kind === kind);
+
+  /**
+   * ⚠ **This deployment can actually connect that drive**, which is the
+   * SERVER's answer (`PortalVault.connectable`) and never a guess made here.
+   *
+   * A hardcoded list in the browser would be a second opinion about what the
+   * API will accept, and it would be wrong the moment an app registration
+   * lands — leaving the client staring at "coming soon" over a door that had
+   * quietly opened, with nobody thinking to come back and delete a constant.
+   */
+  const offered = (kind: 'GOOGLE_DRIVE' | 'ONEDRIVE'): boolean => vault.connectable.includes(kind);
+
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto flex flex-col gap-6 pb-safe-6">
       <Panel title={intl.formatMessage(m.title)}>
@@ -330,25 +358,43 @@ export function LivePortalVault({ token, search, onSearch, children }: Props): R
             ))}
 
             <div className="mt-3 flex flex-wrap gap-2">
-              {!vault.destinations.some((d) => d.kind === 'GOOGLE_DRIVE') && (
+              {!connected('GOOGLE_DRIVE') && (
                 <ConnectButton
                   token={token}
                   drive="google-drive"
-                  label={intl.formatMessage(m.connectGoogle)}
+                  label={intl.formatMessage(
+                    offered('GOOGLE_DRIVE') ? m.connectGoogle : m.connectGoogleSoon,
+                  )}
+                  unavailable={!offered('GOOGLE_DRIVE')}
                   disabled={busy !== null}
                   onError={setError}
                 />
               )}
-              {!vault.destinations.some((d) => d.kind === 'ONEDRIVE') && (
+              {!connected('ONEDRIVE') && (
                 <ConnectButton
                   token={token}
                   drive="onedrive"
-                  label={intl.formatMessage(m.connectOneDrive)}
+                  label={intl.formatMessage(
+                    offered('ONEDRIVE') ? m.connectOneDrive : m.connectOneDriveSoon,
+                  )}
+                  unavailable={!offered('ONEDRIVE')}
                   disabled={busy !== null}
                   onError={setError}
                 />
               )}
             </div>
+
+            {/*
+              ⚠ The reason is TEXT, not only a `title`. A title never appears on
+              touch, and a phone is where this portal is read — so a tooltip
+              would leave a greyed button with no explanation at all, which
+              reads as broken rather than as not-yet.
+            */}
+            {(!offered('GOOGLE_DRIVE') || !offered('ONEDRIVE')) && (
+              <p className="mt-2 text-[12px] text-zinc-500">
+                {intl.formatMessage(m.driveNotReady)}
+              </p>
+            )}
 
             {latest !== null && <RunLine run={latest} />}
           </Panel>
@@ -369,19 +415,31 @@ function ConnectButton({
   token,
   drive,
   label,
+  unavailable,
   disabled,
   onError,
 }: {
   readonly token: string;
   readonly drive: 'google-drive' | 'onedrive';
   readonly label: string;
+  /**
+   * This deployment holds no app registration for the drive, so
+   * `POST /portal/vault/connections` would refuse it with `NT-INT-001`.
+   *
+   * ⚠ **Greyed out, never hidden** — the client has a legitimate interest in
+   * knowing the drive is coming, and a button that silently is not there reads
+   * as a product that does not do the thing at all. That is the repo's
+   * disable-with-reason shape rather than the hide shape; see
+   * `docs/Access_and_Approval_Matrix.md`.
+   */
+  readonly unavailable: boolean;
   readonly disabled: boolean;
   readonly onError: (message: string | null) => void;
 }): React.ReactElement {
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={disabled || unavailable}
       onClick={() => {
         void (async () => {
           try {

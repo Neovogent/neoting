@@ -9,7 +9,7 @@ import { PortalModule } from '../portal/index.js';
 import { type DriveConnectionConfig, DriveConnectionsService } from './drive-connections.service.js';
 import { DriveTokenStore } from './drive-token-store.js';
 import { VaultExportRunner } from './vault-export.runner.js';
-import type { DriveSlug } from './drive-vendors.js';
+import { DRIVES, type DriveSlug } from './drive-vendors.js';
 import { VaultController } from './vault.controller.js';
 import {
   DOCUMENT_STORE,
@@ -63,6 +63,18 @@ import { VaultService } from './vault.service.js';
         new VaultService(
           prisma,
           store,
+          // ⚠ ONE SOURCE OF TRUTH for "can this deployment connect that drive",
+          // and it is deliberately the SAME `credentials` lookup the connect
+          // path refuses on (`drive-connections.service.ts#resolve`). A second
+          // rule here — an env-var name read twice, say — is how a client comes
+          // to be offered a button whose endpoint answers NT-INT-001.
+          //
+          // Computed once: `credentials` is a pure function of `Env`, so asking
+          // per request would cost a closure call to learn a fact that cannot
+          // change while this process is alive.
+          Object.values(DRIVES)
+            .filter((drive) => config.credentials(drive.slug) !== null)
+            .map((drive) => drive.kind),
           // ⚠ The runner is built HERE rather than being its own provider,
           // because it needs a per-request tenant context: `DriveTokenStore`
           // reads a client's sealed tokens through `scopedDb`, so it cannot be

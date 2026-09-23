@@ -49,6 +49,16 @@ export class VaultService {
     private readonly prisma: PrismaClient,
     private readonly store: DocumentStore,
     /**
+     * The drives THIS DEPLOYMENT holds an app registration for, decided once at
+     * boot from the same `driveCredentials` the connect path consults.
+     *
+     * ⚠ It is passed in rather than read here, so this service never learns
+     * what a client secret is — and computed at the composition root rather
+     * than asked per request, because it is a function of the environment and
+     * cannot change while the process lives.
+     */
+    private readonly connectable: readonly IntegrationKind[],
+    /**
      * Optional so a unit test can build the service without a drive stack.
      * ⚠ Absent means an export is created and never driven, which is exactly
      * the defect this argument was added to fix — so the composition root must
@@ -103,6 +113,12 @@ export class VaultService {
 
     return {
       active: mayUseVault(business),
+      // ⚠ NOT filtered by the add-on or the subscription. What this list
+      // answers is "can this deployment connect that drive at all", which is
+      // true or false regardless of who is asking; `active` is what gates
+      // whether the client may use any of it. Folding the two together would
+      // tell a lapsed client that Google Drive does not exist.
+      connectable: [...this.connectable],
       destinations,
       latestExport: latest === null ? null : toVaultExport(latest),
     };

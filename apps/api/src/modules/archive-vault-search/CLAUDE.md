@@ -63,6 +63,37 @@ The portal holds the bearer and POSTs `code` + `state` to
 match each vendor's registration byte for byte, which is the trap the ledger
 paid for twice.
 
+## ⚠ A drive this deployment cannot connect is GREYED, and the SERVER says which
+
+`PortalVault.connectable` (contract, 24 Sep 2026) is the list of drives this
+environment holds an app registration for. It is computed ONCE at the
+composition root from **the same `config.credentials` lookup the connect path
+refuses on**, so a client can never be offered a button whose endpoint answers
+`NT-INT-001` — which is exactly what OneDrive would have been.
+
+Three things about it that are decisions:
+
+- **REQUIRED on the wire, the ten-counts choice.** An omitted list and an empty
+  list are indistinguishable once drawn: silence would read either as "no drive
+  works" or, to a tolerant client, as "offer them all", and both are wrong in a
+  way the client pays for.
+- **It is a fact about the DEPLOYMENT, never about the client.** It is not
+  filtered by the add-on or the subscription — `active` is what gates use — so a
+  lapsed client is not additionally told that Google Drive does not exist.
+- **The browser holds no opinion.** `offered()` in `LivePortalVault.tsx` reads
+  this list and nothing else. A hardcoded "OneDrive is off" in the web would be
+  a second answer to a question the API already answers, and it would be wrong
+  from the moment a registration lands, with nobody thinking to come back and
+  delete a constant. ⚠ **So finishing OneDrive is a registration plus two `.env`
+  values. There is no code to change, and `LivePortalVault.test.tsx` pins that
+  by flipping only the fixture.**
+
+⚠ **Greyed, never hidden.** The client has a legitimate interest in knowing the
+drive is coming; a button that is simply absent says the product does not do
+OneDrive at all. That is the matrix's disable-with-reason shape, and the reason
+renders as TEXT rather than a `title` — a tooltip never appears on touch, and
+this portal is read on a phone.
+
 ## The files
 
 | File | What it owns |

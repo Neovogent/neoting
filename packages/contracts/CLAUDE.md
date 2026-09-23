@@ -831,3 +831,28 @@ nothing rather than publishing an address nobody reads.
 than the ten-counts one: absence is an unambiguous, true answer in both cases —
 "we hold no name for this code" and "we hold no address to show you" — where an
 absent count and a zero count are indistinguishable once drawn.
+
+## `PortalVault.connectable` (24 Sep 2026) — the Document Vault add-on, D51
+
+One required field on one schema, additive to the operation. `PortalVault`
+gained `connectable: IntegrationKind[]` — the drives THIS DEPLOYMENT holds an
+app registration for.
+
+The gap it closes: `POST /portal/vault/connections` refuses an unregistered
+drive with `NT-INT-001` ("not configured on this deployment"), and **nothing on
+the wire let a client know that before they pressed it**. OneDrive is the live
+case — a personal Microsoft account cannot create an app registration at all any
+more — so the portal offered a button whose only possible outcome was a refusal.
+
+**REQUIRED rather than optional, which is the `BusinessSummary.counts` choice
+and not the `subscription` one.** An absent list and an empty list are
+indistinguishable once rendered: a consumer would have to guess between "no
+drive can be connected" and "offer them all", and both guesses are wrong in a
+way a real client meets. So the producer is made to say which it means. Safe to
+make required because the Vault has never been deployed — there is no older
+server whose response would stop parsing.
+
+⚠ It answers a question about the **deployment**, never about the client or
+their subscription, and `vault.service.ts` says so at the field: `active` is
+what gates whether the add-on may be used, and folding the two together would
+tell a lapsed client that Google Drive does not exist.

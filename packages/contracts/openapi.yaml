@@ -10076,7 +10076,7 @@ components:
       type: object
       description: |
         What the client's Vault tab needs to render itself (D51).
-      required: [active, destinations]
+      required: [active, destinations, connectable]
       properties:
         active:
           type: boolean
@@ -10084,6 +10084,30 @@ components:
             Whether the £2/month add-on is live on this business — the add-on
             flag AND an entitled subscription, because an add-on on a cancelled
             subscription is not a paid feature.
+        connectable:
+          type: array
+          description: |
+            The drives THIS DEPLOYMENT can actually connect — one entry per
+            drive whose app registration the environment carries credentials
+            for. A drive absent from this list refuses `POST
+            /portal/vault/connections` with `NT-INT-001`, so a client offered
+            its button would meet a dead end.
+
+            ⚠ **REQUIRED, and it is the ten-counts choice rather than the
+            `subscription` one.** An omitted list and an empty list are
+            indistinguishable once drawn, so an optional one would let a server
+            stay silent and have it read as "no drive can be connected" — or,
+            read the other way by a tolerant client, as "offer them all". Both
+            readings are wrong in a way the client pays for, so the server is
+            made to say which it means.
+
+            ⚠ It is a fact about the DEPLOYMENT, never about the client or
+            their subscription: a business without the add-on still gets the
+            true list, because what is gated there is `active`. Registering an
+            app with a vendor is the ONLY thing that moves it, which is what
+            lets the Vault tab light a button up with no code change on the day
+            a registration lands.
+          items: { $ref: '#/components/schemas/IntegrationKind' }
         destinations:
           type: array
           description: |
