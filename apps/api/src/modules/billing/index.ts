@@ -19,7 +19,9 @@
  */
 export {
   assertMayIngest,
+  assertMayUseVault,
   mayIngest,
+  mayUseVault,
   type SubscriptionFacts,
   toBusinessSubscription,
 } from './entitlement.js';

@@ -2756,6 +2756,26 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
+        - name: q
+          in: query
+          required: false
+          description: |
+            Free-text search over the client's own documents (D51, the Document
+            Vault add-on). Matches the supplier name, case-insensitively, as a
+            substring.
+
+            ⚠ **Searching is NOT gated on the add-on, and that is deliberate.**
+            The list itself has always been free, and a search box that 402s is
+            a worse answer than no search box: it makes a client feel their own
+            paperwork has been put behind a paywall. What the add-on buys is
+            the Vault surface, the ZIP and the Drive copy — things that did not
+            exist before it.
+
+            Omitted or blank returns the unfiltered list, which is what the
+            Upload tab and the portal home already ask for.
+          schema:
+            type: string
+            maxLength: 200
       responses:
         '200':
           description: A page of this client's documents, newest first.
@@ -2774,6 +2794,171 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401':
           description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/vault/archive:
+    get:
+      operationId: downloadVaultArchive
+      summary: Download every document this client has, as one ZIP
+      description: |
+        The Document Vault add-on's "download everything" (D51, £2/month).
+
+        **Streamed, not assembled.** The response body is written as the
+        archive is built, one document in memory at a time, so a client with
+        four hundred receipts does not become four hundred buffers on the
+        server. There is no job and no polling: a ZIP of documents we already
+        hold is a read, which is why this is `x-nt-side-effect: none` and a
+        plain `GET`.
+
+        **Store-only compression.** Every byte in here is a PDF or a photo and
+        is already compressed; DEFLATE over them would spend the client's
+        waiting time to save a fraction of a percent.
+
+        Tenancy is the session's own business, exactly as `listPortalDocuments`
+        resolves it, and the set of documents is the SAME predicate — so the
+        archive can never contain a document the list would not show, and an
+        accountant who deletes a document has taken it out of both at once.
+
+        ⚠ **A client with no documents gets a valid, empty archive**, not a 404.
+        Nothing is wrong with a new client pressing Download.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      responses:
+        '200':
+          description: |
+            The archive. `Content-Disposition` names it after the business and
+            the date it was taken.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '402':
+          description: |
+            The Document Vault add-on is not active on this business —
+            `NT-BIL-003`. Distinct from `NT-BIL-001`: the subscription may be
+            perfectly healthy and simply not carry this extra.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/vault/exports:
+    get:
+      operationId: listVaultExports
+      summary: This client's copy-to-Drive runs, newest first
+      description: |
+        What happened to each "send my documents to my Drive" the client asked
+        for (D51). The portal renders the newest one as a status line; the rest
+        are history.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of this client's export runs, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/VaultExport' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '402':
+          description: The Document Vault add-on is not active — `NT-BIL-003`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createVaultExport
+      summary: Copy every document to the client's connected Drive
+      description: |
+        Starts a copy of this client's documents into the folder structure of a
+        cloud drive they have connected themselves (D51).
+
+        **`x-nt-side-effect: ingest`, and the reasoning matters.** Nothing in
+        Neoting changes state: no document is modified, moved, archived or
+        released, and the originals are untouched. What is created is a record
+        of a TRANSFER, from the client's own explicit press, about the client's
+        own documents, into the client's own storage. There is no Neoting state
+        for a human to approve a change to, which is what a `proposal` would be
+        for.
+
+        **It returns immediately with a QUEUED run.** Copying hundreds of files
+        over someone else's network is minutes of work, so it happens on the
+        queue and the client watches the run rather than the request. Poll
+        `listVaultExports`, or read the newest run off `PortalContext`.
+
+        ⚠ **One run at a time per business.** A second request while one is
+        QUEUED or RUNNING returns that run rather than starting another —
+        double-pressing must not mean two copies of every document in the
+        client's Drive.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VaultExportRequest' }
+      responses:
+        '202':
+          description: |
+            The run, QUEUED — or the one already in flight, unchanged.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VaultExport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '402':
+          description: The Document Vault add-on is not active — `NT-BIL-003`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: |
+            No drive of that kind is connected for this business —
+            `NT-INT-001`. The client connects one from the Vault tab first.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -6064,6 +6249,11 @@ components:
         # client's card was declined" is two incidents sharing one pager.
         - NT-BIL-001   # this business has no active subscription
         - NT-BIL-002   # this business already has an active subscription
+        # D51, 21 Sep 2026. Deliberately its own code rather than NT-BIL-001:
+        # "you are not paying at all" and "you are paying, but not for this
+        # extra" send a client to two different places, and the second one is a
+        # £2 button rather than a card problem. Both are 402.
+        - NT-BIL-003   # the Document Vault add-on is not active on this business
         # Document lifecycle (DOC family, document management 2 Sep 2026). The
         # family already exists as a `documents.failure_code` value —
         # `NT-DOC-001`, "rejected by a reviewer" — and that one is deliberately
@@ -6784,7 +6974,21 @@ components:
         Neither value carries a token, an org ref or a health state, and neither
         may ever become an adapter call. The four ledger vendors remain for v1
         (D6), which D42 supersedes for this release only.
-      enum: [XERO, QUICKBOOKS, SAGE, FREEAGENT, VT, MANUAL]
+
+        ⚠ **`GOOGLE_DRIVE` and `ONEDRIVE` are NEITHER ledgers NOR export
+        destinations (D51, 21 Sep 2026).** They are where a client's Document
+        Vault add-on copies that client's own documents to, and they are on this
+        enum because they are the same THING as a ledger connection — an OAuth
+        grant, a sealed refresh token, a health state, one row per
+        `(business, kind)`.
+
+        Two guards already refuse them and neither needed widening:
+        `isExportDestination` admits only `VT` and `MANUAL`, so a release can
+        never adopt one, and the ledger's own vendor table answers "not a ledger
+        connection" for anything outside its four. A Drive row is reachable only
+        from the vault surface, which has no way to post a transaction to
+        anything.
+      enum: [XERO, QUICKBOOKS, SAGE, FREEAGENT, VT, MANUAL, GOOGLE_DRIVE, ONEDRIVE]
 
     ExportTarget:
       type: string
@@ -9826,7 +10030,128 @@ components:
           oneOf:
             - $ref: '#/components/schemas/PortalSummary'
             - type: 'null'
+        vault:
+          description: |
+            The Document Vault add-on's state for this business (D51), or null
+            for a session with no `businessId` — a chase session has no vault
+            for the same reason it has no summary.
+
+            ⚠ **Present and `active: false` is the normal case, not an error.**
+            The portal renders the Vault tab from this: inactive shows what the
+            add-on is and what it costs, active shows the documents. A missing
+            field would make "not bought" indistinguishable from "not loaded".
+          oneOf:
+            - $ref: '#/components/schemas/PortalVault'
+            - type: 'null'
         expiresAt: { type: string, format: date-time }
+
+    PortalVault:
+      type: object
+      description: |
+        What the client's Vault tab needs to render itself (D51).
+      required: [active, destinations]
+      properties:
+        active:
+          type: boolean
+          description: |
+            Whether the £2/month add-on is live on this business — the add-on
+            flag AND an entitled subscription, because an add-on on a cancelled
+            subscription is not a paid feature.
+        destinations:
+          type: array
+          description: |
+            The cloud drives this client has connected. Empty until they connect
+            one, which is the state every client starts in — D47 forbids intake
+            from asking for a connection, and that applies here too.
+          items: { $ref: '#/components/schemas/VaultDestination' }
+        latestExport:
+          description: The most recent copy-to-Drive run, or null if none has been asked for.
+          oneOf:
+            - $ref: '#/components/schemas/VaultExport'
+            - type: 'null'
+
+    VaultDestination:
+      type: object
+      description: A cloud drive this client has connected their vault to.
+      required: [kind, label, healthy]
+      properties:
+        kind:
+          $ref: '#/components/schemas/IntegrationKind'
+        label:
+          type: string
+          description: What to call it on screen — "Google Drive", "OneDrive".
+        healthy:
+          type: boolean
+          description: |
+            False once the connection has failed in a way a reconnect fixes —
+            the client revoked our access from Google's own settings, most
+            often. The Vault tab offers Reconnect rather than Copy.
+        connectedAccount:
+          type: [string, 'null']
+          description: |
+            The account the drive belongs to, as the vendor names it, so a
+            client with two Google accounts can see which one they connected.
+            Null where the vendor does not say.
+
+    VaultExportRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          $ref: '#/components/schemas/IntegrationKind'
+
+    VaultExport:
+      type: object
+      description: |
+        One copy-to-Drive run (D51). A record of a TRANSFER — it says nothing
+        about any document's state, because copying changes none.
+      required: [id, kind, state, documentCount, sentCount, failedCount, createdAt]
+      properties:
+        id: { type: string }
+        kind: { $ref: '#/components/schemas/IntegrationKind' }
+        state: { $ref: '#/components/schemas/VaultExportState' }
+        documentCount:
+          type: integer
+          minimum: 0
+          description: How many documents the run intends to copy.
+        sentCount:
+          type: integer
+          minimum: 0
+          description: How many have actually landed in the client's drive.
+        failedCount:
+          type: integer
+          minimum: 0
+          description: How many the drive refused. Each one is counted, never silently dropped.
+        folderName:
+          type: [string, 'null']
+          description: |
+            The folder the copies are going into, as the client sees it in their
+            own drive. Null until the run creates it — so null on a RUNNING row
+            means it did not get that far.
+        failureMessage:
+          type: [string, 'null']
+          description: |
+            One sentence the client can act on, or null. Never a stack trace and
+            never the vendor's raw body: this is read by somebody who does not
+            work at the practice.
+
+            ⚠ A `FAILED` run with no message is a bug, not a state — the same
+            rule `Publish` carries, and the projection serves the null rather
+            than inventing a reason, so the defect shows up where a human sees it.
+        startedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    VaultExportState:
+      type: string
+      description: |
+        Mirrors the Prisma `VaultExportState` enum exactly.
+
+        ⚠ `PARTIAL` is a first-class outcome rather than a rounding of `FAILED`.
+        A client with four hundred documents and one file the drive refused has
+        had three hundred and ninety-nine copied successfully; calling that
+        FAILED sends them looking for a problem with all of them.
+      enum: [QUEUED, RUNNING, SUCCEEDED, PARTIAL, FAILED]
 
     PortalSummary:
       type: object

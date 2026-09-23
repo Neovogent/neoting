@@ -7,6 +7,7 @@ import type {
   CreateCustomerRequest,
   CreatePortalSessionRequest,
   HostedSession,
+  SetVaultAddOnRequest,
   StripeClient,
 } from './stripe-client.js';
 
@@ -49,7 +50,56 @@ export interface HttpStripeConfig {
   readonly taxMode: StripeTaxMode;
   /** The `txr_…` id of the 20% GB VAT rate. Only read when `taxMode === 'rate'`. */
   readonly taxRateId: string;
+  /** The £2/month Document Vault add-on price (D51). Empty = this deployment does not sell it. */
+  readonly vaultPriceId: string;
 }
+
+/**
+ * Only the fields the add-on toggle reads off a subscription list.
+ *
+ * `passthrough` for the reason the event parser gives: Stripe adds fields
+ * constantly, and a strict parse would turn generosity into a 500.
+ */
+const SubscriptionListSchema = z
+  .object({
+    data: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            status: z.string(),
+            items: z
+              .object({
+                data: z
+                  .array(
+                    z
+                      .object({
+                        id: z.string().min(1),
+                        price: z.object({ id: z.string().min(1) }).passthrough().nullish(),
+                      })
+                      .passthrough(),
+                  )
+                  .default([]),
+              })
+              .passthrough()
+              .nullish(),
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+
+/**
+ * The statuses an add-on may be attached to.
+ *
+ * ⚠ Deliberately wider than `entitlement.ts`'s ENTITLED set, and the asymmetry
+ * is the point. `PAST_DUE` is not entitled to USE the vault, but it is very
+ * much a live subscription that a client may still add an item to — refusing
+ * would tell somebody whose card bounced last night that the feature they are
+ * trying to buy does not exist.
+ */
+const ATTACHABLE = new Set(['active', 'trialing', 'past_due']);
 
 /** Only the fields we actually read. Stripe owns this schema; a pinned full copy of it would rot. */
 const CustomerSchema = z.object({ id: z.string().min(1) }).passthrough();
@@ -190,6 +240,70 @@ export class HttpStripeClient implements StripeClient {
   }
 
   /**
+   * Add or remove the Document Vault item on this customer's live subscription
+   * (D51).
+   *
+   * ⚠ **Reads the subscription's CURRENT items before writing, and is a no-op
+   * when they already say what is wanted.** Stripe will happily add a second
+   * copy of the same price as a separate line, and a client who double-clicks
+   * would then be billed £4/month for one vault. The idempotency key does not
+   * save this on its own: the "add" and the "remove" are different calls to
+   * different paths, so the guard has to be the read.
+   */
+  async setVaultAddOn(request: SetVaultAddOnRequest): Promise<void> {
+    if (this.config.vaultPriceId === '') {
+      throw new AppException(
+        'NT-BIL-003',
+        HttpStatus.PAYMENT_REQUIRED,
+        'Document Vault not available',
+        'The Document Vault add-on is not configured on this deployment.',
+      );
+    }
+
+    const listed = SubscriptionListSchema.parse(
+      await this.get(`subscriptions?customer=${encodeURIComponent(request.customerId)}&limit=10&expand[]=data.items`),
+    );
+    const subscription = listed.data.find((row) => ATTACHABLE.has(row.status));
+    if (subscription === undefined) {
+      throw new AppException(
+        'NT-BIL-001',
+        HttpStatus.PAYMENT_REQUIRED,
+        'No active subscription',
+        'This client business has no live subscription, so the Document Vault add-on cannot be added to it.',
+      );
+    }
+
+    const existing = (subscription.items?.data ?? []).find((item) => item.price?.id === this.config.vaultPriceId);
+
+    if (request.enabled) {
+      // Already on. Returning quietly rather than adding a duplicate line is
+      // the whole guard described above.
+      if (existing !== undefined) return;
+      await this.post(
+        'subscription_items',
+        {
+          subscription: subscription.id,
+          price: this.config.vaultPriceId,
+          quantity: 1,
+          // Bill the part-month now rather than at renewal, so what the client
+          // is charged matches the moment the feature switched on.
+          proration_behavior: 'create_prorations',
+          // ⚠ `tax_rates`, NOT `default_tax_rates`. That parameter belongs to a
+          // subscription; on an ITEM it is rejected outright. Same 20% GB rate,
+          // different parameter name — which is why this does not reuse
+          // `subscriptionTaxParams()` even though the value is identical.
+          ...(this.config.taxMode === 'rate' ? { tax_rates: [this.config.taxRateId] } : {}),
+        },
+        request.idempotencyKey,
+      );
+      return;
+    }
+
+    if (existing === undefined) return;
+    await this.delete(`subscription_items/${existing.id}`, request.idempotencyKey);
+  }
+
+  /**
    * VAT, and the one line in this file most likely to be wrong in a way nobody
    * notices.
    *
@@ -207,6 +321,40 @@ export class HttpStripeClient implements StripeClient {
 
   private subscriptionTaxParams(): Record<string, unknown> {
     return this.config.taxMode === 'rate' ? { default_tax_rates: [this.config.taxRateId] } : {};
+  }
+
+  /**
+   * A read. No idempotency key, because Stripe only honours one on writes and
+   * a GET has nothing to replay.
+   */
+  private async get(path: string): Promise<unknown> {
+    const response = await this.fetchImpl(`${STRIPE_API_BASE}/${path}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${this.config.secretKey}`,
+        'Stripe-Version': STRIPE_API_VERSION,
+      },
+    });
+    const text = await response.text();
+    if (!response.ok) throw this.refuse(path, response, text);
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw this.refuse(path, response, '');
+    }
+  }
+
+  /** Removing the add-on item. Keyed, because it is a write and a replay must not bill twice. */
+  private async delete(path: string, idempotencyKey: string): Promise<void> {
+    const response = await this.fetchImpl(`${STRIPE_API_BASE}/${path}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${this.config.secretKey}`,
+        'Stripe-Version': STRIPE_API_VERSION,
+        'Idempotency-Key': idempotencyKey,
+      },
+    });
+    if (!response.ok) throw this.refuse(path, response, await response.text());
   }
 
   private async post(path: string, params: Record<string, unknown>, idempotencyKey: string): Promise<unknown> {

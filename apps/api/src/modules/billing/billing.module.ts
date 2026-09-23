@@ -90,7 +90,16 @@ import {
         replay: StripeEventReplayStore,
         notifications: NotificationsService,
         env: Env,
-      ) => new StripeWebhookService(prisma, replay, { notifications, appOrigin: env.APP_ORIGIN }),
+      ) =>
+        new StripeWebhookService(
+          prisma,
+          replay,
+          { notifications, appOrigin: env.APP_ORIGIN },
+          // D51 — the add-on price the webhook recognises. The ONE place this
+          // value enters the subscription lane, so `plan` and `vaultAddon` are
+          // decided from the same id in the same event.
+          env.STRIPE_VAULT_PRICE_ID,
+        ),
       inject: [PRISMA, STRIPE_EVENT_REPLAY_STORE, NOTIFICATIONS_SERVICE, ENV],
     },
   ],

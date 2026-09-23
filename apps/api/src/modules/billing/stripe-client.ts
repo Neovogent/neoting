@@ -70,8 +70,32 @@ export interface CreatePortalSessionRequest {
   readonly idempotencyKey: string;
 }
 
+/**
+ * Turn the Document Vault add-on on or off for a business (D51).
+ *
+ * ⚠ **A subscription ITEM, not a second subscription.** One invoice, one card,
+ * one cancellation, and `current_period_end` keeps meaning one thing — the
+ * out-of-order guard in the webhook reads that column, and two subscriptions
+ * would give it two answers.
+ */
+export interface SetVaultAddOnRequest {
+  readonly customerId: string;
+  readonly enabled: boolean;
+  readonly idempotencyKey: string;
+}
+
 export interface StripeClient {
   createCustomer(request: CreateCustomerRequest): Promise<{ readonly id: string }>;
   createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<HostedSession>;
   createPortalSession(request: CreatePortalSessionRequest): Promise<HostedSession>;
+  /**
+   * Add or remove the add-on item on this customer's active subscription.
+   *
+   * Returns nothing: the result that matters is `businesses.vault_addon`, and
+   * the ONLY writer of that column is the Stripe webhook (D48's rule, kept).
+   * Returning a flag here would be a second answer to "is the vault on", minted
+   * before Stripe had confirmed anything — which is how a client ends up with a
+   * switched-on feature they were never charged for.
+   */
+  setVaultAddOn(request: SetVaultAddOnRequest): Promise<void>;
 }

@@ -37,11 +37,13 @@ import { AppException } from '../../common/problem/problem.js';
  */
 const ENTITLED: ReadonlySet<SubscriptionStatus> = new Set<SubscriptionStatus>(['ACTIVE', 'TRIALING']);
 
-/** What the four `businesses` columns look like to this module. */
+/** What the `businesses` subscription columns look like to this module. */
 export interface SubscriptionFacts {
   readonly subscriptionStatus: SubscriptionStatus | null;
   readonly plan?: string | null;
   readonly subscriptionCurrentPeriodEnd?: Date | null;
+  /** D51 — the £2/month Document Vault add-on, written only by the Stripe webhook. */
+  readonly vaultAddon?: boolean | null;
 }
 
 /** Pure, and the whole rule. Exported so a test pins all nine cases rather than the two that are convenient. */
@@ -61,6 +63,47 @@ export function mayIngest(status: SubscriptionStatus | null | undefined): boolea
  * already emailed the client about them, and hosts the page that fixes them —
  * a second, staler copy on our side is a second thing to be wrong.
  */
+/**
+ * Whether this business may use the Document Vault (D51).
+ *
+ * **Two conditions, and both are load-bearing.** The add-on flag says they
+ * bought it; the subscription status says they are still paying for anything at
+ * all. An add-on riding a `CANCELED` subscription is not a paid feature, and
+ * reading only the flag would leave the vault open to every client who ever
+ * bought it once — the add-on line disappears from a cancelled subscription,
+ * but nothing re-reads it after the final event, so the flag can outlive the
+ * money by exactly as long as nobody looks.
+ *
+ * ⚠ **This gates the FEATURE, never the documents.** A client who drops the
+ * add-on loses the vault surface, the ZIP and the Drive copy; every document
+ * they have stays exactly where it was and stays visible in their portal list,
+ * which is what it was before they ever bought the add-on. The line D32 draws —
+ * reading and exporting survive a lapse — is not crossed by switching off a
+ * feature they stopped paying for, and WOULD be crossed by hiding their file.
+ */
+export function mayUseVault(facts: SubscriptionFacts): boolean {
+  return mayIngest(facts.subscriptionStatus) && facts.vaultAddon === true;
+}
+
+/**
+ * Throw `NT-BIL-003` unless this business has the Document Vault add-on.
+ *
+ * **402, like `NT-BIL-001`**, and for the same reason: a 403 reads as "you are
+ * not allowed" and sends a client to their permissions, when the true answer is
+ * that this is a paid extra they have not bought. The message says what it
+ * costs, because unlike a failed card there is nothing in Stripe already
+ * telling them — this is an upsell, not a dunning notice.
+ */
+export function assertMayUseVault(facts: SubscriptionFacts): void {
+  if (mayUseVault(facts)) return;
+  throw new AppException(
+    'NT-BIL-003',
+    HttpStatus.PAYMENT_REQUIRED,
+    'Document Vault not active',
+    'The Document Vault is a £2/month add-on and is not active for this business. Documents already sent stay visible and downloadable without it.',
+  );
+}
+
 export function assertMayIngest(facts: SubscriptionFacts): void {
   if (mayIngest(facts.subscriptionStatus)) return;
   throw new AppException(

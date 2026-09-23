@@ -7,6 +7,7 @@ const CONFIG: HttpStripeConfig = {
   priceId: 'price_neo_accounting',
   taxMode: 'rate',
   taxRateId: 'txr_gb_vat_20',
+  vaultPriceId: 'price_vault_addon',
 };
 
 interface Captured {

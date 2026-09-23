@@ -155,6 +155,22 @@ model Business {
   /// would be invisible, because RLS fails closed and silent.
   stripeCustomerId             String?             @unique @map("stripe_customer_id")
   subscriptionStatus           SubscriptionStatus? @map("subscription_status")
+  /// ---- The Document Vault add-on (D51, 21 Sep 2026) ----------------------
+  ///
+  /// £2/month on top of the £8.50, as a SECOND Stripe subscription item on the
+  /// same subscription rather than a second subscription — one invoice, one
+  /// card, one cancellation, and `current_period_end` keeps meaning one thing.
+  ///
+  /// A boolean rather than a price id, and the difference matters: `plan` holds
+  /// Stripe's identifier because a dashboard change must not be a schema
+  /// change, but ENTITLEMENT is a question this product answers, not Stripe.
+  /// The webhook reads the subscription's items, decides whether the vault
+  /// price is among them, and writes the answer. Nothing else may write it.
+  ///
+  /// ⚠ **This is the add-on, not the subscription.** `mayUseVault` requires
+  /// BOTH this flag and an entitled `subscription_status`, because an add-on on
+  /// a lapsed subscription is not a paid feature. See `billing/entitlement.ts`.
+  vaultAddon                   Boolean             @default(false) @map("vault_addon")
   /// The Stripe price/plan reference this business is on. Free text, not an
   /// enum: it is Stripe's identifier, and pinning our own enum to a value only
   /// Stripe mints would make a dashboard change a schema change.
@@ -183,6 +199,7 @@ model Business {
   integrations       Integration[]
   publishes          Publish[]
   vaultItems         VaultItem[]
+  vaultExports       VaultExport[]
   tasks              Task[]
   notifications      Notification[]
   smsLogs            SmsLog[]
@@ -729,6 +746,13 @@ model Document {
   @@index([businessId, byteHash])
   @@index([businessId, supplierName, documentDate])
   @@index([parentDocumentId])
+  /// ⚠ Declared here on 21 Sep 2026 to stop Prisma DROPPING it. The index was
+  /// created by `20260907180000_expense_claims_claimant_and_capability` and was
+  /// never added to this model, so the schema and the database disagreed — and
+  /// the NEXT migration anyone generated, whatever it was for, quietly carried
+  /// a `DROP INDEX` for it. It was found that way: the Vault add-on's migration
+  /// arrived with one attached.
+  @@index([claimantContactId])
   /// Trash: `WHERE business_id = ? AND deleted_at IS NOT NULL`. Every index
   /// above leads with a pipeline column after `business_id`, so none of them can
   /// serve it. Ships with the query pattern it exists for (expand-contract).
@@ -1397,6 +1421,22 @@ model ActionProposal {
 /// Neither carries a token, an org ref or a health state, and neither may ever
 /// become an adapter call: D42 makes *Published* an INTERNAL state meaning
 /// approved and released for export, asserting nothing about a ledger.
+/// ---- D51, 21 Sep 2026: two kinds that are NOT ledgers -----------------------
+///
+/// GOOGLE_DRIVE / ONEDRIVE — where a client's Document Vault copies their own
+/// documents to, when they have bought the £2/month Vault add-on. They sit on
+/// this enum because they are the same THING as a ledger connection — an OAuth
+/// grant, a sealed refresh token in `token_ref`, a health state, one row per
+/// `(business, kind)` — and a second table holding the same six columns would
+/// be a second place for a revoked connection to hide.
+///
+/// ⚠ **They are not export destinations and they are not ledgers, and both
+/// guards already refuse them by construction.** `isExportDestination` admits
+/// only VT and MANUAL, so a release can never adopt one; the ledger's
+/// `vendorFor(kind)` returns null for anything not in its own table of four and
+/// answers "is an export destination, not a ledger connection". Neither list
+/// grew. A Drive row is reachable only from the vault module, which cannot post
+/// a transaction to anything.
 enum IntegrationKind {
   XERO
   QUICKBOOKS
@@ -1404,6 +1444,8 @@ enum IntegrationKind {
   FREEAGENT
   VT
   MANUAL
+  GOOGLE_DRIVE
+  ONEDRIVE
 }
 
 model Integration {
@@ -1526,6 +1568,73 @@ model VaultItem {
   @@index([businessId, category])
   @@index([businessId, expiresAt])
   @@map("vault_items")
+}
+
+/// How far a copy-to-Drive run got (D51).
+///
+/// PARTIAL is a first-class outcome rather than a rounding of FAILED: a client
+/// with four hundred documents and one file Google refused has had a successful
+/// export of three hundred and ninety-nine, and calling that FAILED would send
+/// them looking for a problem with all of them.
+enum VaultExportState {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+/// One "copy my documents to my Drive" run (D51, 21 Sep 2026).
+///
+/// ⚠ **This table exists because the alternative is a silent job.** Copying a
+/// client's whole file to Google Drive is minutes of work over someone else's
+/// network, so it runs on the queue (`apps/api/CLAUDE.md`: anything over five
+/// seconds does), and a queued job with nowhere to write its outcome is a
+/// button that does nothing visible and cannot be asked what happened.
+///
+/// It records a TRANSFER, never a document's state. Nothing here changes what
+/// a document IS — the export is a copy, the originals are untouched, and no
+/// row in `documents` is written by this lane. That is why it is `ingest` on
+/// the contract and not a proposal: there is no Neoting state for a human to
+/// approve a change to.
+model VaultExport {
+  id         String @id @default(cuid())
+  businessId String @map("business_id")
+
+  /// GOOGLE_DRIVE or ONEDRIVE. Not a free string: it names the `integrations`
+  /// row the tokens are read from, and the pair must agree.
+  kind  IntegrationKind
+  state VaultExportState @default(QUEUED)
+
+  /// What the run intended, and what actually travelled. Both are counts of
+  /// documents, and `sentCount + failedCount <= documentCount` at every moment
+  /// — a run that has not finished is not a run that lied about its total.
+  documentCount Int @map("document_count")
+  sentCount     Int @default(0) @map("sent_count")
+  failedCount   Int @default(0) @map("failed_count")
+
+  /// The folder the copies landed in, as the client would see it in their own
+  /// Drive. Null until the folder is created — which is the first thing the run
+  /// does, so a null here with a RUNNING state means it never got that far.
+  folderName String? @map("folder_name")
+
+  /// ⚠ One sentence a client can act on, or null. Never a stack trace and never
+  /// a vendor's raw body: this is read in the client portal by someone who does
+  /// not work here. A FAILED row with no message is a bug, not a state — the
+  /// same rule `publishes` carries.
+  failureMessage String? @map("failure_message")
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// The portal's list is "my exports, newest first"; the worker's list is
+  /// "what is still owed". Both are covered here.
+  @@index([businessId, createdAt])
+  @@index([state])
+  @@map("vault_exports")
 }
 
 model Task {

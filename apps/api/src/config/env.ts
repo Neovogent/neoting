@@ -584,6 +584,17 @@ const EnvSchema = z.object({
   // business, `tax_behavior=exclusive` (D48 — the price is quoted NET of VAT).
   // A Stripe identifier, so it is configuration and never an enum here.
   STRIPE_PRICE_ID: z.string().default(''),
+  // The SECOND price: the Document Vault add-on (D51), GBP 2.00/month, same
+  // `tax_behavior=exclusive`, added as a second ITEM on the same subscription
+  // so a client has one invoice, one card and one cancellation.
+  //
+  // ⚠ Deliberately NOT required, even under `BILLING=stripe`. Empty means this
+  // deployment does not sell the add-on: `hasVaultAddOn` answers false for
+  // every subscription, every client's `vaultAddon` is written false, and the
+  // vault surface 402s with a sentence naming the price. That is a coherent
+  // environment, and making it a boot gate would have taken staging down the
+  // moment the add-on was added to the code and before it was added to Stripe.
+  STRIPE_VAULT_PRICE_ID: z.string().default(''),
 
   // How VAT is added on top of that net price.
   //

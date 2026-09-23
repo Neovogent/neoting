@@ -8,6 +8,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import {
   CheckoutSessionObjectSchema,
   currentPeriodEndMs,
+  hasVaultAddOn,
   planOf,
   StripeEventSchema,
   SubscriptionObjectSchema,
@@ -112,6 +113,16 @@ export class StripeWebhookService {
      * importance — the record is the database's, the email is a copy.
      */
     private readonly notifier?: ClientRegisteredNotifier,
+    /**
+     * `STRIPE_VAULT_PRICE_ID` — the £2/month Document Vault add-on (D51).
+     *
+     * Defaulted to `''` rather than required, and that is the whole behaviour
+     * of a deployment that does not sell the add-on: `hasVaultAddOn` answers
+     * false for every subscription, `planOf` excludes nothing, and every
+     * client's `vaultAddon` is written false. No branch anywhere else has to
+     * know whether the add-on exists.
+     */
+    private readonly vaultPriceId: string = '',
   ) {}
 
   async handle(rawEvent: unknown): Promise<WebhookOutcome> {
@@ -150,7 +161,12 @@ export class StripeWebhookService {
 
     const status = toPrismaStatus(subscription.status);
     const periodEndMs = currentPeriodEndMs(subscription);
-    const plan = planOf(subscription);
+    // D51: the vault price is named so `planOf` cannot mistake the add-on for
+    // the plan, and so the add-on flag is read from the SAME parsed object in
+    // the same event — two reads of one subscription cannot disagree.
+    const vaultPriceId = this.vaultPriceId;
+    const plan = planOf(subscription, vaultPriceId === '' ? [] : [vaultPriceId]);
+    const vaultAddon = hasVaultAddOn(subscription, vaultPriceId);
     const terminal = type === 'customer.subscription.deleted';
 
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
@@ -192,6 +208,11 @@ export class StripeWebhookService {
           // this line.
           subscriptionStatus: status as never,
           plan,
+          // ⚠ Written on EVERY subscription event, never only when true. The
+          // add-on going away is a `customer.subscription.updated` with one
+          // item and nothing else to mark it, so an `if (vaultAddon)` here
+          // would let a cancelled add-on stay switched on forever.
+          vaultAddon,
           subscriptionCurrentPeriodEnd: periodEndMs === null ? null : new Date(periodEndMs),
         },
       });

@@ -93,6 +93,10 @@ function harness(
       calls.createCheckout.push(request);
       return { url: 'https://checkout.stripe.com/c/pay/cs_1', expiresAt: '2026-08-28T09:00:00.000Z' };
     },
+    // D51. `BillingService` never calls it — the vault add-on is the vault
+    // module's door — but the seam is one interface and a stub that omits a
+    // method stops typechecking, which is the interface doing its job.
+    setVaultAddOn: async () => {},
     createPortalSession: async (request): Promise<HostedSession> => {
       calls.createPortal.push(request);
       return { url: 'https://billing.stripe.com/p/session/x', expiresAt: null };

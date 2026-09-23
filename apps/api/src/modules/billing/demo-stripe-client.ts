@@ -53,6 +53,21 @@ export class DemoStripeClient implements StripeClient {
       expiresAt: null,
     };
   }
+
+  /**
+   * D51 — a no-op that SUCCEEDS.
+   *
+   * Under `BILLING=demo` nothing writes `businesses.vault_addon` either, because
+   * that column's only writer is the Stripe webhook and no webhook arrives. So a
+   * demo deployment can ask for the add-on, be told the request was accepted,
+   * and still not have the vault — which is exactly what `BILLING=demo` means
+   * for the subscription itself (`mayIngest(null)` is false and every upload
+   * 402s). Pretending otherwise here would put a second, fake writer of
+   * entitlement into the one module whose whole rule is that there is one.
+   */
+  async setVaultAddOn(): Promise<void> {
+    return;
+  }
 }
 
 function digest(input: string): string {

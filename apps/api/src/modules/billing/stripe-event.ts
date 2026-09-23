@@ -117,7 +117,43 @@ export function currentPeriodEndMs(subscription: SubscriptionObject): number | n
   return seconds === null || seconds === undefined ? null : seconds * 1000;
 }
 
-/** The Stripe price id this subscription is on — what `businesses.plan` stores. */
-export function planOf(subscription: SubscriptionObject): string | null {
-  return subscription.items?.data?.[0]?.price?.id ?? null;
+/**
+ * The Stripe price id this subscription is on — what `businesses.plan` stores.
+ *
+ * ⚠ **`items.data[0]` was right until 21 Sep 2026 and is now a coin toss.** The
+ * Document Vault add-on (D51) is a SECOND item on the same subscription, and
+ * Stripe does not promise the order of that array. Taking the first element
+ * would have written `price_…vault` into `plan` for some clients and the base
+ * price for others, from the same event, depending on nothing anyone could see.
+ *
+ * So the add-on price is named and excluded, and the base is whatever is left.
+ * With no add-on configured this is the old behaviour exactly.
+ */
+export function planOf(subscription: SubscriptionObject, addOnPriceIds: readonly string[] = []): string | null {
+  const ids = (subscription.items?.data ?? [])
+    .map((item) => item.price?.id)
+    .filter((id): id is string => typeof id === 'string');
+  // The fallback matters: a subscription carrying ONLY the add-on price is not
+  // a shape we create, but reporting `null` for it would read as "never been
+  // through checkout", which is a different and wrong story.
+  return ids.find((id) => !addOnPriceIds.includes(id)) ?? ids[0] ?? null;
+}
+
+/**
+ * Whether the Document Vault add-on is on this subscription (D51).
+ *
+ * ⚠ **Presence of the PRICE, not of a flag we set.** Stripe is the source of
+ * truth for what a client pays for, and the only honest way to answer "have
+ * they bought the vault" is to look at what is on the subscription. A client
+ * who removes the add-on in Stripe's own portal — which they can, and which we
+ * host precisely so they can — produces a `customer.subscription.updated` with
+ * one item, and this returns false without anything else having to notice.
+ *
+ * An unconfigured price id (`''`) answers false rather than throwing: a
+ * deployment that does not sell the add-on is a valid deployment, and every
+ * client on it simply has no vault.
+ */
+export function hasVaultAddOn(subscription: SubscriptionObject, vaultPriceId: string): boolean {
+  if (vaultPriceId === '') return false;
+  return (subscription.items?.data ?? []).some((item) => item.price?.id === vaultPriceId);
 }

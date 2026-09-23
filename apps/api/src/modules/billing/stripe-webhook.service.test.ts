@@ -23,7 +23,7 @@ interface Calls {
   notifications: Array<{ data?: Record<string, unknown> }>;
 }
 
-function harness(options: { rows?: Row[]; systemActor?: string | null } = {}) {
+function harness(options: { rows?: Row[]; systemActor?: string | null; vaultPriceId?: string } = {}) {
   const calls: Calls = { membershipFindFirst: [], businessFindMany: [], update: [], guc: [], notifications: [] };
   const rows = options.rows ?? [{ id: 'biz_1', subscriptionStatus: null, subscriptionCurrentPeriodEnd: null }];
 
@@ -61,7 +61,15 @@ function harness(options: { rows?: Row[]; systemActor?: string | null } = {}) {
     },
   } as unknown as PrismaClient;
 
-  return { calls, service: new StripeWebhookService(prisma, new InMemoryStripeEventReplayStore(clock)) };
+  return {
+    calls,
+    service: new StripeWebhookService(
+      prisma,
+      new InMemoryStripeEventReplayStore(clock),
+      undefined,
+      options.vaultPriceId ?? '',
+    ),
+  };
 }
 
 function subscriptionEvent(over: Record<string, unknown> = {}, type = 'customer.subscription.updated', id = 'evt_1') {
@@ -89,8 +97,54 @@ test('a subscription event writes status, plan and the renewal date', async () =
   expect(calls.update[0]?.data).toEqual({
     subscriptionStatus: 'ACTIVE',
     plan: 'price_neo',
+    // D51 — written on EVERY subscription event, false when the add-on price is
+    // not among the items. Never conditionally written: see the service.
+    vaultAddon: false,
     subscriptionCurrentPeriodEnd: new Date(PERIOD_END_S * 1000),
   });
+});
+
+test('the Document Vault add-on is read off the subscription ITEMS, not a flag of ours (D51)', async () => {
+  const { calls, service } = harness({ vaultPriceId: 'price_vault' });
+  expect(
+    await service.handle(
+      subscriptionEvent({
+        items: {
+          data: [
+            { current_period_end: PERIOD_END_S, price: { id: 'price_neo' } },
+            { current_period_end: PERIOD_END_S, price: { id: 'price_vault' } },
+          ],
+        },
+      }),
+    ),
+  ).toBe('applied');
+  expect(calls.update[0]?.data).toMatchObject({ vaultAddon: true, plan: 'price_neo' });
+});
+
+test('⚠ the add-on price is never mistaken for the PLAN, whichever order Stripe lists it in', async () => {
+  // `planOf` took `items.data[0]` until 21 Sep 2026. With two items that is a
+  // coin toss, and the losing side writes `price_vault` into `businesses.plan`.
+  const { calls, service } = harness({ vaultPriceId: 'price_vault' });
+  await service.handle(
+    subscriptionEvent({
+      items: {
+        data: [
+          { current_period_end: PERIOD_END_S, price: { id: 'price_vault' } },
+          { current_period_end: PERIOD_END_S, price: { id: 'price_neo' } },
+        ],
+      },
+    }),
+  );
+  expect(calls.update[0]?.data).toMatchObject({ plan: 'price_neo', vaultAddon: true });
+});
+
+test('dropping the add-on in Stripe switches the vault OFF, with no other signal', async () => {
+  // The client removes it from Stripe's own portal. What arrives is an ordinary
+  // `customer.subscription.updated` carrying one item — nothing announces the
+  // removal, so an `if (vaultAddon)` write would leave it on forever.
+  const { calls, service } = harness({ vaultPriceId: 'price_vault' });
+  await service.handle(subscriptionEvent());
+  expect(calls.update[0]?.data).toMatchObject({ vaultAddon: false });
 });
 
 test('a client REACHING a live subscription tells the practice — once (item 2)', async () => {
