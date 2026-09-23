@@ -1,5 +1,7 @@
 import type { IntegrationKind } from '@prisma/client';
 
+import type { OAuthVendor } from '../../../common/oauth/oauth.js';
+
 /**
  * The four ledgers, as data (D50).
  *
@@ -23,20 +25,33 @@ import type { IntegrationKind } from '@prisma/client';
 
 export type VendorSlug = 'xero' | 'quickbooks' | 'sage' | 'freeagent';
 
-/** How the token endpoint wants the client credentials presented. */
-export type TokenEndpointAuth = 'basic' | 'body';
+/**
+ * How the token endpoint wants the client credentials presented.
+ *
+ * Re-exported rather than redeclared: it moved to `common/oauth/` with the flow
+ * that reads it, and two copies of a two-member union is how they drift apart.
+ */
+export type { TokenEndpointAuth } from '../../../common/oauth/oauth.js';
 
-export interface VendorConfig {
+/**
+ * ⚠ **`extends OAuthVendor` is load-bearing, not tidiness.** The shared OAuth
+ * flow in `common/oauth/oauth.ts` types against that narrower interface, so
+ * this declaration is what makes "the ledger table can be handed straight to
+ * the shared flow" a compile-time fact rather than a hope. Adding a field there
+ * that this table does not carry breaks the build here, which is where it
+ * should break.
+ *
+ * The fields below are the ones an OAuth flow has no business seeing — how big
+ * an attachment may be, how long the vendor suppresses a duplicate, where the
+ * accounting API lives.
+ */
+export interface VendorConfig extends OAuthVendor {
   readonly kind: IntegrationKind;
   readonly slug: VendorSlug;
   /** What a practice sees on the connection screen. */
   readonly label: string;
-  readonly authorizeUrl: string;
-  readonly tokenUrl: string;
-  readonly scope: string;
   /** Root of the accounting API, without a trailing slash. */
   readonly apiBase: string;
-  readonly tokenEndpointAuth: TokenEndpointAuth;
   /**
    * ⚠ Whether the refresh token ROTATES — the old one dying the moment it is
    * used. True for three of the four, and the reason `token-store.ts` persists
@@ -165,6 +180,15 @@ export const VENDORS: Readonly<Record<VendorSlug, VendorConfig>> = {
     tokenEndpointAuth: 'body',
     refreshRotates: true,
     refreshIdleDays: 31,
+    // ⚠ Sage routes consent through a filter that picks which of its products
+    // the grant is for. Without it the practice is offered the WRONG product
+    // list and picks a subscription this app cannot then read.
+    //
+    // This was an `if (vendor.slug === 'sage')` inside `authorizeUrl` until
+    // 21 Sep 2026, when that function moved to `common/oauth/` to be shared
+    // with the Document Vault's Drive connections. A vendor branch in a
+    // generic file is how the file stops being generic, so it became data.
+    authorizeParams: { filter: 'apiv3.1' },
     // Sage's own UI allows 10 x 2.5 MB. Whether the API enforces the same cap
     // is listed as NOT VERIFIED in the reference doc, so the UI's number is
     // used — being wrong in the safe direction costs a downscale nobody needed.

@@ -1,6 +1,6 @@
 import type { Env } from '../../../config/env.js';
-import type { VendorCredentials } from './oauth.js';
-import { parseVaultKey } from './token-vault.js';
+import type { VendorCredentials } from '../../../common/oauth/oauth.js';
+import { parseVaultKey } from '../../../common/oauth/token-vault.js';
 import type { IntegrationKind } from '@prisma/client';
 
 import { freeAgentHost, QBO_API_BASE, type VendorConfig, vendorForKind, type VendorSlug, VENDORS } from './vendors.js';

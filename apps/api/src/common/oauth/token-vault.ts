@@ -5,6 +5,12 @@ import { z } from 'zod';
 /**
  * The per-connection token vault (D50, build brief Stage 1).
  *
+ * ⚠ **This is shared infrastructure, not the ledger's.** It moved here from
+ * `modules/publishing/ledger/` on 21 Sep 2026 when the Document Vault add-on
+ * needed the same sealing for Google Drive and OneDrive tokens. A second copy
+ * of AES-256-GCM token sealing is the kind of duplication that gets one half
+ * patched and the other forgotten, so there is one.
+ *
  * ## Why the ciphertext lives in `integrations.token_ref` and not in AWS
  *
  * The brief asked for one Secrets Manager secret per connection, on the grounds
@@ -39,8 +45,8 @@ import { z } from 'zod';
  * staged.
  */
 
-/** What a sealed blob holds once opened. Vendor-shaped, so one type covers all four. */
-export const LedgerTokensSchema = z.object({
+/** What a sealed blob holds once opened. Vendor-shaped, so one type covers every OAuth connection. */
+export const OAuthTokensSchema = z.object({
   accessToken: z.string().min(1),
   /**
    * ⚠ Xero, QuickBooks and Sage all ROTATE this: the old value dies the moment
@@ -61,7 +67,7 @@ export const LedgerTokensSchema = z.object({
   scope: z.string().nullable(),
 });
 
-export type LedgerTokens = z.infer<typeof LedgerTokensSchema>;
+export type OAuthTokens = z.infer<typeof OAuthTokensSchema>;
 
 const VERSION = 'v1';
 const IV_BYTES = 12;
@@ -84,12 +90,12 @@ export function parseVaultKey(value: string): Buffer {
   return Buffer.from(value, 'hex');
 }
 
-export function seal(tokens: LedgerTokens, key: Buffer): string {
+export function seal(tokens: OAuthTokens, key: Buffer): string {
   if (key.length !== KEY_BYTES) throw new Error('vault key must be 32 bytes');
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const body = Buffer.concat([
-    cipher.update(JSON.stringify(LedgerTokensSchema.parse(tokens)), 'utf8'),
+    cipher.update(JSON.stringify(OAuthTokensSchema.parse(tokens)), 'utf8'),
     cipher.final(),
   ]);
   return [VERSION, b64(iv), b64(cipher.getAuthTag()), b64(body)].join('.');
@@ -102,22 +108,22 @@ export function seal(tokens: LedgerTokens, key: Buffer): string {
  * never repeats any part of it. A decryption error that quotes its input is how
  * ciphertext ends up in a log.
  */
-export function unseal(blob: string, key: Buffer): LedgerTokens {
+export function unseal(blob: string, key: Buffer): OAuthTokens {
   if (key.length !== KEY_BYTES) throw new Error('vault key must be 32 bytes');
   const parts = blob.split('.');
   if (parts.length !== 4 || parts[0] !== VERSION) {
-    throw new Error('the stored ledger credentials are not in a format this build can open');
+    throw new Error('the stored credentials are not in a format this build can open');
   }
   const [, ivPart, tagPart, bodyPart] = parts as [string, string, string, string];
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, unb64(ivPart));
     decipher.setAuthTag(unb64(tagPart));
     const plain = Buffer.concat([decipher.update(unb64(bodyPart)), decipher.final()]).toString('utf8');
-    return LedgerTokensSchema.parse(JSON.parse(plain));
+    return OAuthTokensSchema.parse(JSON.parse(plain));
   } catch {
     // Not the underlying message: node's GCM failure and a Zod failure say
     // different things about the same secret, and neither is useful to a caller.
-    throw new Error('the stored ledger credentials could not be opened — the connection must be reconnected');
+    throw new Error('the stored credentials could not be opened — the connection must be reconnected');
   }
 }
 

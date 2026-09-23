@@ -10,10 +10,10 @@ import type { PublishBillRequest } from '../ledger-adapter.js';
 import { HttpLedgerAdapter } from './http-ledger-adapter.js';
 import { LedgerConnectionsService } from './ledger-connections.service.js';
 import { type LedgerEnv, vendorConfigForKind } from './ledger-config.js';
-import { signState } from './oauth.js';
+import { signState } from '../../../common/oauth/oauth.js';
 import { LEDGER_LIST_KINDS, readReferenceList } from './reference-sync.js';
 import { LedgerTokenStore } from './token-store.js';
-import { parseVaultKey, seal, unseal } from './token-vault.js';
+import { parseVaultKey, seal, unseal } from '../../../common/oauth/token-vault.js';
 
 /**
  * The whole ledger lane, against a REAL database and a REAL HTTP vendor
@@ -374,10 +374,25 @@ describe.runIf(enabled)('the ledger lane, end to end', () => {
     const posted = seen.find((s) => s.path === '/v2/bills' && s.method === 'POST');
     const bill = (posted?.body as { bill: Record<string, unknown> }).bill;
 
-    // ⚠ MONEY, TO THE PENNY, AS A STRING. Not `41266/100`, which is where a
-    // float would have crept in.
-    expect(bill['total_value']).toBe('412.66');
-    expect(bill['sales_tax_value']).toBe('68.78');
+    // ⚠ MONEY, TO THE PENNY, AS A STRING, AND INSIDE `bill_items`. Not
+    // `41266/100`, which is where a float would have crept in — and not at the
+    // top level, which is where this assertion used to look.
+    //
+    // ⚠ **This test was stale and green-adjacent until 21 Sep 2026.** It still
+    // asserted `bill.total_value` / `bill.sales_tax_value` at the TOP level,
+    // the shape that produced a real £0.00 bill in FreeAgent's own screen
+    // (fixes 915a464 and 62daf0c). Those fixes moved the money into
+    // `bill_items[]` — where FreeAgent actually reads it — and did not bring
+    // this file with them, so the suite went red on `main` and stayed red.
+    // The lesson is the module's own: a top-level `total_value` is ACCEPTED by
+    // FreeAgent, returns a bill URL, and is worth nothing.
+    const items = bill['bill_items'] as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    // The GROSS on the item, because FreeAgent reads it as tax-inclusive.
+    expect(items[0]?.['total_value']).toBe('412.66');
+    // …and the rate describes the VAT already inside that figure: 6878 pence of
+    // tax on 34388 pence net is 20%, carried as a percentage string.
+    expect(items[0]?.['sales_tax_rate']).toBe('20.0');
     expect(bill['dated_on']).toBe('2026-08-14');
     expect(bill['reference']).toBe('INV-9001');
     // The supplier already existed in the synced list, so no duplicate contact

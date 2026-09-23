@@ -15,10 +15,10 @@ import {
   authorizeUrl,
   exchangeCode,
   OAuthError,
-  resolveQuickBooksEndpoints,
   signState,
   verifyState,
-} from './oauth.js';
+} from '../../../common/oauth/oauth.js';
+import { resolveQuickBooksEndpoints } from './quickbooks-discovery.js';
 import { quickBooksLedger } from './quickbooks.js';
 import {
   LEDGER_LIST_KINDS,

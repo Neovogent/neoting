@@ -3,12 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { signState, verifyState } from './oauth.js';
-import { type LedgerTokens, opensWith, parseVaultKey, safeEqual, seal, unseal } from './token-vault.js';
+import { type OAuthTokens, opensWith, parseVaultKey, safeEqual, seal, unseal } from './token-vault.js';
 
 const KEY = parseVaultKey('a'.repeat(64));
 const OTHER = parseVaultKey('b'.repeat(64));
 
-const TOKENS: LedgerTokens = {
+const TOKENS: OAuthTokens = {
   accessToken: 'access-1',
   refreshToken: 'refresh-1',
   accessExpiresAt: '2026-09-15T12:00:00.000Z',

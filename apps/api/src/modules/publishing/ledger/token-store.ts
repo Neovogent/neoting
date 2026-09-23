@@ -3,8 +3,8 @@ import { Logger } from '@nestjs/common';
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
-import { OAuthError, refreshTokens, type VendorCredentials } from './oauth.js';
-import { type LedgerTokens, seal, unseal } from './token-vault.js';
+import { OAuthError, refreshTokens, type VendorCredentials } from '../../../common/oauth/oauth.js';
+import { type OAuthTokens, seal, unseal } from '../../../common/oauth/token-vault.js';
 import type { IntegrationKind } from '@prisma/client';
 
 import { type VendorConfig, type VendorSlug } from './vendors.js';
@@ -79,7 +79,7 @@ export class LedgerConnectionUnavailable extends Error {
  * this process. Module-level because two `LedgerTokenStore` instances in one
  * process are still one process racing itself.
  */
-const inFlight = new Map<string, Promise<LedgerTokens>>();
+const inFlight = new Map<string, Promise<OAuthTokens>>();
 
 export class LedgerTokenStore {
   private readonly logger = new Logger(LedgerTokenStore.name);
@@ -183,7 +183,7 @@ export class LedgerTokenStore {
   /**
    * The refresh itself. Coalesced per connection, conditional on write.
    */
-  private async refresh(integrationId: string, stored: StoredConnection): Promise<LedgerTokens> {
+  private async refresh(integrationId: string, stored: StoredConnection): Promise<OAuthTokens> {
     const existing = inFlight.get(integrationId);
     if (existing !== undefined) return existing;
 
@@ -192,7 +192,7 @@ export class LedgerTokenStore {
     return work;
   }
 
-  private async doRefresh(integrationId: string, stored: StoredConnection): Promise<LedgerTokens> {
+  private async doRefresh(integrationId: string, stored: StoredConnection): Promise<OAuthTokens> {
     const credentials = this.credentials(stored.vendor.slug);
     if (credentials === null) {
       throw new LedgerConnectionUnavailable(
@@ -200,7 +200,7 @@ export class LedgerTokenStore {
       );
     }
 
-    let renewed: LedgerTokens;
+    let renewed: OAuthTokens;
     try {
       // ⚠ THE VENDOR CALL, OUTSIDE EVERY TRANSACTION.
       renewed = await refreshTokens(stored.vendor, credentials, stored.tokens, this.fetchImpl, this.now());
@@ -244,7 +244,7 @@ interface StoredConnection {
   readonly orgRef: string | null;
   /** The exact ciphertext read from the row — the optimistic-concurrency witness. */
   readonly blob: string;
-  readonly tokens: LedgerTokens;
+  readonly tokens: OAuthTokens;
 }
 
 async function loadIntegration(db: ScopedClient, integrationId: string) {
@@ -271,7 +271,7 @@ export async function persistConnection(
     readonly kind: ResolvedConnection['vendor']['kind'];
     readonly orgRef: string | null;
     readonly orgName: string | null;
-    readonly tokens: LedgerTokens;
+    readonly tokens: OAuthTokens;
     readonly vaultKey: Buffer;
   },
 ): Promise<{ readonly id: string }> {

@@ -2,20 +2,26 @@ import { createHmac, randomBytes } from 'node:crypto';
 
 import { z } from 'zod';
 
-import type { LedgerTokens } from './token-vault.js';
+import type { OAuthTokens } from './token-vault.js';
 import { safeEqual } from './token-vault.js';
-import { QBO_DISCOVERY, type VendorConfig } from './vendors.js';
 
 /**
- * Authorisation-code OAuth 2.0, once, for all four ledgers (D50, build brief
- * Stage 1).
+ * Authorisation-code OAuth 2.0, once, for every vendor this product connects to.
  *
- * There is no per-vendor branch in this file. Everything that differs between
- * Xero, QuickBooks, Sage and FreeAgent is a field in `vendors.ts`; what is left
- * is the RFC, and the RFC is the same everywhere. The one exception is written
- * down where it happens: QuickBooks' endpoints are read from Intuit's discovery
- * document rather than hardcoded, because the App Assessment Questionnaire asks
- * whether we do that.
+ * ⚠ **This is shared infrastructure, not the ledger's.** It was written for the
+ * four ledgers (D50, build brief Stage 1) and moved here on 21 Sep 2026 when the
+ * Document Vault add-on needed the same flow for Google Drive and OneDrive.
+ * Nothing in this file names a vendor: everything that differs is a field on
+ * {@link OAuthVendor}, and what is left is the RFC, which is the same
+ * everywhere.
+ *
+ * ⚠ **Two vendor branches used to live in `authorizeUrl` and no longer do.**
+ * Sage's `filter=apiv3.1` was an `if (vendor.slug === 'sage')`, which is the
+ * shape that makes a generic file quietly vendor-specific one line at a time.
+ * It is now {@link OAuthVendor.authorizeParams}, and the first proof the
+ * abstraction is the right one is that Google's `access_type=offline` +
+ * `prompt=consent` — without which Google never issues a refresh token at all —
+ * needed no code change to express.
  *
  * ## The state parameter is signed, not stored
  *
@@ -37,6 +43,41 @@ import { QBO_DISCOVERY, type VendorConfig } from './vendors.js';
 /** Ten minutes. Long enough to read a consent screen, short enough to be worthless later. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
+/** How the token endpoint wants the client credentials presented. */
+export type TokenEndpointAuth = 'basic' | 'body';
+
+/**
+ * Everything this file needs to know about a vendor, and nothing else.
+ *
+ * Deliberately narrower than the ledger's `VendorConfig`, which also carries
+ * attachment limits, idempotency windows and an API base — none of which an
+ * OAuth flow has any business seeing. `VendorConfig` satisfies this
+ * structurally, so the ledger passes its own table straight in.
+ */
+export interface OAuthVendor {
+  /** Pinned into the signed state, so a state minted for one vendor cannot complete another's callback. */
+  readonly slug: string;
+  /** What a human sees when this vendor refuses something. */
+  readonly label: string;
+  readonly authorizeUrl: string;
+  readonly tokenUrl: string;
+  /** Empty string means "send no scope parameter" — FreeAgent takes none, and a blank `scope=` is a request for nothing. */
+  readonly scope: string;
+  readonly tokenEndpointAuth: TokenEndpointAuth;
+  /** How long a refresh token survives with nobody using it. Null where the vendor states none. */
+  readonly refreshIdleDays: number | null;
+  /**
+   * Extra query parameters on the authorise URL.
+   *
+   * ⚠ For Google this is load-bearing rather than cosmetic: without
+   * `access_type=offline` Google returns no refresh token at all, and without
+   * `prompt=consent` it returns one only on a user's very first authorisation —
+   * so a reconnect after a disconnect silently yields a connection that dies in
+   * an hour and cannot be renewed.
+   */
+  readonly authorizeParams?: Readonly<Record<string, string>>;
+}
+
 export const OAuthStateSchema = z.object({
   /** The client business being connected. */
   b: z.string().min(1),
@@ -53,18 +94,18 @@ export const OAuthStateSchema = z.object({
 export type OAuthState = z.infer<typeof OAuthStateSchema>;
 
 /**
- * The token endpoint's answer, as any of the four may shape it.
+ * The token endpoint's answer, as any vendor may shape it.
  *
  * `passthrough` on purpose: Xero adds `id_token`, Intuit adds
- * `x_refresh_token_expires_in`, and a strict schema would reject a vendor for
- * being generous. Every field this codebase actually uses is named and typed;
- * the rest is ignored rather than trusted.
+ * `x_refresh_token_expires_in`, Google adds `id_token`, and a strict schema
+ * would reject a vendor for being generous. Every field this codebase actually
+ * uses is named and typed; the rest is ignored rather than trusted.
  */
 const TokenResponseSchema = z
   .object({
     access_token: z.string().min(1),
     // ⚠ Absent on a REFRESH for a vendor that does not rotate. The caller keeps
-    // the old one in that case — see `token-store.ts`.
+    // the old one in that case — see the ledger's `token-store.ts`.
     refresh_token: z.string().min(1).optional(),
     expires_in: z.number().int().positive().optional(),
     token_type: z.string().optional(),
@@ -76,21 +117,13 @@ const TokenResponseSchema = z
   })
   .passthrough();
 
-/** An OAuth error response. Both shapes the four produce. */
+/** An OAuth error response. Every shape the vendors produce. */
 const TokenErrorSchema = z
   .object({
     error: z.string().optional(),
     error_description: z.string().optional(),
     // Sage sometimes answers with a plain message.
     message: z.string().optional(),
-  })
-  .passthrough();
-
-const DiscoverySchema = z
-  .object({
-    authorization_endpoint: z.string().url(),
-    token_endpoint: z.string().url(),
-    revocation_endpoint: z.string().url().optional(),
   })
   .passthrough();
 
@@ -144,68 +177,32 @@ export function verifyState(value: string, key: Buffer, now = Date.now()): OAuth
 }
 
 /**
- * Where the browser is sent to ask the practice for consent.
+ * The vendor's consent URL.
  *
- * `response_type=code` on all four; PKCE is deliberately absent because all
- * four of our registrations are CONFIDENTIAL clients holding a secret on a
- * server, which is the case PKCE does not add to. FreeAgent takes no `scope`
- * parameter at all, so an empty scope is omitted rather than sent blank — a
- * blank `scope=` is a request for no permissions on at least one of the four.
+ * ⚠ **No PKCE, deliberately.** Every registration here is a CONFIDENTIAL client
+ * holding a secret on a server, which is the case PKCE does not add to.
  */
-export function authorizeUrl(vendor: VendorConfig, credentials: VendorCredentials, state: string): string {
+export function authorizeUrl(vendor: OAuthVendor, credentials: VendorCredentials, state: string): string {
   const url = new URL(vendor.authorizeUrl);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', credentials.clientId);
   url.searchParams.set('redirect_uri', credentials.redirectUri);
   url.searchParams.set('state', state);
   if (vendor.scope !== '') url.searchParams.set('scope', vendor.scope);
-  // Sage routes consent through a filter that picks which of its products the
-  // grant is for. Without it the practice is offered the wrong product list.
-  if (vendor.slug === 'sage') url.searchParams.set('filter', 'apiv3.1');
-  return url.toString();
-}
-
-/**
- * Intuit's endpoints, read rather than assumed.
- *
- * Cached for the life of the process: the document changes on Intuit's release
- * schedule, not ours, and re-fetching it before every connect would add a
- * network dependency to a screen that has one already. A failure here falls
- * back to the table's hardcoded values rather than refusing to connect —
- * discovery is a correctness nicety, and being unable to reach it is not a
- * reason a practice cannot connect their books.
- */
-let discoveryCache: { authorizeUrl: string; tokenUrl: string } | null = null;
-
-export async function resolveQuickBooksEndpoints(
-  sandbox: boolean,
-  fetchImpl: typeof fetch = globalThis.fetch,
-): Promise<{ authorizeUrl: string; tokenUrl: string } | null> {
-  if (discoveryCache !== null) return discoveryCache;
-  try {
-    const response = await fetchImpl(sandbox ? QBO_DISCOVERY.sandbox : QBO_DISCOVERY.production);
-    if (!response.ok) return null;
-    const document = DiscoverySchema.parse(await response.json());
-    discoveryCache = { authorizeUrl: document.authorization_endpoint, tokenUrl: document.token_endpoint };
-    return discoveryCache;
-  } catch {
-    return null;
+  for (const [name, value] of Object.entries(vendor.authorizeParams ?? {})) {
+    url.searchParams.set(name, value);
   }
-}
-
-/** Test seam — the cache is process-wide, so a test that populated it must be able to clear it. */
-export function resetDiscoveryCache(): void {
-  discoveryCache = null;
+  return url.toString();
 }
 
 /** Exchange the authorisation code for the first pair of tokens. */
 export async function exchangeCode(
-  vendor: VendorConfig,
+  vendor: OAuthVendor,
   credentials: VendorCredentials,
   code: string,
   fetchImpl: typeof fetch = globalThis.fetch,
   now = Date.now(),
-): Promise<LedgerTokens> {
+): Promise<OAuthTokens> {
   return postToken(
     vendor,
     credentials,
@@ -219,19 +216,19 @@ export async function exchangeCode(
 /**
  * Trade a refresh token for a fresh pair.
  *
- * ⚠ **`previous` is not decoration.** Xero, QuickBooks and Sage rotate: the
- * response carries a NEW refresh token and the one just sent is dead. FreeAgent
- * does not, and omits the field — so the old value has to be carried forward or
- * the connection would be lost by a successful refresh, which is the funniest
- * and worst version of this bug.
+ * ⚠ **`previous` is not decoration.** Xero, QuickBooks, Sage and Microsoft all
+ * rotate: the response carries a NEW refresh token and the one just sent is
+ * dead. FreeAgent and Google do not, and omit the field — so the old value has
+ * to be carried forward or the connection would be lost by a SUCCESSFUL
+ * refresh, which is the funniest and worst version of this bug.
  */
 export async function refreshTokens(
-  vendor: VendorConfig,
+  vendor: OAuthVendor,
   credentials: VendorCredentials,
-  previous: LedgerTokens,
+  previous: OAuthTokens,
   fetchImpl: typeof fetch = globalThis.fetch,
   now = Date.now(),
-): Promise<LedgerTokens> {
+): Promise<OAuthTokens> {
   return postToken(
     vendor,
     credentials,
@@ -243,20 +240,21 @@ export async function refreshTokens(
 }
 
 async function postToken(
-  vendor: VendorConfig,
+  vendor: OAuthVendor,
   credentials: VendorCredentials,
   params: Record<string, string>,
-  previous: LedgerTokens | null,
+  previous: OAuthTokens | null,
   fetchImpl: typeof fetch,
   now: number,
-): Promise<LedgerTokens> {
+): Promise<OAuthTokens> {
   const body = new URLSearchParams(params);
   const headers: Record<string, string> = {
     'Content-Type': 'application/x-www-form-urlencoded',
     Accept: 'application/json',
   };
   if (vendor.tokenEndpointAuth === 'basic') {
-    headers['Authorization'] = `Basic ${Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64')}`;
+    headers['Authorization'] =
+      `Basic ${Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64')}`;
   } else {
     body.set('client_id', credentials.clientId);
     body.set('client_secret', credentials.clientSecret);
@@ -289,7 +287,7 @@ async function postToken(
   }
 
   // Default 30 minutes when a vendor omits `expires_in`: shorter than every
-  // one of the four actually issues, so the worst case is refreshing early.
+  // vendor actually issues, so the worst case is refreshing early.
   const accessSeconds = parsed.expires_in ?? 30 * 60;
   const refreshSeconds = parsed.refresh_token_expires_in ?? parsed.x_refresh_token_expires_in ?? null;
   const idleMs = vendor.refreshIdleDays === null ? null : vendor.refreshIdleDays * 24 * 60 * 60 * 1000;
@@ -317,7 +315,7 @@ async function postToken(
  * written for a developer and quotes submitted values back; the code goes to
  * the caller and the whole pair belongs in a log, not on a screen.
  */
-function tokenFailure(vendor: VendorConfig, response: Response, text: string): OAuthError {
+function tokenFailure(vendor: OAuthVendor, response: Response, text: string): OAuthError {
   const parsed = TokenErrorSchema.safeParse(safeJson(text));
   const code = parsed.success ? (parsed.data.error ?? '') : '';
   if (code === 'invalid_grant' || response.status === 400) {
@@ -332,12 +330,17 @@ function tokenFailure(vendor: VendorConfig, response: Response, text: string): O
   if (response.status === 429) {
     return new OAuthError(`${vendor.label} is rate-limiting this practice. It will be tried again.`, true);
   }
-  return new OAuthError(`${vendor.label} could not complete the sign-in step (HTTP ${response.status}).`, response.status >= 500);
+  return new OAuthError(
+    `${vendor.label} could not complete the sign-in step (HTTP ${response.status}).`,
+    response.status >= 500,
+  );
 }
 
 function hmac(body: string, key: Buffer): string {
   // A distinct purpose string: the same key also seals tokens, and a value
-  // signed for one job must not verify for the other.
+  // signed for one job must not verify for the other. The literal keeps its
+  // original `ledger-` stem so states already in flight during the 21 Sep 2026
+  // move stayed valid; the slug inside the payload is what separates vendors.
   return createHmac('sha256', key).update(`ledger-oauth-state.v1.${body}`).digest('base64url');
 }
 
