@@ -341,6 +341,29 @@ locals {
     { name = "SAGE_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/sage/callback" },
     { name = "FREEAGENT_REDIRECT_URI", value = "https://${local.app_host}/v1/integrations/freeagent/callback" },
 
+    # ⚠ THE DOCUMENT VAULT'S REDIRECT IS THE WEB APP, NOT THE API — the exact
+    # opposite of the four above, and it is a security property rather than a
+    # style choice.
+    #
+    # Those four come back to a practice session, which is a COOKIE, so the
+    # vendor's 302 can land on the API and arrive authenticated. A portal
+    # session is a BEARER in a header, and a 302 cannot send a header — so a
+    # drive callback straight to the API would leave the signed `state` as the
+    # only thing authorising the write, and whoever held that URL could bind
+    # THEIR drive to this client's business. The redirect therefore lands on the
+    # web app, which holds the bearer and POSTs the code back.
+    # `archive-vault-search/CLAUDE.md` carries the argument in full.
+    #
+    # ⚠ It must match the Google registration BYTE FOR BYTE. Registered:
+    # http://localhost:5173/portal/vault and https://neoacc.neovogent.com/portal/vault.
+    { name = "GOOGLE_DRIVE_REDIRECT_URI", value = "https://${local.app_host}/portal/vault" },
+
+    # ⚠ ONEDRIVE IS DELIBERATELY ABSENT, and its absence is what greys the
+    # button out rather than offering a dead end. `driveCredentials` answers
+    # null for a drive with no client id, `PortalVault.connectable` omits it,
+    # and the portal renders "OneDrive — coming soon". Add the three ONEDRIVE_*
+    # entries the day an Azure app registration exists — no code changes.
+
     { name = "SMS_SENDER", value = "aws" },
     # The dedicated UK number every chase and sign-in code originates from.
     # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because
@@ -421,6 +444,12 @@ locals {
     # at the moment a client presses Subscribe — at checkout, not at boot, so
     # nothing catches it earlier.
     { name = "STRIPE_PRICE_ID", value = "price_1U9R0uGMdHp4NCWv5NFOBvZ9" },
+    # The Document Vault add-on (D51) — GBP 2.00/month, tax_behavior=exclusive,
+    # billed as a SECOND subscription item beside the 8.50 above rather than as
+    # a separate subscription, so one client is one invoice.
+    # ⚠ LIVE-mode price, because this deployment's Stripe key is `rk_live_`
+    # (see apps/api/CLAUDE.md) and a test-mode price id would simply not resolve.
+    { name = "STRIPE_VAULT_PRICE_ID", value = "price_1UIuMOGMdHp4NCWv0YYB66q3" },
     { name = "STRIPE_TAX", value = "rate" },
     # The 20% GB rate, exclusive: GBP 8.50 is the NET price and VAT goes on top
     # (D48). `env.ts` refuses to boot on `STRIPE_TAX=rate` with this empty,
@@ -709,6 +738,19 @@ locals {
     { name = "SAGE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:sage_client_secret::" },
     { name = "FREEAGENT_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_id::" },
     { name = "FREEAGENT_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:freeagent_client_secret::" },
+
+    # ⚠ THE TWO KEYS BELOW MUST EXIST IN THE `ledger` SECRET BEFORE THIS IS
+    # APPLIED. An ECS `secrets` entry naming a JSON key the secret does not
+    # carry does not degrade — the container FAILS TO START, and the service
+    # drains. Adding these and the values in one change is therefore the wrong
+    # order; `docs/runbooks/staging-demo.md` §1b is the command, and it is the
+    # owner's to run.
+    #
+    # Google Drive is the Document Vault's copy-out target (D51). The client id
+    # is not itself a secret, but it lives beside its secret for the reason
+    # XERO_CLIENT_ID does: one group, one rotation, nothing half-updated.
+    { name = "GOOGLE_DRIVE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:google_drive_client_id::" },
+    { name = "GOOGLE_DRIVE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app["ledger"].arn}:google_drive_client_secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.

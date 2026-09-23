@@ -81,6 +81,62 @@ to `kms-secrets.json.tftpl`. Do not widen the grant to the account root.
 
 ---
 
+## 1b. Google Drive, for the Document Vault (D51) — once, out of band
+
+The Vault copies a client's documents into a drive THEY connect. Google is
+registered and proven; OneDrive is not, and cannot be until the owner holds an
+Azure directory (a personal Microsoft account can no longer register an app at
+all — `apps/api/src/modules/archive-vault-search/CLAUDE.md`).
+
+**Nothing breaks while these are absent.** `driveCredentials` answers null, the
+drive is omitted from `PortalVault.connectable`, and the portal greys the button
+with "coming soon". That is the deployed state until this runs.
+
+⚠ **`put-secret-value` REPLACES THE WHOLE JSON, and `/neoting/staging/ledger`
+already holds eight live credentials** (Xero, QuickBooks, Sage, FreeAgent, plus
+`integration_token_key`). Composing a fresh object with only the two new keys
+would DELETE them, and every practice that had connected a ledger would have to
+reconnect. So this merges rather than writes:
+
+```bash
+# Values come from the repo's own .env — gitignored, and already holds them —
+# so no secret is typed, and none lands in shell history or CloudTrail.
+id=$(grep -E '^GOOGLE_DRIVE_CLIENT_ID=' .env | cut -d= -f2-)
+sec=$(grep -E '^GOOGLE_DRIVE_CLIENT_SECRET=' .env | cut -d= -f2-)
+[ -n "$id" ] && [ -n "$sec" ] || { echo "not in .env — stop"; exit 1; }
+
+# 1. MERGE into the existing group. `+` keeps every key already there.
+aws secretsmanager get-secret-value --secret-id /neoting/staging/ledger   --query SecretString --output text | jq --arg id "$id" --arg sec "$sec"      '. + {google_drive_client_id: $id, google_drive_client_secret: $sec}' > /tmp/ledger.json
+
+# 2. sanity-check the SHAPE before writing — ten keys, not two.
+jq 'keys' /tmp/ledger.json
+
+# 3. write it
+aws secretsmanager put-secret-value   --secret-id /neoting/staging/ledger   --secret-string file:///tmp/ledger.json
+
+# 4. DELETE THE FILE. It holds every ledger credential this environment has.
+rm -f /tmp/ledger.json
+
+# 5. confirm without printing values
+aws secretsmanager get-secret-value --secret-id /neoting/staging/ledger   --query SecretString --output text | jq 'keys'
+```
+
+**Then, and only then**, merge the Terraform change that adds
+`GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` to `injected_secrets`
+(`infra/envs/staging/services.tf`). Applied first, the API task names a JSON key
+the secret does not carry, fails at start with `ResourceInitializationError`, and
+the service drains to zero — the §1 warning, with the whole staging API behind
+it.
+
+The redirect URI and the add-on price are NOT secret and are already in that
+same Terraform change: `GOOGLE_DRIVE_REDIRECT_URI` is
+`https://neoacc.neovogent.com/portal/vault` — ⚠ the **web app**, not the API,
+and it must match the Google registration byte for byte — and
+`STRIPE_VAULT_PRICE_ID` is the live £2.00/month price.
+
+---
+
+
 ## 2. Apply, then deploy
 
 Merging a PR that touches `infra/envs/staging/**` auto-applies on `main`
