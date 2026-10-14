@@ -10,6 +10,8 @@ The five detection engines, chase composition, delivery with OTP secure links, t
 
 ⚠ **Staging runs `SMS_SENDER=email+sms` since 9 Sep 2026** (the owner: *"create a box for SMS, like for email, to see what SMS is going out"*). `EmailAndOutboxChaseSender` composes the two halves — `DemoSmsSender` writes the `sms_log` row FIRST, `EmailChaseSender` really delivers and stamps `chase_messages` LAST. **The order is load-bearing**: only the email half sets `channel`, so running it last is what keeps the audit row naming the transport that actually carried the message. A contact with no mobile is skipped by the outbox half (its `to_e164` is NOT NULL) and still emailed. The outbox row is composed bytes, not a delivery receipt — no SMS leaves this configuration.
 
+⚠ **Staging ran `SMS_SENDER=aws` from 11 Sep to 14 Oct 2026 and was reverted to `email+sms`.** Under `aws` a chase goes by text ONLY, and `aws-sms-sender.ts` refuses a contact with no mobile (`NT-PRP-006`, "no registered mobile"). Found live: a statement request to an email-only contact refused at approve, rolled back, logged nothing (4xx refusals are not logged), and every retry then hit the `NT-PRP-007` duplicate guard — while the review card, the request form and the portal all promised email. **Before flipping back to `aws`, make that sender fall back to email for a contact with no mobile** (a change to SMS sending, so stop-and-ask).
+
 ## ⚠ Initial Delivery (ID) — read this before the sections below
 
 **ID ships THREE of the five detection engines** (SoT §24.2 Stage 8), and the omissions are worth knowing rather than guessing at:
