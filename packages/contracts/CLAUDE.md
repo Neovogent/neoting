@@ -856,3 +856,42 @@ server whose response would stop parsing.
 their subscription, and `vault.service.ts` says so at the field: `active` is
 what gates whether the add-on may be used, and folding the two together would
 tell a lapsed client that Google Drive does not exist.
+
+## `GET /supplier-statements` (14 Oct 2026, issue #318) — reconciliation served, not invented
+
+One read operation under the `banking` tag, four schemas, no new error code,
+**no prisma change**. Same shape as its bank-statement sibling
+`GET /statements`: a `businessId` NARROWING filter, a `{ items }` body (no
+`data`, so the checker's `pageInfo` rule does not apply — a client holds
+supplier statements in the low tens), `x-nt-side-effect: none`.
+
+The gap it closes: `supplier_statements` / `supplier_statement_lines` had been
+in prisma since the init migration with ZERO operations here and zero readers
+in `apps/api`; the accountant's Supplier Statements tab computed every "on
+file / no document" mark in the browser out of whatever documents happened to
+be loaded, plus one invented missing line. Live, that was a reconciliation
+nobody did, presented as one that was.
+
+**Three decisions worth knowing before reading the YAML:**
+
+- **`SupplierStatementLineOutcome` (`MATCHED` / `MISSING` / `UNREADABLE`) is a
+  NEW enum and deliberately NOT mirrored from prisma.** The stored
+  `SupplierStatementLineStatus` (`IN_LEDGER_AND_NEOTING`, `IN_LEDGER_ONLY`,
+  `NEOTING_ONLY`, …) presumes a ledger connection this release does not read,
+  so serving it would be asserting facts about a client's ledger from a read
+  that never consulted one. The outcome is a projection computed at read time
+  — the `PortalDocumentStatus` reasoning — and the stored column is NOT exposed
+  (nothing writes it; exposing it would need the mirror).
+- **The matching rule is named in the operation description and is the chase
+  lane's `chaseMatchesDocument`** — one ruler across auto-close, the bank match
+  suggester and this. The description also fixes the tie-break order
+  (reference → amount → date → id) and the one-document-one-line rule, so a
+  consumer can explain any outcome in a sentence without reading the server.
+- **`statementEndDate` and `SupplierStatementLine.lineDate` are
+  nullable-but-OPTIONAL, not required** — the `Statement.periodEnd` shape, and
+  for a mechanical reason: orval's MSW generator emits `undefined` for a
+  REQUIRED nullable `format: date` field and the package stops typechecking
+  (measured on v7.21, both fields, one at a time). Consumers read an absent
+  value as null. Every other nullable field on the two shapes IS required,
+  because an absent `matchedDocumentId` and a null one must not be two things.
+
