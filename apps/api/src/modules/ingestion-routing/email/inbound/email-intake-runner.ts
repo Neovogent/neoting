@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 
 import { runWithTrace } from '../../../../common/trace/trace-context.js';
 import type { PerceptualHasher } from '../../lib/dedupe/perceptual-hash.js';
-import type { DocumentGuard, ImageNormaliser, VirusScanner } from '../../lib/sanitisation/index.js';
+import type { DocumentGuard, ImageNormaliser, Quarantine, VirusScanner } from '../../lib/sanitisation/index.js';
 import type { DocumentStore } from '../../storage/document-store.js';
 import type { IngestQueue } from '../../webhooks/whatsapp/ingest-queue.js';
 import { type EmailIntakeDeps, type EmailIntakeResult, processEmail } from '../email-intake.js';
@@ -38,6 +38,8 @@ export interface EmailIntakeRunnerDeps {
   readonly senderMapLoader?: SenderMapLoader;
   readonly store?: DocumentStore;
   readonly scanner?: VirusScanner;
+  /** Where a scanner hit's original bytes go. Absent → kept nowhere (offline). */
+  readonly quarantine?: Quarantine;
   readonly imageNormaliser?: ImageNormaliser;
   readonly documentGuard?: DocumentGuard;
   readonly perceptualHasher?: PerceptualHasher;
@@ -95,6 +97,7 @@ export async function runEmailIntake(raw: InboundRawEmail, deps: EmailIntakeRunn
     ...(senderMap ? { senderMap } : {}),
     ...(deps.store ? { store: deps.store } : {}),
     ...(deps.scanner ? { scanner: deps.scanner } : {}),
+    ...(deps.quarantine ? { quarantine: deps.quarantine } : {}),
     ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
     ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
     ...(deps.perceptualHasher ? { perceptualHasher: deps.perceptualHasher } : {}),

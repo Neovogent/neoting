@@ -131,6 +131,32 @@ locals {
     { name = "DOCUMENT_GUARD", value = "qpdf" },
 
     # ------------------------------------------------------------------------
+    # Virus scanning (Gov §11.4 step 4 · clamav.tf · 14 Oct 2026).
+    #
+    # ⚠ `fixture` MEANS NOTHING IS SCANNED beyond the EICAR test string. It is
+    # stated here, like MEDIA_FETCH=fixture below, so the switch is a one-value
+    # change in THIS file rather than a code default nobody can see from the
+    # deployed artefact — and so the env-parity check knows the key is on ECS.
+    #
+    # THE SWITCH-ON IS `clamd`, AND ONLY AFTER (docs/runbooks/virus-scanning.md):
+    #   1. the nt/clamav image exists in ECR (infra/clamav/Dockerfile),
+    #   2. the freshclam-publish task has run once (signatures in S3),
+    #   3. the nt-<env>-clamav service is at desired_count ≥ 1 and healthy.
+    # Flipped before those three, every ingest job fails CLOSED and retries
+    # into the DLQ — loud, correct, and not what anyone wants on a Friday.
+    #
+    # CLAMD_HOST is the Cloud Map name the scanner service registers under;
+    # it is only dialled when VIRUS_SCANNER=clamd. QUARANTINE_BUCKET is where
+    # the WORKER copies a hit's original bytes (the app role has PutObject on
+    # it, clamav.tf); its write event is the operator alert. env.ts refuses
+    # VIRUS_SCANNER=clamd without it under NODE_ENV=production.
+    # ------------------------------------------------------------------------
+    { name = "VIRUS_SCANNER", value = "fixture" },
+    { name = "CLAMD_HOST", value = "${aws_service_discovery_service.clamav.name}.${aws_service_discovery_private_dns_namespace.internal.name}" },
+    { name = "CLAMD_PORT", value = "3310" },
+    { name = "QUARANTINE_BUCKET", value = local.quarantine_bucket },
+
+    # ------------------------------------------------------------------------
     # The adapters that used to be demo stand-ins (METH_MODE.md §4, Stage 15),
     # and the two that S1 stopped allowing to be.
     #

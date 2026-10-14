@@ -296,6 +296,51 @@ test('NODE_ENV=production with the grep PDF guard fails to boot', () => {
   expect(() => loadEnv({ ...PRODUCTION, DOCUMENT_GUARD: 'fixture' })).toThrow(/DOCUMENT_GUARD/);
 });
 
+// The virus scanner. The fixture is EICAR-only and scans nothing; the clamd
+// client is the real one. Note what is and is not gated, and why — the
+// declaration in env.ts carries the sequencing argument.
+test('VIRUS_SCANNER defaults to fixture with clamd on localhost:3310 and no quarantine bucket', () => {
+  const env = loadEnv({});
+  expect(env.VIRUS_SCANNER).toBe('fixture');
+  expect(env.CLAMD_HOST).toBe('127.0.0.1');
+  expect(env.CLAMD_PORT).toBe(3310);
+  expect(env.CLAMD_TIMEOUT_MS).toBe(180_000);
+  expect(env.QUARANTINE_BUCKET).toBe('');
+});
+
+test('CLAMD_PORT and CLAMD_TIMEOUT_MS are coerced from the strings ECS injects', () => {
+  const env = loadEnv({ CLAMD_HOST: 'clamav.staging.nt.internal', CLAMD_PORT: '3310', CLAMD_TIMEOUT_MS: '60000' } as NodeJS.ProcessEnv);
+  expect(env.CLAMD_HOST).toBe('clamav.staging.nt.internal');
+  expect(env.CLAMD_PORT).toBe(3310);
+  expect(env.CLAMD_TIMEOUT_MS).toBe(60_000);
+});
+
+// ⚠ Deliberately NOT a boot gate yet: staging runs NODE_ENV=production and CI
+// deploys by re-registering the LIVE task definition, so refusing `fixture`
+// before VIRUS_SCANNER=clamd is on that definition would crash-loop the next
+// workers deploy. The gate lands in the switch-on PR (docs/runbooks/virus-scanning.md).
+// This test pins the CURRENT behaviour so flipping it is a visible, deliberate change.
+test('NODE_ENV=production with the fixture virus scanner still boots (gate deferred to switch-on, see env.ts)', () => {
+  const env = loadEnv({ ...PRODUCTION, VIRUS_SCANNER: 'fixture' });
+  expect(env.VIRUS_SCANNER).toBe('fixture');
+});
+
+test('NODE_ENV=production with clamd and NO quarantine bucket fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, VIRUS_SCANNER: 'clamd', QUARANTINE_BUCKET: '' })).toThrow(/QUARANTINE_BUCKET/);
+});
+
+test('NODE_ENV=production with clamd and a quarantine bucket boots', () => {
+  const env = loadEnv({ ...PRODUCTION, VIRUS_SCANNER: 'clamd', QUARANTINE_BUCKET: 'nt-staging-quarantine-1' });
+  expect(env.VIRUS_SCANNER).toBe('clamd');
+  expect(env.QUARANTINE_BUCKET).toBe('nt-staging-quarantine-1');
+});
+
+test('outside production, clamd without a quarantine bucket is allowed (a laptop against the compose clamav)', () => {
+  const env = loadEnv({ VIRUS_SCANNER: 'clamd' } as NodeJS.ProcessEnv);
+  expect(env.VIRUS_SCANNER).toBe('clamd');
+  expect(env.QUARANTINE_BUCKET).toBe('');
+});
+
 // The fixture above is only useful while it is true. Without this, a gate added
 // later that PRODUCTION does not satisfy turns every negative test green for
 // the wrong reason — they would all throw, but on the missing variable rather

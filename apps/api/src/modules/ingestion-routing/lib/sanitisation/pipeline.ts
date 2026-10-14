@@ -29,6 +29,7 @@ import {
   type DocumentGuard,
   type ImageNormaliser,
 } from './guards.js';
+import { noQuarantine, type Quarantine } from './quarantine.js';
 import { reject } from './reasons.js';
 import type { AcceptedDocument, SanitisationInput, SanitisationResult } from './types.js';
 import { fixtureVirusScanner, type VirusScanner } from './virus-scan.js';
@@ -36,6 +37,8 @@ import { DEFAULT_ZIP_CAPS, inspectZip, type ZipCaps } from './zip-safety.js';
 
 export interface SanitisationDeps {
   readonly scanner: VirusScanner;
+  /** Where the ORIGINAL bytes of a scanner hit go. Offline default keeps nothing. */
+  readonly quarantine: Quarantine;
   readonly imageNormaliser: ImageNormaliser;
   readonly documentGuard: DocumentGuard;
   readonly zipCaps: ZipCaps;
@@ -44,6 +47,7 @@ export interface SanitisationDeps {
 /** Offline fixture defaults — no cloud keys, deterministic. */
 export const defaultDeps: SanitisationDeps = {
   scanner: fixtureVirusScanner,
+  quarantine: noQuarantine,
   imageNormaliser: bootstrapImageNormaliser,
   documentGuard: bootstrapDocumentGuard,
   zipCaps: DEFAULT_ZIP_CAPS,
@@ -109,12 +113,38 @@ export async function sanitise(
     };
   }
 
-  // 4 · virus scan hook.
+  // 4 · virus scan. ⚠ A scanner that cannot answer THROWS (see
+  // `VirusScanUnavailableError`), and the throw is deliberately not caught here:
+  // an outage is not a verdict about the file, so it must not become a
+  // rejection the submitter reads, and it must never become a pass. The job
+  // fails, BullMQ retries, the DLQ pages. Fail closed, visibly.
   const verdict = await deps.scanner.scan(input.bytes);
   if (verdict.infected) {
+    // The ORIGINAL bytes go to quarantine — evidence of what was actually
+    // submitted — and the rejection carries whether that landed. A quarantine
+    // write failing must not hide the refusal, so it is caught and recorded on
+    // the rejection detail (our logs and the document's event; never shown to
+    // the submitter) rather than rethrown.
+    const sha256 = createHash('sha256').update(input.bytes).digest('hex');
+    let quarantine: string;
+    try {
+      await deps.quarantine.put({
+        bytes: input.bytes,
+        sha256,
+        channel,
+        ...(verdict.signature !== undefined ? { signature: verdict.signature } : {}),
+      });
+      quarantine = 'stored';
+    } catch (error) {
+      quarantine = `failed: ${(error instanceof Error ? error.message : 'unknown').slice(0, 200)}`;
+    }
     return {
       ok: false,
-      rejection: reject('virus_detected', 'This file was flagged by our virus scan and cannot be accepted.', verdict.signature ? { signature: verdict.signature } : undefined),
+      rejection: reject('virus_detected', 'This file was flagged by our virus scan and cannot be accepted.', {
+        ...(verdict.signature !== undefined ? { signature: verdict.signature } : {}),
+        sha256,
+        quarantine,
+      }),
     };
   }
 

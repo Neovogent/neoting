@@ -18,6 +18,7 @@ import {
   type DocumentGuard,
   type ImageNormaliser,
   mimeForFormat,
+  type Quarantine,
   type Rejection,
   sanitise,
   type SanitisationDeps,
@@ -37,6 +38,8 @@ export interface MediaIntakeDeps {
    */
   readonly perceptualHasher?: PerceptualHasher;
   readonly scanner?: VirusScanner;
+  /** Where a scanner hit's original bytes go. Absent → kept nowhere (offline). */
+  readonly quarantine?: Quarantine;
   readonly imageNormaliser?: ImageNormaliser;
   readonly documentGuard?: DocumentGuard;
 }
@@ -86,6 +89,7 @@ export async function fetchWhatsAppMedia(
 
   const sanitisationDeps: Partial<SanitisationDeps> = {
     ...(deps.scanner ? { scanner: deps.scanner } : {}),
+    ...(deps.quarantine ? { quarantine: deps.quarantine } : {}),
     ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
     ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
   };

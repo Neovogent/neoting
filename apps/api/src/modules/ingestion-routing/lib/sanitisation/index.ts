@@ -18,6 +18,21 @@ export {
   type VirusScanner,
 } from './virus-scan.js';
 export {
+  type ClamdOptions,
+  type ClamdVirusScanner,
+  createClamdVirusScanner,
+  parseClamdReply,
+  VirusScanUnavailableError,
+} from './clamd-virus-scanner.js';
+export { selectVirusScanner, type VirusScannerMode } from './select-virus-scanner.js';
+export {
+  noQuarantine,
+  type Quarantine,
+  type QuarantineSample,
+  type RecordingQuarantine,
+  recordingQuarantine,
+} from './quarantine.js';
+export {
   bootstrapDocumentGuard,
   bootstrapImageNormaliser,
   type DocumentGuard,

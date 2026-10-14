@@ -35,6 +35,7 @@ import {
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { LEDGER_REFRESH_INTERVAL_MS, runLedgerRefreshSweep } from '../modules/publishing/ledger/refresh-scheduler.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
+import { composeVirusScanning } from './virus-scanning.js';
 
 /**
  * The ingest worker — a SEPARATE process from the API (staging scales them
@@ -129,10 +130,17 @@ function bootstrap(): void {
   // config-selected seams below — `selectDocumentStore`, `selectImageNormaliser`,
   // `selectDocumentGuard` and the sharp hasher existed with nothing constructing
   // them, which is how a switch quietly stops being wired to anything.
+  //
+  // The virus scanner (Gov §11.4 step 4) and the quarantine for its hits are
+  // built ONCE here and handed to both sanitising lanes below — the same
+  // "one env, one pipeline" rule that governs the normaliser and the guard.
+  const { scanner, quarantine } = composeVirusScanning(env, logger);
   const media: MediaIntakeDeps = {
     fetcher: selectMediaFetcher(env),
     store: documentStore,
     perceptualHasher: createSharpPerceptualHasher(),
+    scanner,
+    quarantine,
     imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
     documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
   };
@@ -149,6 +157,8 @@ function bootstrap(): void {
     {
       store: documentStore,
       perceptualHasher: createSharpPerceptualHasher(),
+      scanner,
+      quarantine,
       imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
       documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
     },

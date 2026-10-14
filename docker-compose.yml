@@ -21,10 +21,12 @@
 #     darwin install and the container's linux install apart. Open the app at
 #     http://localhost:5173 — the browser stays on the host, the Vite proxy
 #     inside the web container forwards /v1 to the api container.
-#     NOT in the full profile, honestly: ClamAV (staging's scanner is an
-#     S3-event Lambda-shaped task whose image does not exist yet, and the API
-#     never dials clamd — a vanilla clamav container would be fake parity) and
-#     any real AWS adapter (EXTRACTOR/AI_CHAT stay at their demo defaults).
+#     NOT in the full profile, honestly: any real AWS adapter (EXTRACTOR/AI_CHAT
+#     stay at their demo defaults). ClamAV is a THIRD, opt-in profile:
+#     `--profile av` adds the clamav container the workers dial when
+#     VIRUS_SCANNER=clamd (the same INSTREAM protocol staging speaks to
+#     nt-staging-clamav) — opt-in because it wants ~4 GB and a 250 MB
+#     definitions download, which is not the 10-minute clone target.
 #
 # Third-party calls hit sandboxes or recorded fixtures. No cloud keys are needed
 # for core development (Governance §2) — if you find yourself needing one, that
@@ -73,6 +75,17 @@ x-app-env: &app-env
   OBJECT_STORE: s3
   IMAGE_NORMALISER: sharp
   DOCUMENT_GUARD: qpdf
+  # Virus scanning (Gov §11.4 step 4). Defaults to the EICAR-only fixture so
+  # `--profile full` stays a 10-minute start; add `--profile av` (the clamav
+  # service below, ~4 GB RAM + a one-off ~250 MB definitions download) and
+  # VIRUS_SCANNER=clamd in the shell to scan for real — the workers then dial
+  # the clamav container by name, exactly as staging dials its Cloud Map name.
+  # QUARANTINE_BUCKET is the MinIO bucket minio-init creates; a hit (upload the
+  # EICAR test file) lands there as <channel>/<sha256>.
+  VIRUS_SCANNER: ${VIRUS_SCANNER:-fixture}
+  CLAMD_HOST: clamav
+  CLAMD_PORT: "3310"
+  QUARANTINE_BUCKET: nt-local-quarantine
   AUTH_MODE: session
   EMAIL_SOURCE: fixture
   # Dev-only placeholders, copied from .env.example where they are explicitly
@@ -176,9 +189,38 @@ services:
       mc mb --ignore-existing local/nt-local-docs;
       mc mb --ignore-existing local/nt-local-receipts;
       mc mb --ignore-existing local/nt-local-exports;
+      mc mb --ignore-existing local/nt-local-quarantine;
       mc version enable local/nt-local-docs;
       echo 'buckets ready';
       "
+
+  # The real virus scanner, OPT-IN (`--profile av`): the official ClamAV image
+  # with its database baked in, listening on 3310 — what the workers dial when
+  # VIRUS_SCANNER=clamd. Not in `full` because it wants ~4 GB of RAM for the
+  # signature database and downloads ~250 MB of definitions on first start,
+  # which is not the 10-minute clone target. Staging runs OUR image
+  # (infra/clamav/Dockerfile: same daemon, definitions from a private S3
+  # prefix instead of the public mirrors); the wire protocol the workers speak
+  # is identical, so this is real parity for step 4, not a stand-in.
+  clamav:
+    # The Debian variant: the default Alpine tags are amd64-only (checked
+    # 14 Oct 2026), so on an Apple-silicon laptop they would run under
+    # emulation or not at all. Same reason infra/clamav/Dockerfile picks it.
+    image: clamav/clamav:1.4-debian13-slim
+    container_name: nt-clamav
+    profiles: ["av"]
+    ports:
+      - "3310:3310"
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    volumes:
+      - clamav-db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
 
   # Stands in for SES. SMTP on 1025, web UI on 8025.
   mailhog:
@@ -375,3 +417,6 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  # The ~250 MB ClamAV database, kept across restarts so `--profile av` does
+  # not re-download it every time.
+  clamav-db:

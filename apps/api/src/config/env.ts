@@ -182,6 +182,41 @@ const EnvSchema = z.object({
   // reported it clean.
   DOCUMENT_GUARD: z.enum(['fixture', 'qpdf']).default('fixture'),
 
+  // The virus scanner (Governance §11.4 step 4; runbook Step 8). `fixture` =
+  // recognises the 68-byte EICAR test string and NOTHING ELSE — it proves the
+  // pipeline plumbing and scans nothing; `clamd` = the real daemon, spoken to
+  // over its INSTREAM protocol (`lib/sanitisation/clamd-virus-scanner.ts`,
+  // zero dependencies). Selected by config, not import, like the two above.
+  //
+  // ⚠ `fixture` is NOT YET refused under `NODE_ENV=production`, and that is a
+  // sequencing decision rather than an oversight. Staging runs
+  // NODE_ENV=production and CI deploys by re-registering the LIVE task
+  // definition with a new image — so a gate here would crash-loop the next
+  // workers deploy until `terraform apply` has put VIRUS_SCANNER=clamd on the
+  // task definition AND the clamd service is actually running (the DOCUMENT_GUARD
+  // precedent: "the gate without the binary is a crash-loop"). The gate lands in
+  // the switch-on PR, with the one-line change spelled out in
+  // docs/runbooks/virus-scanning.md. Until then the worker warns at boot that
+  // nothing is being scanned, every time it starts.
+  VIRUS_SCANNER: z.enum(['fixture', 'clamd']).default('fixture'),
+  // Where clamd listens. Locally the compose `clamav` service; in staging the
+  // Cloud Map name of the nt-<env>-clamav service (infra/envs/staging/clamav.tf).
+  // Only dialled when VIRUS_SCANNER=clamd.
+  CLAMD_HOST: z.string().default('127.0.0.1'),
+  CLAMD_PORT: z.coerce.number().int().positive().max(65535).default(3310),
+  // Whole-scan deadline (connect + stream + clamd's scan). clamav.tf budgets
+  // ~120 s at p99 for a 100 MB archive on 0.5 vCPU; this sits above that so a
+  // slow daemon is not mistaken for a dead one. On expiry the scan fails CLOSED
+  // and the job retries — it never passes.
+  CLAMD_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
+  // The bucket the ORIGINAL bytes of a scanner hit are copied to
+  // (`nt-<env>-quarantine-<acct>`; its EventBridge rule is the operator alert).
+  // Empty = refuse the file and keep nothing, which is right for a laptop and
+  // CI. ⚠ REFUSED EMPTY alongside VIRUS_SCANNER=clamd under NODE_ENV=production
+  // below: SoT Stage 1 says failures quarantine WITH an operator alert, and a
+  // real scanner whose hits vanish into a log line is half the control.
+  QUARANTINE_BUCKET: z.string().default(''),
+
   // The document extractor (METH Stage 4). `demo` = the deterministic fixture
   // engine that moves documents out of RECEIVED; Textract + the vision ladder
   // lands behind the same seam later. Default `demo` so a document actually gets
@@ -877,6 +912,20 @@ const EnvSchema = z.object({
       path: ['DOCUMENT_GUARD'],
       message:
         'DOCUMENT_GUARD=fixture greps 8 KB for /Encrypt and reports clean on an incrementally-updated encrypted PDF — set DOCUMENT_GUARD=qpdf (S1)',
+    });
+  }
+
+  // A real scanner with nowhere to put its hits is half of SoT Stage 1's
+  // control: the submitter is told, but no operator is, and the evidence is
+  // gone. The quarantine bucket's EventBridge rule IS the operator alert, so a
+  // production clamd must name it. (There is deliberately no gate on
+  // VIRUS_SCANNER=fixture itself yet — see the declaration for the sequencing.)
+  if (env.NODE_ENV === 'production' && env.VIRUS_SCANNER === 'clamd' && env.QUARANTINE_BUCKET === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['QUARANTINE_BUCKET'],
+      message:
+        'VIRUS_SCANNER=clamd in production needs QUARANTINE_BUCKET — a scanner hit must land in the quarantine bucket, whose write event is the operator alert (SoT Stage 1, clamav.tf §1)',
     });
   }
 

@@ -12,6 +12,7 @@ import { createSharpPerceptualHasher } from '../modules/ingestion-routing/lib/de
 import { selectDocumentGuard, selectImageNormaliser } from '../modules/ingestion-routing/lib/sanitisation/index.js';
 import { selectIngestQueue } from '../modules/ingestion-routing/queue/select-ingest-queue.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
+import { composeVirusScanning } from './virus-scanning.js';
 
 /**
  * The inbound-email poller — a SEPARATE process from the API and the ingest
@@ -35,11 +36,16 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('email-intake');
   const source = selectEmailSource(env);
 
+  // The same scanner + quarantine the ingest worker composes (Gov §11.4 step 4).
+  const { scanner, quarantine } = composeVirusScanning(env, logger);
+
   const deps = {
     parser: new PostalMimeEmailParser(),
     queue: selectIngestQueue(env),
     logger: { log: (message: string) => logger.log(message), warn: (message: string) => logger.warn(message) },
     store: selectDocumentStore(env),
+    scanner,
+    quarantine,
     imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
     documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
     perceptualHasher: createSharpPerceptualHasher(),
