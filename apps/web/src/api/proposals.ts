@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { defineMessages, type MessageDescriptor } from 'react-intl';
 import { z } from 'zod';
+import { NtProblemError } from '@neoting/contracts';
 import {
   approveActionProposal,
   cancelActionProposal,
@@ -400,16 +401,70 @@ export async function requestChaseProposal(businessId: string, transactionIds: r
  * every one of them with the server's own sentence, before anything is sent.
  */
 export async function sendChaseNow(businessId: string, transactionIds: readonly string[]): Promise<void> {
-  const created = await requestChaseProposal(businessId, transactionIds);
-  const review = await openReview(created.id);
-  await approveReviewed(created.id, review.renderedSummaryHash);
+  await finishChaseNow(businessId, [...transactionIds].sort().join(','), () =>
+    requestChaseProposal(businessId, transactionIds),
+  );
 }
 
 /** The statement-request twin of {@link sendChaseNow}. Same three calls, same reasoning. */
 export async function sendStatementRequestNow(businessId: string, period: string): Promise<void> {
-  const created = await requestStatementProposal(businessId, period);
-  const review = await openReview(created.id);
-  await approveReviewed(created.id, review.renderedSummaryHash);
+  await finishChaseNow(businessId, period, () => requestStatementProposal(businessId, period));
+}
+
+/**
+ * Create → review → approve, and **pick up a stuck earlier attempt instead of
+ * refusing**.
+ *
+ * ⚠ Found live, 14 Oct 2026: the statement dialog answered every press with
+ * `409 NT-PRP-007` and the generic "could not be sent — try again". A first
+ * attempt had been CREATED (or REVIEWED) and its approve had failed, so it sat
+ * pending for its 24-hour TTL, and the server's duplicate guard refused every
+ * retry of the same month. "Try again" could not come true for a day.
+ *
+ * The pending twin IS the act the person just asked for — same client, same
+ * items or month — and `chase.send` is tier 2, so the person pressing may
+ * approve it. So on `NT-PRP-007` this finds it and finishes it through the same
+ * review → approve-echoing-the-hash path. If THAT fails, the person now meets
+ * the real reason (a send the server could not make) rather than the duplicate
+ * refusal standing in front of it.
+ *
+ * `identity` mirrors `chase.send` in `approvals/proposal-identity.ts`, for a
+ * single message: sorted transaction ids joined by `,`, or the statement period.
+ */
+async function finishChaseNow(businessId: string, identity: string, create: () => Promise<ActionProposal>): Promise<void> {
+  let proposalId: string;
+  try {
+    proposalId = (await create()).id;
+  } catch (error) {
+    if (!(error instanceof NtProblemError) || error.code !== 'NT-PRP-007') throw error;
+    const twin = await findPendingChase(businessId, identity);
+    if (twin === undefined) throw error;
+    proposalId = twin.id;
+  }
+  const review = await openReview(proposalId);
+  await approveReviewed(proposalId, review.renderedSummaryHash);
+}
+
+async function findPendingChase(businessId: string, identity: string): Promise<ActionProposal | undefined> {
+  const body = unwrapBody(
+    await listActionProposals({ businessId, kind: ['chase.send'], state: ['CREATED', 'REVIEWED'], limit: 50 }),
+  );
+  const parsed = listActionProposalsResponse.safeParse(body);
+  if (!parsed.success) return undefined;
+  const now = Date.now();
+  return (parsed.data.data as ActionProposal[]).find(
+    (p) => Date.parse(p.expiresAt) > now && chaseIdentity(p.payload) === identity,
+  );
+}
+
+function chaseIdentity(payload: unknown): string | null {
+  const messages = (payload as { messages?: unknown } | null | undefined)?.messages;
+  if (!Array.isArray(messages) || messages.length !== 1) return null;
+  const message = messages[0] as { transactionIds?: unknown; statementPeriod?: unknown } | null;
+  if (Array.isArray(message?.transactionIds) && message.transactionIds.length > 0) {
+    return [...(message.transactionIds as string[])].sort().join(',');
+  }
+  return typeof message?.statementPeriod === 'string' ? message.statementPeriod : null;
 }
 
 export async function requestStatementProposal(businessId: string, period: string): Promise<ActionProposal> {
