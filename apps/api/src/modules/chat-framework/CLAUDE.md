@@ -28,7 +28,7 @@ no second door to close.
 | `invoke-structured.ts` | 9.2, 9.3 | Retry-once-on-schema-failure, the degrade ladder, the breaker |
 | `provider/*` | 9.1, 9.3 | Bedrock client, the offline stand-in, the circuit breaker |
 | `drafts.ts` | 9.5 | Model turn → `rule.create` request, built from real rows |
-| `display.ts` | 9.4 | Model's `{kind, subject}` display request → a contract `ChatDisplayBlock` filled from RLS-scoped rows. GROUNDED_ANSWER only, attached only when citations stood; cells travel as typed strings (pence as digits — the WEB's money boundary renders them), bars are counts only, an empty subject is NO block. The drafts.ts posture applied to rendering |
+| `display.ts` | 9.4 | Model's `{kind, subject}` display request → a contract `ChatDisplayBlock` filled from RLS-scoped rows. GROUNDED_ANSWER only, attached only when citations stood; cells travel as typed strings (pence as digits — the WEB's money boundary renders them), bars are counts only, an empty subject is NO block. The drafts.ts posture applied to rendering. **Subjects: `documents`, `bankTransactions`, `chases`, `statements`** (the last since 14 Oct 2026 — #233 and #231 together, see below) |
 | `telemetry.ts` | 9.7 | The `ai.call` / `ai.fallback` / `ai.injection_signal` lines |
 
 ## The five things that will bite you
@@ -121,6 +121,49 @@ prevent. Finding text is wrapped (§9.6): it quotes the uploaded file.
 `SHOW_STATEMENTS` carries **no payload** — the same shape as `SHOW_INBOX`. The
 model decides only that the accountant asked to see the list; the Bank tab's
 Statements sub-tab reads every period, count and verdict from the server itself.
+
+### #233 + #231 together — the statements TABLE (14 Oct 2026, `chat-workspace/2026-10-14.1`)
+
+"Which of this client's statements were proven complete?" is a question about
+several records at once, and its honest answer is one row per statement. So
+`display.ts` gained the `statements` subject: a table of **Period from · Period
+to · Transactions (`count`) · Completeness (`text`)**, or a bar chart tallying
+the three verdicts. The verdict cell is `ASSURANCE_WORDS[readVerdict(…)]` — the
+SAME `readVerdict` the grounding line uses, exported from `grounding.ts` for
+exactly this — so an unreadable `gapAnalysis` is "could not be checked" in the
+cell as in the sentence, never "proven". Same read, order and cap as
+`retrieveRecords`, so the chat and the Bank tab agree about which upload is the
+latest attempt at a month. No contract change was needed: `ChatDisplayBlock` is
+generic, and `statement`/`SHOW_STATEMENTS` were already in the enums.
+
+What moved with it: `DisplayRequestSchema.subject` + `RESPOND_TOOL_SCHEMA` (+
+`statements`), two prompt sentences (the display paragraph names the subject;
+the statements section says a several-statements question is a `GROUNDED_ANSWER`
+with a display), the demo stand-in classifies `SHOW_STATEMENTS`, the
+suggestions briefing learned `statementsUnproven` (total minus
+`gapAnalysis.assurance = complete`, so unreadable counts as unproven — ranked
+80, above the review queue, below a stale chase; `chat-suggestions/2026-10-14.1`),
+and a `display-turn` replay-corpus case (synthetic) proving the strict parse
+admits the shape and nothing more. Eval corpus: `display-001…005` (bar chart of
+documents, table of documents, the statements table, the no-statements client,
+and a ONE-record question that must draw NO picture — `expectNoDisplay`), plus
+`inj-011` (an attack aimed at the table; the model never writes a cell, so the
+only leak possible is into the reply). The runner scores `displayKind` /
+`displaySubject` / `expectNoDisplay` as fields.
+
+⚠ **Both recordings are STALE until the owner re-records**, and that is the
+mechanism working, not a defect: the §9.8 recording
+(`evals/recordings/chat-turns.json`) misses every key under the new prompt, and
+the three chat cassettes under `fixtures/cassettes/bedrock/` miss too
+(`replay-provider.test.ts` is red by design). The offline synthetic re-record
+could not be run from the session that made the change (the recorder script is
+gated by the tool permission system even in offline mode). Owner steps, in
+order: `pnpm --filter @neoting/api record:cassettes` (offline, free, restores
+the three chat cassettes synthetic) and from `evals/`,
+`AWS_REGION=eu-west-2 EVAL_PROVIDER=bedrock EVAL_RECORD=1 pnpm test:eval`
+(50 live judgment-tier calls at ~2p each, about £1; check 50/50 turns recorded against the
+case count before believing a figure). Then `--live` on the cassettes if the
+happy turn should be the real model again.
 
 ## Review item 51 (7 Sep 2026) — two SERVER-SET affordances on the turn
 
@@ -272,7 +315,12 @@ model's judgement. Check the recorded count against the case count before
 believing a figure. Re-recording overwrites the whole file, so a second run is
 the fix and leaves nothing half-updated.
 
-**Current figures** (prompt `chat-workspace/2026-09-05.2`, opus-4-6, 5 Sep 2026,
+⚠ **The figures below are for `chat-workspace/2026-09-05.2`. The prompt is now
+`2026-10-14.1` and the recording has NOT been re-run against it** — see "#233 +
+#231 together" above for the owner's re-record steps. Until then `pnpm test:eval`
+replays nothing and fails on a key miss.
+
+**Last recorded figures** (prompt `chat-workspace/2026-09-05.2`, opus-4-6, 5 Sep 2026,
 re-recorded live for the SHOW_EXPORTS/SHOW_APPROVALS intents — review item 9):
 34 rule cases — **intent 94.1%**, **fields 100%**; injection 10 cases, **0
 leaks**; 44/44 turns recorded, checked against the case count. All four new
@@ -324,7 +372,7 @@ query it is meant to be measuring and pass whatever it was asked.
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- chat-framework   # 101 unit tests, no socket, no DB
+pnpm --filter @neoting/api test -- chat-framework   # 145 unit tests, no socket, no DB (3 replay tests red until the cassettes are re-recorded — see above)
 EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS creds
 ```
 

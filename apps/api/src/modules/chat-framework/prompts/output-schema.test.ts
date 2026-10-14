@@ -74,7 +74,56 @@ describe('the model output schema (Governance §9.2)', () => {
   });
 });
 
+describe('a display request is a SHAPE, never data (#231), and statements are a subject (#233)', () => {
+  const grounded = { intent: 'GROUNDED_ANSWER', reply: 'Two statements, one proven.', grounded: { citedRecordIds: [] } };
+
+  test('every subject the prompt names parses, statements included', () => {
+    for (const subject of ['documents', 'bankTransactions', 'chases', 'statements']) {
+      for (const kind of ['table', 'barChart']) {
+        expect(ModelTurnSchema.safeParse({ ...grounded, display: { kind, subject } }).success).toBe(true);
+      }
+    }
+  });
+
+  test('a subject or kind outside the enum is refused — there is no field a figure or a row could travel in', () => {
+    expect(ModelTurnSchema.safeParse({ ...grounded, display: { kind: 'table', subject: 'profit' } }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...grounded, display: { kind: 'pie', subject: 'documents' } }).success).toBe(false);
+    expect(
+      ModelTurnSchema.safeParse({ ...grounded, display: { kind: 'table', subject: 'statements', rows: [['£1']] } }).success,
+    ).toBe(false);
+    expect(
+      ModelTurnSchema.safeParse({ ...grounded, display: { kind: 'barChart', subject: 'statements', bars: [{ label: 'x', count: 1 }] } })
+        .success,
+    ).toBe(false);
+  });
+
+  test('a display may only ride a GROUNDED_ANSWER — SHOW_STATEMENTS is navigation and carries nothing', () => {
+    expect(
+      ModelTurnSchema.safeParse({ intent: 'SHOW_STATEMENTS', reply: 'Here they are.', display: { kind: 'table', subject: 'statements' } })
+        .success,
+    ).toBe(false);
+    expect(ModelTurnSchema.safeParse({ intent: 'SHOW_STATEMENTS', reply: 'Here they are.' }).success).toBe(true);
+  });
+});
+
 describe('the JSON Schema handed to the model stays in step with the Zod', () => {
+  test('the display subject and kind enums match the Zod exactly', () => {
+    const parsed = (value: unknown) =>
+      ModelTurnSchema.safeParse({
+        intent: 'GROUNDED_ANSWER',
+        reply: 'x',
+        grounded: { citedRecordIds: [] },
+        display: value,
+      }).success;
+    for (const subject of RESPOND_TOOL_SCHEMA.properties.display.properties.subject.enum) {
+      expect(parsed({ kind: 'table', subject })).toBe(true);
+    }
+    for (const kind of RESPOND_TOOL_SCHEMA.properties.display.properties.kind.enum) {
+      expect(parsed({ kind, subject: 'statements' })).toBe(true);
+    }
+    expect(RESPOND_TOOL_SCHEMA.properties.display.properties.subject.enum).toContain('statements');
+  });
+
   test('the intent enums match exactly', () => {
     // Hand-written adjacent to the Zod (a generator would be a dependency for
     // forty lines, and could not express the superRefine rules anyway), so this
@@ -87,6 +136,7 @@ describe('the JSON Schema handed to the model stays in step with the Zod', () =>
     expect(RESPOND_TOOL_SCHEMA.properties.rule.additionalProperties).toBe(false);
     expect(RESPOND_TOOL_SCHEMA.properties.navigation.additionalProperties).toBe(false);
     expect(RESPOND_TOOL_SCHEMA.properties.grounded.additionalProperties).toBe(false);
+    expect(RESPOND_TOOL_SCHEMA.properties.display.additionalProperties).toBe(false);
   });
 });
 
@@ -98,6 +148,19 @@ describe('the system prompt (Governance §9.6, §9.8)', () => {
 
   test('it carries §9.4 refusal language verbatim', () => {
     expect(SYSTEM_PROMPT).toContain('Never invent a figure');
+  });
+
+  test('#233: it names statements as pipeline data and forbids the referral that was the defect', () => {
+    expect(SYSTEM_PROMPT).toContain('Bank statements are this product\'s own data');
+    expect(SYSTEM_PROMPT).toContain('Never send anyone to their banking platform');
+    expect(SYSTEM_PROMPT).toContain('`SHOW_STATEMENTS`');
+  });
+
+  test('#231: the display sentence names every subject the schema accepts, and only the shape is the model\'s', () => {
+    for (const subject of RESPOND_TOOL_SCHEMA.properties.display.properties.subject.enum) {
+      expect(SYSTEM_PROMPT).toContain(`\`${subject}\``);
+    }
+    expect(SYSTEM_PROMPT).toContain('You choose only the shape');
   });
 
   test('it states the model cannot approve or execute (§9.5)', () => {

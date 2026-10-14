@@ -2,6 +2,7 @@ import type { ChatDisplayBlock } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../common/db/scoped-db.js';
 import { notDeleted } from '../../common/documents/deleted-documents.js';
+import { ASSURANCE_WORDS, readVerdict } from './grounding.js';
 
 /**
  * Display blocks (§9.4 applied to pictures): the model asked for a SHAPE — a
@@ -24,7 +25,13 @@ import { notDeleted } from '../../common/documents/deleted-documents.js';
 
 export interface DisplayRequest {
   readonly kind: 'table' | 'barChart';
-  readonly subject: 'documents' | 'bankTransactions' | 'chases';
+  /**
+   * `statements` joins the list with #233 and #231 together: D40 makes the
+   * uploaded statement the ONLY bank input, so "which statements has this
+   * client sent, and were they complete?" is a pipeline question whose honest
+   * answer is a table — period, lines imported, and D41's verdict per row.
+   */
+  readonly subject: 'documents' | 'bankTransactions' | 'chases' | 'statements';
 }
 
 /** Recent-first and capped, the `retrieveRecords` discipline (§9.5). */
@@ -32,6 +39,8 @@ const ROW_LIMIT = 40;
 
 const day = (value: Date | null): string => (value === null ? '' : value.toISOString().slice(0, 10));
 const pence = (value: number | null): string => (value === null ? '' : String(value));
+/** A `count` cell: a non-negative integer in decimal digits, or unknown. */
+const count = (value: number | null): string => (value === null ? '' : String(value));
 
 /**
  * Tally rows into bars, insertion-ordered by first appearance so the chart is
@@ -110,6 +119,41 @@ export async function composeDisplay(
         { name: 'Match', cellType: 'text' },
       ],
       rows: rows.map((r) => [r.merchantName ?? r.descriptionRaw, day(r.bookedAt), pence(r.amountPence), r.matchState]),
+    };
+  }
+
+  if (request.subject === 'statements') {
+    // The same read, order and cap as `retrieveRecords` — newest period first,
+    // then newest import — so the table the chat draws and the Bank tab's
+    // Statements list never disagree about which upload is the latest attempt
+    // at a month. `readVerdict` is shared with the grounding line for the
+    // reason its comment gives: an unreadable `gapAnalysis` is "could not be
+    // checked", never "proven", and the cell must say the same thing the
+    // sentence does.
+    const rows = await db.statement.findMany({
+      where: { businessId },
+      orderBy: [{ periodEnd: 'desc' }, { createdAt: 'desc' }],
+      take: ROW_LIMIT,
+      select: { periodStart: true, periodEnd: true, rowCount: true, gapAnalysis: true },
+    });
+    if (rows.length === 0) return null;
+    const verdicts = rows.map((r) => ASSURANCE_WORDS[readVerdict(r.gapAnalysis).assurance]);
+    if (request.kind === 'barChart') {
+      // A tally of VERDICTS, not of money: how many statements were proven
+      // whole against how many could not be checked is the D41 fact an
+      // accountant acts on, and it is a count.
+      return { kind: 'barChart', title: 'Statements by completeness', bars: tally(verdicts) };
+    }
+    return {
+      kind: 'table',
+      title: 'Bank statements',
+      columns: [
+        { name: 'Period from', cellType: 'date' },
+        { name: 'Period to', cellType: 'date' },
+        { name: 'Transactions', cellType: 'count' },
+        { name: 'Completeness', cellType: 'text' },
+      ],
+      rows: rows.map((r, i) => [day(r.periodStart), day(r.periodEnd), count(r.rowCount), verdicts[i] ?? '']),
     };
   }
 

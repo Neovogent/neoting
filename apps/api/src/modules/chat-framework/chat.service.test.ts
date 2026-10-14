@@ -359,3 +359,152 @@ describe('prompt assembly (Governance §9.6)', () => {
     expect(messages[0]?.role).toBe('user');
   });
 });
+
+/**
+ * #231 + #233 at the service seam. The model asked for a SHAPE over the
+ * client's statements; every value on the block came from rows the scoped
+ * client returned, the model's reply never reached a cell, and a client with
+ * no statements got the words and no picture. The Prisma double records that
+ * every read happened inside `scopedDb` (the `$transaction` + `set_config`
+ * pair), because an unscoped read here would be a tenancy leak with a chart on
+ * it.
+ */
+describe('a grounded answer drawn as a statements table', () => {
+  const STATEMENT_ROWS = [
+    {
+      id: 'stm_1',
+      periodStart: new Date('2026-08-01T00:00:00Z'),
+      periodEnd: new Date('2026-08-31T00:00:00Z'),
+      rowCount: 128,
+      createdAt: new Date('2026-09-01T00:00:00Z'),
+      gapAnalysis: { assurance: 'complete', provenBy: 'balanceContinuity', findings: [] },
+    },
+    {
+      id: 'stm_2',
+      periodStart: new Date('2026-07-01T00:00:00Z'),
+      periodEnd: new Date('2026-07-31T00:00:00Z'),
+      rowCount: 96,
+      createdAt: new Date('2026-08-01T00:00:00Z'),
+      gapAnalysis: null,
+    },
+  ];
+
+  function prismaWith(statements: unknown[]) {
+    const scoped = { transactions: 0, contextSets: 0 };
+    const tx = {
+      $executeRaw: async () => {
+        scoped.contextSets += 1;
+        return 0;
+      },
+      document: { findMany: async () => [] },
+      extraction: { findMany: async () => [] },
+      bankTransaction: { findMany: async () => [] },
+      chase: { findMany: async () => [] },
+      statement: { findMany: async () => statements },
+      referenceSync: { findMany: async () => [] },
+    };
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => {
+        scoped.transactions += 1;
+        return fn(tx);
+      },
+    } as unknown as PrismaClient;
+    return { prisma, scoped };
+  }
+
+  const MODEL_SAYS = {
+    intent: 'GROUNDED_ANSWER',
+    reply: 'Two statements: August was proven complete, July could not be checked. £999,999 total.',
+    grounded: { citedRecordIds: ['stm_1', 'stm_2'] },
+    display: { kind: 'table', subject: 'statements' },
+  };
+
+  test('the block is built from the scoped rows — period, line count, verdict — and cites the same records', async () => {
+    const { prisma, scoped } = prismaWith(STATEMENT_ROWS);
+    const svc = new ChatService(prisma, providerReturning(MODEL_SAYS), new CircuitBreaker(), new InMemoryAiBudget(500));
+
+    const turn = await svc.createTurn(CONTEXT, { utterance: 'which statements were proven complete?', businessId: 'biz_1' });
+
+    expect(turn.intent).toBe('GROUNDED_ANSWER');
+    expect(turn.references?.map((r) => r.type)).toEqual(['statement', 'statement']);
+    expect(turn.display).toHaveLength(1);
+    const block = turn.display![0]!;
+    expect(block.kind).toBe('table');
+    expect(block.rows).toEqual([
+      ['2026-08-01', '2026-08-31', '128', 'proven'],
+      ['2026-07-01', '2026-07-31', '96', 'could not be checked'],
+    ]);
+    // Every read — the grounding window and the block — happened inside a
+    // scoped transaction with the RLS context set.
+    expect(scoped.transactions).toBe(2);
+    expect(scoped.contextSets).toBe(2);
+  });
+
+  test('⚠ no model text reaches a block: the figure the model wrote is nowhere in the display', async () => {
+    const { prisma } = prismaWith(STATEMENT_ROWS);
+    const svc = new ChatService(prisma, providerReturning(MODEL_SAYS), new CircuitBreaker(), new InMemoryAiBudget(500));
+
+    const turn = await svc.createTurn(CONTEXT, { utterance: 'which statements were proven complete?', businessId: 'biz_1' });
+
+    const serialised = JSON.stringify(turn.display);
+    expect(serialised).not.toContain('999');
+    expect(serialised).not.toContain('Two statements');
+    // The words are still the model's; the picture is the server's.
+    expect(turn.reply).toBe(MODEL_SAYS.reply);
+  });
+
+  test('a client with no statements gets the §9.4 sentence and NO block — never an empty table', async () => {
+    const { prisma } = prismaWith([]);
+    const svc = new ChatService(
+      prisma,
+      providerReturning({ ...MODEL_SAYS, reply: 'None uploaded yet.', grounded: { citedRecordIds: [] } }),
+      new CircuitBreaker(),
+      new InMemoryAiBudget(500),
+    );
+
+    const turn = await svc.createTurn(CONTEXT, { utterance: 'which statements were proven complete?', businessId: 'biz_1' });
+
+    expect(turn.reply).toBe("Information not available in this client's records.");
+    expect(turn.display).toBeUndefined();
+  });
+
+  test('a fabricated citation loses the picture along with the answer', async () => {
+    const { prisma } = prismaWith(STATEMENT_ROWS);
+    const svc = new ChatService(
+      prisma,
+      providerReturning({ ...MODEL_SAYS, grounded: { citedRecordIds: ['stm_invented'] } }),
+      new CircuitBreaker(),
+      new InMemoryAiBudget(500),
+    );
+
+    const turn = await svc.createTurn(CONTEXT, { utterance: 'which statements were proven complete?', businessId: 'biz_1' });
+
+    expect(turn.intent).toBe('GENERAL');
+    expect(turn.display).toBeUndefined();
+  });
+});
+
+describe('the statements ask (#233) — never a referral off the product', () => {
+  test('the local stand-in routes "show me the bank statements" to the Statements list', async () => {
+    const turn = await service(new DemoModelProvider()).createTurn(CONTEXT, { utterance: 'show me the bank statements for this client' });
+
+    expect(turn.intent).toBe('SHOW_STATEMENTS');
+    expect(turn.draft).toBeUndefined();
+    expect(turn.display).toBeUndefined();
+    for (const forbidden of [/banking platform/i, /accounting platform/i, /online banking/i, /bank's website/i]) {
+      expect(turn.reply).not.toMatch(forbidden);
+    }
+  });
+
+  test('SHOW_STATEMENTS from the model crosses with no payload — the Bank tab reads its own rows', async () => {
+    const turn = await service(providerReturning({ intent: 'SHOW_STATEMENTS', reply: 'Opening the statements list.' })).createTurn(
+      CONTEXT,
+      { utterance: 'what statements has this client sent us' },
+    );
+
+    expect(turn.intent).toBe('SHOW_STATEMENTS');
+    expect(turn.navigation).toBeUndefined();
+    expect(turn.references).toBeUndefined();
+    expect(turn.display).toBeUndefined();
+  });
+});
