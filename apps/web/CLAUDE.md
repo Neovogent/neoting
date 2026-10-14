@@ -3050,6 +3050,16 @@ than recomputed, and the audit row is written. What is gone is the WAIT. The
 copy moved with the behaviour — "sent", never "queued" — and every sentence
 still names Approvals as where the record lives.
 
+⚠ **A stuck earlier attempt is FINISHED, not refused (14 Oct 2026).** If a
+first send was created but its approve failed, the proposal sits pending for its
+24 h TTL and the server's duplicate guard answers every retry `409 NT-PRP-007` —
+live, the statement dialog said "try again" to a refusal no retry could clear.
+`finishChaseNow` (shared by both send-now helpers) catches that one code, finds
+the pending twin (`GET /action-proposals`, same business, same transactions or
+month, unexpired) and runs review → approve on it. The twin IS the act asked
+for, and `chase.send` is tier 2. With no twin found, the refusal surfaces, and
+`RequestStatementDialog` now shows the server's reason with its code.
+
 ⚠ **The composer surfaces are unchanged and still show the draft first**
 (`LiveChaseComposerCard` through `LiveProposalFlow`, which now auto-opens the
 review for any tier-2 kind). That is the path for a chase whose wording the

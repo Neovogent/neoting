@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, test, vi } from 'vitest';
 
 import { ProposalKind } from '@neoting/contracts/model';
-import { approveReviewed, cancelPending, createProposal, KIND_LABEL, NEEDS_RELEASE_AUTHORITY, openReview } from './proposals';
+import {
+  approveReviewed,
+  cancelPending,
+  createProposal,
+  KIND_LABEL,
+  NEEDS_RELEASE_AUTHORITY,
+  openReview,
+  sendChaseNow,
+  sendStatementRequestNow,
+} from './proposals';
 
 /**
  * The proposal-queue boundary (METH Stage 12), recorder-fetch style like the
@@ -21,10 +30,11 @@ function stubFetch(replies: { body: unknown; status?: number }[]): Recorded[] {
   vi.stubGlobal('fetch', (url: string | URL, init: RequestInit = {}) => {
     calls.push({ url: String(url), init });
     const reply = replies[index++] ?? { body: {} };
+    const status = reply.status ?? 200;
     return Promise.resolve(
       new Response(JSON.stringify(reply.body), {
-        status: reply.status ?? 200,
-        headers: { 'content-type': 'application/json' },
+        status,
+        headers: { 'content-type': status >= 400 ? 'application/problem+json' : 'application/json' },
       }),
     );
   });
@@ -153,6 +163,82 @@ test('a create response that drifts from the contract is refused with the field 
   await expect(
     createProposal({ kind: 'document.route', businessId: null, payload: { documentId: 'doc_1', inbox: 'COSTS' } }),
   ).rejects.toThrow(/payloadHash/);
+});
+
+/* ── send now, over a stuck earlier attempt ───────────────────────────────── */
+
+// 14 Oct 2026, found live: a first attempt was created but never approved, so
+// the server's duplicate guard answered every retry with 409 NT-PRP-007 for the
+// proposal's whole 24 h TTL. The pending twin IS the act being asked for.
+const DUPLICATE = {
+  type: 'about:blank',
+  title: 'Already awaiting review',
+  status: 409,
+  code: 'NT-PRP-007',
+  detail: 'A chase for exactly these items is already awaiting review.',
+};
+
+const pendingStatement = (id: string, period: string, expiresAt = '2999-01-01T00:00:00.000Z') => ({
+  ...PROPOSAL,
+  id,
+  state: 'REVIEWED',
+  renderedSummaryHash: HASH,
+  reviewedAt: '2026-08-19T09:05:00.000Z',
+  expiresAt,
+  payload: { messages: [{ statementPeriod: period, body: 'x' }] },
+});
+
+test('a duplicate refusal finishes the matching pending request instead of failing', async () => {
+  const calls = stubFetch([
+    { body: DUPLICATE, status: 409 },
+    {
+      body: {
+        data: [
+          pendingStatement('prop_other_month', '2026-07'),
+          pendingStatement('prop_expired', '2026-08', '2000-01-01T00:00:00.000Z'),
+          pendingStatement('prop_twin', '2026-08'),
+        ],
+        pageInfo: { nextCursor: null, hasMore: false },
+      },
+    },
+    { body: { ...REVIEW, proposal: pendingStatement('prop_twin', '2026-08') } },
+    { body: { ...PROPOSAL, id: 'prop_twin', state: 'EXECUTED' } },
+  ]);
+
+  await sendStatementRequestNow('biz_burger', '2026-08');
+
+  expect(calls[1]!.url).toMatch(/\/v1\/action-proposals\?/);
+  expect(calls[1]!.url).toContain('businessId=biz_burger');
+  expect(calls[2]!.url).toMatch(/\/action-proposals\/prop_twin\/review$/);
+  expect(calls[3]!.url).toMatch(/\/action-proposals\/prop_twin\/approval$/);
+  expect(JSON.parse(String(calls[3]!.init.body))).toEqual({ renderedSummaryHash: HASH });
+});
+
+test('with no live twin to finish, the duplicate refusal surfaces with its code', async () => {
+  stubFetch([
+    { body: DUPLICATE, status: 409 },
+    { body: { data: [pendingStatement('prop_other_month', '2026-07')], pageInfo: { nextCursor: null, hasMore: false } } },
+  ]);
+
+  await expect(sendStatementRequestNow('biz_burger', '2026-08')).rejects.toMatchObject({ code: 'NT-PRP-007' });
+});
+
+test('a chase twin matches on the same transactions in any order', async () => {
+  const calls = stubFetch([
+    { body: DUPLICATE, status: 409 },
+    {
+      body: {
+        data: [{ ...pendingStatement('prop_twin', ''), payload: { messages: [{ transactionIds: ['t2', 't1'], body: 'x' }] } }],
+        pageInfo: { nextCursor: null, hasMore: false },
+      },
+    },
+    { body: REVIEW },
+    { body: { ...PROPOSAL, state: 'EXECUTED' } },
+  ]);
+
+  await sendChaseNow('biz_burger', ['t1', 't2']);
+
+  expect(calls[3]!.url).toMatch(/\/action-proposals\/prop_twin\/approval$/);
 });
 
 describe('who may approve which kind', () => {

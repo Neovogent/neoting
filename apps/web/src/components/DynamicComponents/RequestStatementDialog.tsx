@@ -4,6 +4,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import { sendStatementRequestNow } from '../../api/proposals';
+import { errorLabel } from '../../api/slices';
 import { Modal } from './Modal';
 import { ukLongDate, ukLongMonth, UkDateField, UkMonthField } from './UkDateField';
 
@@ -120,7 +121,9 @@ export default function RequestStatementDialog({
   const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // The server's own reason, `NT-` code first — "try again" alone hid a
+  // refusal no retry could clear (the stuck-duplicate 409, 14 Oct 2026).
+  const [failure, setFailure] = useState<string | null>(null);
 
   /**
    * The one string the wire takes — `YYYY-MM` or `YYYY-MM-DD..YYYY-MM-DD`,
@@ -133,12 +136,12 @@ export default function RequestStatementDialog({
 
   const confirm = async () => {
     setBusy(true);
-    setFailed(false);
+    setFailure(null);
     try {
       await sendStatementRequestNow(businessId, period);
       setQueued(true);
-    } catch {
-      setFailed(true);
+    } catch (error) {
+      setFailure(errorLabel(error) ?? '');
     } finally {
       setBusy(false);
     }
@@ -269,9 +272,10 @@ export default function RequestStatementDialog({
           </p>
         ) : (
           <div className="flex items-center justify-end gap-3">
-            {failed && (
+            {failure !== null && (
               <p role="alert" className="mr-auto text-[12px] text-red-400">
                 {intl.formatMessage(m.failed)}
+                {failure !== '' && <span className="block mt-1 text-zinc-400">{failure}</span>}
               </p>
             )}
             <button
