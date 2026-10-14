@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { AppException } from '../../common/problem/problem.js';
 import type { ScopedClient } from '../../common/db/scoped-db.js';
-import { AwsSmsSender, type AwsSmsSenderDeps } from './aws-sms-sender.js';
+import { AwsSmsSender, type AwsSmsSenderDeps, SmsNotSent } from './aws-sms-sender.js';
 import { OptedOutRecipientError } from './aws-sms-transport.js';
 import type { OutboundSms } from './sms-sender.js';
 
@@ -107,6 +107,23 @@ test('an opted-out recipient (STOP) refuses with NT-PRP-006 — the product neve
   expect((error as AppException).code).toBe('NT-PRP-006');
   expect((error as AppException).publicDetail).toContain('opted out');
   expect(h.logs).toEqual([]);
+});
+
+test('STOP and an AWS refusal are SmsNotSent — the case an email may stand in for; the ceiling is not', async () => {
+  const optedOut = harness({ transport: { sendText: async () => Promise.reject(new OptedOutRecipientError()) } });
+  expect(await optedOut.sender.send(optedOut.db, [MESSAGE]).catch((e: unknown) => e)).toMatchObject({ reason: 'opted-out' });
+
+  const rejected = harness({ transport: { sendText: async () => Promise.reject(new Error('ValidationException')) } });
+  const error = await rejected.sender.send(rejected.db, [MESSAGE]).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(SmsNotSent);
+  expect((error as SmsNotSent).reason).toBe('rejected');
+  expect(rejected.updates).toEqual([]);
+  expect(rejected.logs).toEqual([]);
+
+  const limited = harness({ limiter: { consume: async () => ({ allowed: false }) } });
+  const ceiling = await limited.sender.send(limited.db, [MESSAGE]).catch((e: unknown) => e);
+  expect(ceiling).toBeInstanceOf(AppException);
+  expect(ceiling).not.toBeInstanceOf(SmsNotSent);
 });
 
 test('the ceiling is consumed per recipient, keyed on the E164', async () => {

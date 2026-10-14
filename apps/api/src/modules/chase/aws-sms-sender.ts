@@ -91,12 +91,14 @@ export class AwsSmsSender implements SmsSender {
         ({ messageId } = await transport.sendText(message.toE164, message.body));
       } catch (error) {
         if (error instanceof OptedOutRecipientError) {
-          // A STOP is the client's standing answer. The approval rolls back and
-          // the refusal says why, so the accountant learns the fact rather
-          // than watching a chase quietly never arrive.
-          throw refusal('the recipient has opted out of SMS — ask them by another channel');
+          // A STOP is the client's standing answer — never retried by TEXT.
+          // `SmsFirstChaseSender` asks by email instead; on its own this rolls
+          // the approval back and says why.
+          throw new SmsNotSent('opted-out', 'the recipient has opted out of SMS — ask them by another channel', error);
         }
-        throw error;
+        // AWS refused or could not take this text. Nothing was recorded as
+        // sent, so the email fallback can carry it instead.
+        throw new SmsNotSent('rejected', 'the SMS provider did not accept this text', error);
       }
 
       const sentAt = new Date();
@@ -125,4 +127,20 @@ export class AwsSmsSender implements SmsSender {
 
 function refusal(detail: string): AppException {
   return new AppException('NT-PRP-006', HttpStatus.CONFLICT, 'Proposal is not executable', detail);
+}
+
+/**
+ * The text did not leave, and nothing was recorded as sent — the one refusal
+ * an email may stand in for. Distinct from the per-number CEILING refusal,
+ * which is the over-ask guard and must not be routed around by emailing the
+ * same person instead.
+ */
+export class SmsNotSent extends AppException {
+  constructor(
+    readonly reason: 'opted-out' | 'rejected',
+    detail: string,
+    readonly underlying: unknown,
+  ) {
+    super('NT-PRP-006', HttpStatus.CONFLICT, 'Proposal is not executable', detail);
+  }
 }

@@ -12,6 +12,8 @@ The five detection engines, chase composition, delivery with OTP secure links, t
 
 ⚠ **Staging ran `SMS_SENDER=aws` from 11 Sep to 14 Oct 2026 and was reverted to `email+sms`.** Under `aws` a chase goes by text ONLY, and `aws-sms-sender.ts` refuses a contact with no mobile (`NT-PRP-006`, "no registered mobile"). Found live: a statement request to an email-only contact refused at approve, rolled back, logged nothing (4xx refusals are not logged), and every retry then hit the `NT-PRP-007` duplicate guard — while the review card, the request form and the portal all promised email. **Before flipping back to `aws`, make that sender fall back to email for a contact with no mobile** (a change to SMS sending, so stop-and-ask).
 
+✅ **Done 14 Oct 2026, owner's ruling *"do sms first, email fallback"*:** `SMS_SENDER=aws` now selects `SmsFirstChaseSender` (`sms-first-chase-sender.ts`) — per message, a registered mobile gets the TEXT; no mobile, or a text that did not leave (`SmsNotSent`: a STOP, or AWS refusing the send), gets the EMAIL. The per-number ceiling is deliberately NOT a fallback case (it is the over-ask guard). Every fallback is LOGGED by chase-message id. ⚠ A text AWS accepted but the carrier never delivered does not fall back — delivery receipts are the unwired event stream. ⚠ Staging is still `email+sms` until the owner proves a real delivery and decides the "by email" copy (~20 web strings say chases go by email).
+
 ## ⚠ Initial Delivery (ID) — read this before the sections below
 
 **ID ships THREE of the five detection engines** (SoT §24.2 Stage 8), and the omissions are worth knowing rather than guessing at:

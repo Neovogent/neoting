@@ -3,6 +3,7 @@ import { AwsSmsSender } from './aws-sms-sender.js';
 import { createAwsSmsTransport } from './aws-sms-transport.js';
 import { EmailAndOutboxChaseSender } from './email-and-outbox-chase-sender.js';
 import { EmailChaseSender } from './email-chase-sender.js';
+import { SmsFirstChaseSender } from './sms-first-chase-sender.js';
 import { DemoSmsSender, type SmsSender } from './sms-sender.js';
 
 /**
@@ -53,22 +54,27 @@ export type ChaseSenderEnv = Pick<
 export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
   switch (env.SMS_SENDER) {
     case 'aws':
-      // The real SMS wire (Phase 3, AWS End User Messaging). Lazy for the same
-      // two reasons as `email` below: the limiter comes off the notifications
-      // seam (the cycle hazard), and a process that never sends builds no AWS
-      // client and opens no Redis connection. `AwsSmsSender` memoises after
-      // the first send. env.ts refuses to boot `aws` with an empty
-      // SMS_ORIGINATION_IDENTITY, so the transport never sees one.
-      return new AwsSmsSender(async () => {
-        const { selectEmailRateLimiter } = await import('../notifications/index.js');
-        return {
-          transport: createAwsSmsTransport({
-            region: env.SMS_REGION,
-            originationIdentity: env.SMS_ORIGINATION_IDENTITY,
-          }),
-          limiter: selectEmailRateLimiter(env),
-        };
-      });
+      // The real SMS wire (Phase 3, AWS End User Messaging), TEXT FIRST with
+      // the email as the fallback (owner, 14 Oct 2026 — see
+      // `sms-first-chase-sender.ts`). Lazy for the same two reasons as `email`
+      // below: the limiter comes off the notifications seam (the cycle
+      // hazard), and a process that never sends builds no AWS client and opens
+      // no Redis connection. `AwsSmsSender` memoises after the first send.
+      // env.ts refuses to boot `aws` with an empty SMS_ORIGINATION_IDENTITY,
+      // so the transport never sees one.
+      return new SmsFirstChaseSender(
+        new AwsSmsSender(async () => {
+          const { selectEmailRateLimiter } = await import('../notifications/index.js');
+          return {
+            transport: createAwsSmsTransport({
+              region: env.SMS_REGION,
+              originationIdentity: env.SMS_ORIGINATION_IDENTITY,
+            }),
+            limiter: selectEmailRateLimiter(env),
+          };
+        }),
+        makeEmailSender(env),
+      );
     case 'email+sms':
       // The owner's 9 Sep 2026 ruling: the client still gets the real email,
       // and the workspace gets a row on the SMS-outbox screen showing the text
