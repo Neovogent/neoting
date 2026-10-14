@@ -198,14 +198,22 @@ locals {
     #                        mobile, which is the only thing the SMS-outbox
     #                        screen reads.
     #
-    #                        ⚠ SUPERSEDED 11 Sep 2026 — this environment now runs
-    #                        `SMS_SENDER=aws`. Kept because the outbox screen
-    #                        still exists and the distinction still matters: an
-    #                        `sms_log` row is composed bytes, NOT a delivery
-    #                        receipt, so the screen is still not proof a
-    #                        client's phone rang.
+    #                        ⚠ IN FORCE AGAIN since 14 Oct 2026 (it was
+    #                        superseded by `aws` from 11 Sep to 14 Oct — see
+    #                        below). An `sms_log` row is composed bytes, NOT a
+    #                        delivery receipt, so the outbox screen is still not
+    #                        proof a client's phone rang.
     #
-    #   SMS_SENDER=aws       ⚠ REAL TEXT MESSAGES LEAVE THE ACCOUNT. Owner's
+    #   SMS_SENDER=aws       ⚠ REVERTED 14 Oct 2026, owner's instruction, for
+    #                        failure (2) below: a statement request to an
+    #                        email-only contact (Aldgate Kitchen) refused
+    #                        NT-PRP-006 at approve, rolled back, logged nothing,
+    #                        and stuck the retry on NT-PRP-007 — while the review
+    #                        card, the request form and the portal all said
+    #                        "by email". Re-flip only once the sender falls
+    #                        back to email for a contact with no mobile.
+    #
+    #                        ⚠ REAL TEXT MESSAGES LEAVE THE ACCOUNT. Owner's
     #                        instruction, 11 Sep 2026, after the UK number
     #                        +447441471756 completed carrier registration
     #                        (GB_LONG_CODE_REGISTRATION, COMPLETE 9 Sep).
@@ -364,8 +372,11 @@ locals {
     # and the portal renders "OneDrive — coming soon". Add the three ONEDRIVE_*
     # entries the day an Azure app registration exists — no code changes.
 
-    { name = "SMS_SENDER", value = "aws" },
+    # `email+sms`, not `aws`, since 14 Oct 2026 — the reason is at the
+    # SMS_SENDER notes above. No real text leaves the account under it.
+    { name = "SMS_SENDER", value = "email+sms" },
     # The dedicated UK number every chase and sign-in code originates from.
+    # Read only under `aws`; kept so the re-flip is one value.
     # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because
     # the alternative is a green task that fails every send at request time and
     # whose first symptom is a client who never got their text.
