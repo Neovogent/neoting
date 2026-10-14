@@ -4,6 +4,7 @@ import { createAwsSmsTransport } from './aws-sms-transport.js';
 import { EmailAndOutboxChaseSender } from './email-and-outbox-chase-sender.js';
 import { EmailChaseSender } from './email-chase-sender.js';
 import { DemoSmsSender, type SmsSender } from './sms-sender.js';
+import { SmsWithEmailFallbackChaseSender } from './sms-with-email-fallback-chase-sender.js';
 
 /**
  * Pick the chase sender from config — never by import, the house pattern shared
@@ -59,16 +60,23 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
       // client and opens no Redis connection. `AwsSmsSender` memoises after
       // the first send. env.ts refuses to boot `aws` with an empty
       // SMS_ORIGINATION_IDENTITY, so the transport never sees one.
-      return new AwsSmsSender(async () => {
-        const { selectEmailRateLimiter } = await import('../notifications/index.js');
-        return {
-          transport: createAwsSmsTransport({
-            region: env.SMS_REGION,
-            originationIdentity: env.SMS_ORIGINATION_IDENTITY,
-          }),
-          limiter: selectEmailRateLimiter(env),
-        };
-      });
+      //
+      // ⚠ A contact with no mobile is EMAILED, not refused (14 Oct 2026). Intake
+      // makes the mobile optional, and texting-only made an email-only client
+      // impossible to chase — see `sms-with-email-fallback-chase-sender.ts`.
+      return new SmsWithEmailFallbackChaseSender(
+        new AwsSmsSender(async () => {
+          const { selectEmailRateLimiter } = await import('../notifications/index.js');
+          return {
+            transport: createAwsSmsTransport({
+              region: env.SMS_REGION,
+              originationIdentity: env.SMS_ORIGINATION_IDENTITY,
+            }),
+            limiter: selectEmailRateLimiter(env),
+          };
+        }),
+        makeEmailSender(env),
+      );
     case 'email+sms':
       // The owner's 9 Sep 2026 ruling: the client still gets the real email,
       // and the workspace gets a row on the SMS-outbox screen showing the text
@@ -99,7 +107,7 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
  * chase constructs no SES client and opens no Redis connection.
  * `EmailChaseSender` memoises the result after the first send.
  *
- * Shared by `email` and `email+sms` so the two cannot drift into two different
+ * Shared by `email`, `email+sms` and `aws`'s no-mobile fallback so they cannot drift into two different
  * opinions about what a chase email is.
  */
 function makeEmailSender(env: ChaseSenderEnv): EmailChaseSender {

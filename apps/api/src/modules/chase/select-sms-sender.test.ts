@@ -4,6 +4,7 @@ import { AwsSmsSender } from './aws-sms-sender.js';
 import { EmailChaseSender } from './email-chase-sender.js';
 import { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
 import { DemoSmsSender } from './sms-sender.js';
+import { SmsWithEmailFallbackChaseSender } from './sms-with-email-fallback-chase-sender.js';
 
 /**
  * Config selects the transport, never an import — the house pattern
@@ -51,9 +52,13 @@ test('an unknown value falls back to the outbox writer rather than to silence', 
   expect(selectSmsSender(env({ SMS_SENDER: 'nonsense' as ChaseSenderEnv['SMS_SENDER'] }))).toBeInstanceOf(DemoSmsSender);
 });
 
-test('SMS_SENDER=aws selects the AWS sender without constructing a client', () => {
+test('SMS_SENDER=aws selects the AWS sender, with an email fallback, without constructing a client', () => {
   // Selection must be free: the pinpoint client is built lazily on first send,
-  // so a process configured for aws that never chases opens nothing.
+  // so a process configured for aws that never chases opens nothing. A contact
+  // with no mobile is emailed rather than refused (14 Oct 2026).
   const sender = selectSmsSender(env({ SMS_SENDER: 'aws', SMS_ORIGINATION_IDENTITY: '+447700900000' }));
-  expect(sender).toBeInstanceOf(AwsSmsSender);
+  expect(sender).toBeInstanceOf(SmsWithEmailFallbackChaseSender);
+  const halves = sender as unknown as { sms: unknown; email: unknown };
+  expect(halves.sms).toBeInstanceOf(AwsSmsSender);
+  expect(halves.email).toBeInstanceOf(EmailChaseSender);
 });
