@@ -61,6 +61,14 @@ export interface PracticeState {
   readonly openChases: number;
   readonly oldestOpenChaseDays: number | null;
   readonly pendingProposals: number;
+  /**
+   * Uploaded bank statements whose completeness was NOT proven (D41's `reduced`
+   * or `incomplete`, and — like `readVerdict` — anything unreadable). Under D40
+   * the statement is the only bank input, so a line the reader dropped is a
+   * payment nobody will ever be chased for; that is why this sits above the
+   * review queue in the derived ranking. A count, never a row (#233).
+   */
+  readonly statementsUnproven: number;
 }
 
 export type PracticeStateReader = (
@@ -148,7 +156,7 @@ export async function readPracticeState(
   return scopedDb(prisma, context, async (db: ScopedClient) => {
     const scoped = businessId === undefined ? {} : { businessId };
 
-    const [businesses, docStates, openChases, oldestOpen, pendingProposals] = await Promise.all([
+    const [businesses, docStates, openChases, oldestOpen, pendingProposals, statements, statementsProven] = await Promise.all([
       db.business.findMany({ select: { name: true }, orderBy: { name: 'asc' }, take: 6 }),
       // `archivedAt` and `deletedAt` are separate columns and both have to be
       // said. These counts become the suggestion chips ("12 to review") and the
@@ -166,6 +174,13 @@ export async function readPracticeState(
         select: { createdAt: true },
       }),
       db.actionProposal.count({ where: { state: { in: ['CREATED', 'REVIEWED'] } } }),
+      // Two counts rather than a JSON filter for "not complete": `gapAnalysis`
+      // is `Json?`, and a row an older build wrote may carry anything. Total
+      // minus PROVEN counts the unreadable ones as unproven — the same rule
+      // `readVerdict` applies to a single row, and the opposite rule would
+      // claim a statement whole because its proof could not be parsed.
+      db.statement.count({ where: scoped }),
+      db.statement.count({ where: { ...scoped, gapAnalysis: { path: ['assurance'], equals: 'complete' } } }),
     ]);
 
     const countOf = (state: string): number =>
@@ -182,6 +197,7 @@ export async function readPracticeState(
       oldestOpenChaseDays:
         oldestOpen === null ? null : Math.floor((Date.now() - oldestOpen.createdAt.getTime()) / 86_400_000),
       pendingProposals,
+      statementsUnproven: Math.max(0, statements - statementsProven),
     };
   });
 }
@@ -204,6 +220,7 @@ export function buildSuggestionsMessage(state: PracticeState): string {
     `Open chases: ${state.openChases}` +
       (state.oldestOpenChaseDays === null ? '' : ` (oldest open ${state.oldestOpenChaseDays} days)`),
     `Proposals awaiting review or approval: ${state.pendingProposals}`,
+    `Bank statements imported without proof of completeness: ${state.statementsUnproven}`,
   ];
   return `The practice's pipeline right now:\n${lines.join('\n')}\n\nWrite the suggestions.`;
 }
@@ -236,6 +253,17 @@ export function derived(state: PracticeState): SuggestionsOutput {
         text: 'Which chases have had no reply, and what should I do about them?',
         because: `a chase has been open ${state.oldestOpenChaseDays} days`,
         weight: 90,
+      });
+    }
+    if (state.statementsUnproven > 0) {
+      // Above the review queue, below a stale chase: a statement the system
+      // could not prove whole may be hiding a dropped payment (D40/D41), and
+      // the question routes to a grounded answer over the client's own
+      // statement rows — never anywhere off the product (#233).
+      out.push({
+        text: 'Which bank statements could not be checked for completeness?',
+        because: `${state.statementsUnproven} statement${state.statementsUnproven === 1 ? '' : 's'} imported without proof every line was read`,
+        weight: 80,
       });
     }
     if (state.toReview > 0) {

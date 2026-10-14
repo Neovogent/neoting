@@ -84,3 +84,19 @@ test('an unrecorded conversation misses loudly, naming the record command — ne
   await expect(attempt).rejects.toThrow(/no cassette/);
   await expect(attempt).rejects.toThrow(/record:cassettes/);
 });
+
+/**
+ * #231: the display REQUEST through the real provider path. What is pinned is
+ * that the strict parse admits the shape and nothing more — the cassette's
+ * turn carries `{kind, subject}` and no cell, row or bar, and `statements` is
+ * an accepted subject (#233's join with this feature).
+ */
+test('a replayed grounded answer carries a display SHAPE — a kind and a subject — and no data', async () => {
+  const kase = caseNamed('display-turn');
+
+  const result = await invokeStructured(replayProvider(), new CircuitBreaker(), kase.input);
+
+  expect(result.value.intent).toBe('GROUNDED_ANSWER');
+  expect(result.value.display).toEqual({ kind: 'table', subject: 'statements' });
+  expect(result.value.grounded?.citedRecordIds).toEqual([]);
+});

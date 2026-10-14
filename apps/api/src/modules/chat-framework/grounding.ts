@@ -343,7 +343,21 @@ interface StoredGapAnalysis {
  * an older build may carry anything; claiming a statement was proven whole
  * because its proof could not be parsed is the exact lie D41 exists to prevent.
  */
-function readVerdict(value: unknown): { assurance: string; sentence: string } {
+export type StatementAssurance = 'complete' | 'reduced' | 'incomplete';
+
+/**
+ * The three verdicts in the plain words a table cell or a chart label carries
+ * (`display.ts`). Kept beside `readVerdict` so the sentence the model repeats
+ * and the word the accountant reads off a cell can never name different
+ * states.
+ */
+export const ASSURANCE_WORDS: Readonly<Record<StatementAssurance, string>> = {
+  complete: 'proven',
+  reduced: 'could not be checked',
+  incomplete: 'checked and failed',
+};
+
+export function readVerdict(value: unknown): { assurance: StatementAssurance; sentence: string } {
   const stored = (value as StoredGapAnalysis | null) ?? null;
   const assurance = stored?.assurance === 'complete' || stored?.assurance === 'incomplete' ? stored.assurance : 'reduced';
   const reason = firstFinding(stored?.findings);

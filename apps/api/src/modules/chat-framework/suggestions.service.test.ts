@@ -38,6 +38,7 @@ const BUSY_STATE: PracticeState = {
   openChases: 2,
   oldestOpenChaseDays: 6,
   pendingProposals: 3,
+  statementsUnproven: 2,
 };
 
 const EMPTY_STATE: PracticeState = {
@@ -50,6 +51,7 @@ const EMPTY_STATE: PracticeState = {
   openChases: 0,
   oldestOpenChaseDays: null,
   pendingProposals: 0,
+  statementsUnproven: 0,
 };
 
 const MODEL_TURN = {
@@ -211,6 +213,7 @@ describe('the practice state a suggestion is built from', () => {
       },
       chase: { count: async () => 0, findFirst: async () => null },
       actionProposal: { count: async () => 0 },
+      statement: { count: async () => 0 },
     };
     return { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
   };
@@ -234,5 +237,70 @@ describe('the practice state a suggestion is built from', () => {
     await readPracticeState(readerFor(calls), CONTEXT, undefined);
 
     expect(calls[0]?.where).toEqual({ archivedAt: null, deletedAt: null });
+  });
+});
+
+/**
+ * #233 on the ambient surface. Under D40 the uploaded statement is the only
+ * bank input and under D41 "imported" and "proven whole" are different facts;
+ * a statement the gate could not prove may be hiding a payment nobody will
+ * chase. The briefing names that above the review queue, and the question it
+ * offers is one the chat answers from the client's own rows — never a referral.
+ */
+describe('statements in the briefing (#233)', () => {
+  test('unproven statements earn a suggestion ranked above the review queue and below a stale chase', () => {
+    const out = derived(BUSY_STATE);
+    const texts = out.suggestions.map((s) => s.text);
+    const statements = texts.findIndex((t) => t.includes('bank statements'));
+    const review = texts.findIndex((t) => t.includes('waiting to be reviewed'));
+    const chases = texts.findIndex((t) => t.includes('chases'));
+
+    expect(statements).toBeGreaterThan(-1);
+    expect(statements).toBeGreaterThan(chases);
+    expect(statements).toBeLessThan(review);
+    expect(out.suggestions[statements]?.because).toBe('2 statements imported without proof every line was read');
+  });
+
+  test('no unproven statements, no suggestion about them', () => {
+    const out = derived({ ...BUSY_STATE, statementsUnproven: 0 });
+    expect(out.suggestions.some((s) => s.text.includes('bank statements'))).toBe(false);
+  });
+
+  test('neither the derived text nor the prompt sends anyone off the product for bank data', () => {
+    const everything = derived(BUSY_STATE).suggestions.map((s) => `${s.text} ${s.because}`).join(' ');
+    for (const forbidden of [/banking platform/i, /online banking/i, /bank's website/i, /accounting software/i]) {
+      expect(everything).not.toMatch(forbidden);
+    }
+    expect(SUGGESTIONS_SYSTEM_PROMPT).toContain('Never suggest fetching statements');
+  });
+
+  test('the count reaches the model as a line in the state summary', () => {
+    expect(buildSuggestionsMessage(BUSY_STATE)).toContain('Bank statements imported without proof of completeness: 2');
+  });
+
+  test('the read counts total minus PROVEN, so an unreadable gapAnalysis counts as unproven — the readVerdict rule', async () => {
+    const wheres: unknown[] = [];
+    const tx = {
+      $executeRaw: async () => 0,
+      business: { findMany: async () => [{ name: 'A' }] },
+      document: { groupBy: async () => [] },
+      chase: { count: async () => 0, findFirst: async () => null },
+      actionProposal: { count: async () => 0 },
+      statement: {
+        count: async (args: { where: Record<string, unknown> }) => {
+          wheres.push(args.where);
+          return 'gapAnalysis' in args.where ? 1 : 4;
+        },
+      },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+
+    const state = await readPracticeState(prisma, CONTEXT, 'biz_1');
+
+    expect(state.statementsUnproven).toBe(3);
+    expect(wheres).toEqual([
+      { businessId: 'biz_1' },
+      { businessId: 'biz_1', gapAnalysis: { path: ['assurance'], equals: 'complete' } },
+    ]);
   });
 });

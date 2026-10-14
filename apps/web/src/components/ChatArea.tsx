@@ -1,8 +1,7 @@
-import { ReactNode, useEffect, useRef } from 'react';
+import { lazy, ReactNode, Suspense, useEffect, useRef } from 'react';
 import { Mic, Paperclip } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { IntentRenderer } from './DynamicComponents/IntentRenderer';
-import { ChatDisplayBlocks } from './DynamicComponents/ChatDisplayBlocks';
 import { AssistantMetaLine, AssistantPending } from './DynamicComponents/AssistantActivity';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
@@ -15,6 +14,23 @@ import logo from '../assets/logo.png';
  * message: that it was dictated, how large an attachment is, and the letter in
  * the user's avatar.
  */
+/**
+ * The table/bar-chart renderer for a grounded answer (#231) is LAZY, the
+ * `IntentRenderer` rule: it renders only AFTER a model turn returns, which is
+ * seconds, so the chunk fetch hides behind a wait the user is already having —
+ * and the chat route is over its 250 kB budget, so nothing joins its opening
+ * download that does not have to. The `Suspense` sits at the block, not around
+ * the message, so the words paint immediately and the picture follows.
+ */
+const ChatDisplayBlocks = lazy(() =>
+  import('./DynamicComponents/ChatDisplayBlocks').then((mod) => ({ default: mod.ChatDisplayBlocks })),
+);
+
+/** What the transcript shows for the beat between the reply and the chunk. */
+function DisplayBlocksSkeleton() {
+  return <div className="h-24 mb-4 rounded-2xl border border-white/5 bg-card animate-pulse" aria-hidden />;
+}
+
 const m = defineMessages({
   dictated: { id: 'shell.chatArea.dictated', defaultMessage: 'Dictated, confirmed before sending' },
   attachmentSize: { id: 'shell.chatArea.attachmentSize', defaultMessage: '{size}KB' },
@@ -79,7 +95,9 @@ export function ChatArea() {
           )}
 
           {msg.role === 'assistant' && msg.display !== undefined && msg.display.length > 0 && (
-            <ChatDisplayBlocks blocks={msg.display} />
+            <Suspense fallback={<DisplayBlocksSkeleton />}>
+              <ChatDisplayBlocks blocks={msg.display} />
+            </Suspense>
           )}
 
           {msg.role === 'assistant' && <IntentRenderer message={msg} />}

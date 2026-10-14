@@ -90,6 +90,16 @@ interface RuleCase {
      * `statements` table. The intent was not the harm; the sentence was.
      */
     forbidReplyContains?: string[];
+    /**
+     * #231: the SHAPE the model should ask for when the honest answer is
+     * several records. Only the kind and subject are the model's — every cell
+     * is filled server-side from RLS-scoped rows — so this is the whole of
+     * what an eval can score about a table or a chart.
+     */
+    displayKind?: 'table' | 'barChart';
+    displaySubject?: 'documents' | 'bankTransactions' | 'chases' | 'statements';
+    /** A question about ONE record, or about facts the records lack, draws no picture. */
+    expectNoDisplay?: boolean;
   };
 }
 
@@ -211,6 +221,21 @@ async function runRuleParsing(provider: ModelProvider, breaker: CircuitBreaker) 
       );
       if (said.length === 0) fieldHits += 1;
       else failures.push({ id: testCase.id, detail: `reply referred the user elsewhere: "${said.join('", "')}"` });
+    }
+    if (testCase.expect.displayKind !== undefined) {
+      fieldChecks += 1;
+      if (turn.display?.kind === testCase.expect.displayKind) fieldHits += 1;
+      else failures.push({ id: testCase.id, detail: `display kind ${turn.display?.kind ?? '(none)'}, expected ${testCase.expect.displayKind}` });
+    }
+    if (testCase.expect.displaySubject !== undefined) {
+      fieldChecks += 1;
+      if (turn.display?.subject === testCase.expect.displaySubject) fieldHits += 1;
+      else failures.push({ id: testCase.id, detail: `display subject ${turn.display?.subject ?? '(none)'}, expected ${testCase.expect.displaySubject}` });
+    }
+    if (testCase.expect.expectNoDisplay === true) {
+      fieldChecks += 1;
+      if (turn.display === undefined) fieldHits += 1;
+      else failures.push({ id: testCase.id, detail: `drew a ${turn.display.kind} of ${turn.display.subject} for a question with nothing to tabulate` });
     }
   }
 
