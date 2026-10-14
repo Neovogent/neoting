@@ -3214,3 +3214,73 @@ and it is Shakib's own explicit decision — commit `70ac8c1`: *"Restored, with 
 reasoning written down so it is not 'simplified' again."* The real fix was on the
 server and is in `apps/api/src/modules/ingestion-routing/CLAUDE.md`: those
 documents no longer exist to be shown.
+
+## The Supplier Statements tab reads the server's reconciliation (14 Oct 2026 — issue #318)
+
+**Live, that tab was a reconciliation nobody did.** `ClientSupplierStatements`
+computed every "on file / no document" mark in the browser —
+`AppContext.uploadSupplierStatement` took a file NAME, waited 1.6 s, matched
+whatever documents happened to be loaded by `supplier.includes(...)`, and
+appended one invented missing line of £418.60 to every upload. Nothing reached
+the server; `supplier_statements` had no reader in the API at all.
+
+`views/ClientSupplierStatementsLive.tsx` over `api/supplierStatements.ts`
+(`GET /v1/supplier-statements?businessId=`) is the live tab now;
+`ClientDetailView` forks on `API_ENABLED` and the synthetic screen stays
+byte-for-byte for the demo cast (METH_MODE §1). Four things that are decisions:
+
+- **Nothing here decides whether a line is matched.** The outcome arrives on the
+  wire (`MATCHED` / `MISSING` / `UNREADABLE`), computed server-side by the
+  product's one matching rule — the chase lane's `chaseMatchesDocument`, the
+  same predicate auto-close and the bank match suggester use. The screen
+  renders the verdict; the totals are the server's integer pence turned into
+  pounds ONCE, in `api/supplierStatements.ts`, the `statements.ts` rule.
+  Every row passes the contract's own generated Zod first, so a float on the
+  wire is a contract error with a retry, never a wrong number on screen.
+- **No Upload, no Remove, no Chase — ABSENT, not disabled.** None of the three
+  has a server path yet (nothing in the API creates a supplier statement; the
+  write lane is its own contract-change), so there is no real action a tooltip
+  could point at. The empty state says so in as many words. ⚠ **Consequently
+  the live list is EMPTY on staging today** — honest, and the next decision is
+  Shakib's (how a statement gets in: upload + extraction, or the emailed ones).
+- **`SliceName` was NOT widened**, the `ExportView`/`api/team.ts` precedent:
+  the hook computes its own `SliceStatus` and wears its own `DataSourceBadge`
+  / `SliceLoadError`. That is also what keeps `api/supplierStatements.ts` and
+  the generated banking client off the floor — the module is imported by the
+  lazy tab chunk only. It polls at 10 s, because the beat it exists for (a
+  missing invoice ARRIVING by email/portal/WhatsApp) happens outside this
+  browser.
+- **`statementEndDate` / `lineDate` may be ABSENT on the wire** (an orval MSW
+  quirk, `packages/contracts/CLAUDE.md`) and read as null → em dash. Never a
+  guessed date.
+
+Tests: `api/supplierStatements.test.ts` (pence → pounds, both envelope shapes,
+a float pence refused — ⚠ bound to a NAME first, because the R5 lint rule
+refuses a float literal in a `*Pence` slot even in a test that exists to prove
+the parser refuses it) and `views/ClientSupplierStatementsLive.test.tsx` (one
+pill per outcome, server totals, error-with-retry, the honest empty state, and
+the absence of the three controls).
+
+**Bundle — PAIRED A/B, both sides built by `route-bundle-closure.mjs` in one
+sitting (main in its own worktree, this branch here):**
+
+| Route | main | branch | Δ | headroom |
+|---|---|---|---|---|
+| `ClientDetailView` | 246,940 | **247,150** | +210 | 2,850 B |
+| `InboxesView` | 247,349 | 247,529 | +180 | 2,471 B |
+| `AIWorkspaceView` | 246,395 | 246,576 | +181 | 3,424 B |
+| `ClientSupplierStatements` (synthetic tab) | 222,473 | 222,650 | +177 | — |
+| `ClientSupplierStatementsLive` (NEW, the live tab's own chunk) | — | **211,826** | — | 38,174 B |
+| `GenericView` (≈ the floor) | 204,938 | 205,119 | **+181** | — |
+
+**The whole cost is ~+180 B of FLOOR, uniform on every route**, and it is the
+reachability rule: `api/bank.ts` (floor) imports the generated
+`zod/banking/banking.ts`, so the four new `SupplierStatement*` schemas ride onto
+every route however lazily the tab itself loads (`mark-zod-pure` keeps it to
+~180 B rather than the ~850 B a tag directory cost before it). The extra +30 B
+on `ClientDetailView` is the `lazy()` + `API_ENABLED` fork. The live tab's own
+~6.7 kB lands on its own chunk and no other route pays for it. ⚠ `BankView`,
+`ClientInbox` and `SyntheticBusinessPortal` are OVER budget on **main**
+(28,688 / 24,573 / 19,265 B) before this branch touches anything; it moves
+each by the same ~+200 B and fixes none of them — not this change's breach and
+not its fix.

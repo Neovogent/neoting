@@ -52,6 +52,12 @@ const ChaseComposer = lazy(() =>
 );
 const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
 const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
+// The live Supplier Statements tab (issue #318) — its own chunk because it
+// carries `api/supplierStatements.ts` + the generated banking client, and this
+// route is within single-digit kilobytes of its budget. Synthetic keeps the
+// seeded screen above; live reads the server's reconciliation and never the
+// browser-side one.
+const ClientSupplierStatementsLive = lazy(() => import('./ClientSupplierStatementsLive'));
 // The live Chases tab (review item 63) — its own chunk because it carries
 // `api/chases.ts` + the generated chases client, and this route is within
 // ~1.5 kB of the 250 kB budget. Synthetic keeps the seeded table below.
@@ -1517,7 +1523,7 @@ export function ClientDetailView() {
               different thing and live on the Bank tab. */}
           {tab === 'Supplier Statements' && (
             <Suspense fallback={<TabSkeleton />}>
-              <ClientSupplierStatements client={client} />
+              {API_ENABLED ? <ClientSupplierStatementsLive client={client} /> : <ClientSupplierStatements client={client} />}
             </Suspense>
           )}
 

@@ -388,6 +388,20 @@ with `NT-PRP-001` — a landmine on the live approval queue, not history), and
 the in-file `fixtureHash` helper, because the contract patterns every hash
 `^[a-f0-9]{64}$` and a `sha256:` prefix fails the generated parse of the queue.
 
+## `supplier_statements` gets its first seeded row (14 Oct 2026, issue #318)
+
+Additive-only, no schema change. `sst_001` is Ananda's (`biz_cosmo`) Brakes
+statement: three lines, two of which the seeded Brakes invoices (`doc_017`,
+`doc_018`) answer on supplier + amount + date, and one (`BRK-551876`, £842.15)
+that nothing on file answers — the invoice the screen exists to find. Amounts
+are the documents' own `withVat(...).totalPence`, so the match is exact rather
+than tolerance-rescued, and `lineDate` sits within a day of the document's
+`receivedAt`. **The per-line `status` and `matched_document_id` are left at
+their defaults on purpose**: the reconciliation is computed at read time by
+`GET /v1/supplier-statements` (a GET must not write), and no other writer
+exists yet. `documentId` is null because no seeded document IS the statement.
+`Seed complete:` now prints `supplierStatements` beside the other counts.
+
 ## `teams` / `team_members` — review item 54 (7 Sep 2026)
 
 `migrations/20260907120000_tasks_and_teams`, additive: two new tables, no

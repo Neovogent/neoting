@@ -554,7 +554,7 @@ Paths: `apps/api/src/modules/rules-suggestions/`.
 - `matches` table, five `MatchKind` values, `MatchState` UNMATCHED → SUGGESTED → CONFIRMED / EXCLUDED.
 - **Automatic suggester** (`banking-matching/suggestion/match-suggester.ts`, `DONE`): runs on extraction completion, uses the chase module's own `chaseMatchesDocument` (normalised supplier containment + absolute pence tolerance + optional date window) so there is exactly one ruler. **Exactly one candidate or nothing** — a document matching two lines suggests neither.
 - Human confirmation via the `bank.confirm-match` proposal; an existing SUGGESTED row is promoted, never duplicated.
-- **`PARTIAL` because:** only `EXACT`/`PROBABILISTIC` are ever produced — `PARTIAL_PAYMENT`, `BATCH_PAYMENT` and `CREDIT_NOTE` are enum values nothing writes. Supplier-statement reconciliation has tables and a UI (`ClientSupplierStatements.tsx`) but the line-status computation is client-side synthetic. There is no bulk reconcile and no period-close.
+- **`PARTIAL` because:** only `EXACT`/`PROBABILISTIC` are ever produced — `PARTIAL_PAYMENT`, `BATCH_PAYMENT` and `CREDIT_NOTE` are enum values nothing writes. Supplier-statement reconciliation is **computed server-side since issue #318** (`banking-matching/supplier-statements/reconcile.ts`, read through `GET /v1/supplier-statements`, the same `chaseMatchesDocument` ruler, one document answers at most one line) and the live tab (`ClientSupplierStatementsLive.tsx`) renders the server's verdict — but **nothing yet writes a `supplier_statements` row** (no upload lane, no extraction step), so the live list is honest and empty until that lands. There is no bulk reconcile and no period-close.
 
 ## 5.9 The suggestion / reminder (chase) engine — `PARTIAL`
 

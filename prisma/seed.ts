@@ -688,6 +688,37 @@ async function main() {
   }
 
   // =========================================================================
+  // SUPPLIER STATEMENTS — a supplier's own list of what they invoiced (issue #318)
+  // =========================================================================
+  console.log('Supplier statements…');
+
+  // Ananda's Brakes statement: two lines the seeded documents answer (doc_017
+  // and doc_018 — the Brakes invoices above, matched on supplier + amount +
+  // date by the chase lane's one ruler) and one line nothing on file answers.
+  // The reconciliation is COMPUTED at read time by `GET /v1/supplier-statements`;
+  // the stored per-line `status` is left at its default on purpose, because a
+  // GET must not write and nothing else does yet. Amounts are the documents'
+  // own gross pence (`withVat`), so the match is exact, not tolerance-rescued.
+  await prisma.supplierStatement.create({
+    data: {
+      id: 'sst_001',
+      businessId: 'biz_cosmo',
+      documentId: null,
+      supplierName: 'Brakes',
+      statementEndDate: daysAgo(1),
+      outstandingBalancePence: withVat(2140.75).totalPence + withVat(1877.4).totalPence + withVat(842.15).totalPence,
+      lines: {
+        create: [
+          { id: 'ssl_001', reference: 'BRK-551204', lineDate: daysAgo(5), amountPence: withVat(2140.75).totalPence },
+          { id: 'ssl_002', reference: 'BRK-549930', lineDate: daysAgo(19), amountPence: withVat(1877.4).totalPence },
+          // The invoice that never arrived — the whole reason to reconcile.
+          { id: 'ssl_003', reference: 'BRK-551876', lineDate: daysAgo(9), amountPence: withVat(842.15).totalPence },
+        ],
+      },
+    },
+  });
+
+  // =========================================================================
   // CHASING — the flagship, with one awaiting approval so the card renders
   // =========================================================================
   console.log('Chases…');
@@ -1030,6 +1061,7 @@ async function main() {
     documents: await prisma.document.count(),
     transactions: await prisma.bankTransaction.count(),
     chases: await prisma.chase.count(),
+    supplierStatements: await prisma.supplierStatement.count(),
     proposals: await prisma.actionProposal.count(),
   };
   console.log('Seed complete:', counts);
