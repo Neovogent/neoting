@@ -109,7 +109,7 @@ function FailedCell({ doc }: { doc: Document }) {
   const reason = failure ? reasonText(failure, intl) : doc.statusNote;
   return (
     <span className="inline-flex flex-col items-start gap-1 max-w-[240px]">
-      <Pill tone="red" title={reason}>{intl.formatMessage(inbox.statusFailed)}</Pill>
+      <Pill tone="red" {...(reason ? { title: reason } : {})}>{intl.formatMessage(inbox.statusFailed)}</Pill>
       {reason && <span className="text-[11px] text-red-400/90 leading-snug line-clamp-2" title={reason}>{reason}</span>}
     </span>
   );
