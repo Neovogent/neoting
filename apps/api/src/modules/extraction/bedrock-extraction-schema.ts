@@ -43,7 +43,12 @@ export const EXTRACTION_TOOL_SCHEMA = {
   additionalProperties: false,
   required: ['docType', 'supplierName', 'documentDate', 'totalPence', 'taxPence', 'currency', 'confidence'],
   properties: {
-    docType: { type: 'string', enum: ['INVOICE', 'RECEIPT', 'CREDIT_NOTE', 'STATEMENT', 'OTHER'] },
+    docType: {
+      type: 'string',
+      enum: ['INVOICE', 'RECEIPT', 'CREDIT_NOTE', 'STATEMENT', 'OTHER'],
+      description:
+        'OTHER only when the document records no money at all. Pension/payroll schedules, HMRC notices and remittance advices are financial: INVOICE when they ask for payment, RECEIPT when they confirm one.',
+    },
     supplierName: { type: ['string', 'null'], description: 'Who issued the document. Null if not legible.' },
     customerName: { type: ['string', 'null'], description: 'Who it is addressed to, if shown.' },
     documentDate: { type: ['string', 'null'], description: 'YYYY-MM-DD. The document is UK: d/m/y, never m/d/y.' },
