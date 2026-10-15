@@ -50,6 +50,15 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   'document.purge': { documentIds: ['doc_1'], reason: 'Duplicate scan, already in Trash' },
   'document.resolve-duplicate': { documentKeepId: 'doc_1', documentCopyId: 'doc_2', resolution: 'delete-copy' },
   'policy.activate': { workflowId: 'wfl_1', active: true },
+  'bank.unmatch': { transactionIds: ['txn_1'], reason: 'Wrong receipt' },
+  'bank.confirm-suggested': {
+    businessId: 'biz_1',
+    period: '2026-08',
+    items: [{ matchId: 'mat_1', transactionId: 'txn_1', documentId: 'doc_1', amountPence: -1299, label: 'CURRYS · -£12.99' }],
+  },
+  'bank.cash-code': { transactionId: 'txn_1', supplierName: 'HSBC', categoryCode: 'BANK_CHARGES' },
+  'period.close': { businessId: 'biz_1', period: '2026-08' },
+  'period.reopen': { businessId: 'biz_1', period: '2026-08', reason: 'Late invoice' },
 };
 
 test('every kind parses its own valid example — the index ↔ kind pin', () => {

@@ -51,6 +51,11 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'document.purge',
   'document.resolve-duplicate',
   'policy.activate',
+  'bank.unmatch',
+  'bank.confirm-suggested',
+  'bank.cash-code',
+  'period.close',
+  'period.reopen',
 ];
 
 const KNOWN_KINDS = new Set<string>(Object.values(ProposalKind));

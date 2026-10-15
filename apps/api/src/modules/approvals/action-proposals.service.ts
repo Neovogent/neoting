@@ -2,7 +2,10 @@ import { HttpStatus, Logger } from '@nestjs/common';
 
 import type {
   ActionProposal,
+  BankCashCodePayload,
+  BankConfirmSuggestedPayload,
   BankRemoveStatementPayload,
+  PeriodClosePayload,
   ChaseSendPayload,
   ErrorCode,
   ProposalKind,
@@ -37,6 +40,9 @@ import {
   computeCorrectionAdvisory,
   computePublishBatchPayload,
   computeRemoveStatementPayload,
+  assertCashCodeAllowed,
+  computeConfirmSuggestedPayload,
+  computePeriodClosePayload,
   type DedupeDetection,
   type ExecutionInput,
   type ExecutionResult,
@@ -116,6 +122,11 @@ const DUPLICATE_DETAIL: Partial<Record<ProposalKind, string>> = {
   'document.purge': 'Deleting these documents is already awaiting review. Decide that one in Approvals.',
   'business.offboard': 'Removing this client is already awaiting review. Decide that one in Approvals.',
   'business.reactivate': 'Restoring this client is already awaiting review. Decide that one in Approvals.',
+  'bank.confirm-suggested': 'Confirming the suggested matches for this client is already awaiting review. Decide that one in Approvals.',
+  'period.close': 'Closing this month is already awaiting review. Decide that one in Approvals.',
+  'period.reopen': 'Reopening this month is already awaiting review. Decide that one in Approvals.',
+  'bank.unmatch': 'Unmatching these bank lines is already awaiting review. Decide that one in Approvals.',
+  'bank.cash-code': 'Cash coding this bank line is already awaiting review. Decide that one in Approvals.',
 };
 
 /**
@@ -289,6 +300,35 @@ export class ActionProposalsService {
         try {
           const asked = request.payload as unknown as BankRemoveStatementPayload;
           payload = (await computeRemoveStatementPayload(db, asked.statementIds)) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof ProposalExecutionRefused) {
+            throw new AppException(
+              error.code ?? 'NT-PRP-006',
+              HttpStatus.UNPROCESSABLE_ENTITY,
+              'Proposal is not executable',
+              error.message,
+            );
+          }
+          throw error;
+        }
+      }
+      // rush/matching (15 Oct 2026): the bulk confirm itemises the SERVER's
+      // read of the live suggestions, a month close shows the server's count
+      // of what it locks, and cash coding meets the same chart rule as a
+      // coding correction — all refusable NOW rather than at approve.
+      if (request.kind === 'bank.confirm-suggested' || request.kind === 'period.close' || request.kind === 'bank.cash-code') {
+        try {
+          if (request.kind === 'bank.confirm-suggested') {
+            const asked = request.payload as unknown as BankConfirmSuggestedPayload;
+            if (businessId !== null && businessId !== asked.businessId) {
+              throw new ProposalExecutionRefused(request.kind, 'the proposal and its payload name different clients');
+            }
+            payload = (await computeConfirmSuggestedPayload(db, asked.businessId, asked.period ?? null)) as unknown as Record<string, unknown>;
+          } else if (request.kind === 'period.close') {
+            payload = (await computePeriodClosePayload(db, request.payload as unknown as PeriodClosePayload)) as unknown as Record<string, unknown>;
+          } else {
+            await assertCashCodeAllowed(db, request.payload as unknown as BankCashCodePayload, this.chartCategories);
+          }
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {
             throw new AppException(

@@ -4,7 +4,11 @@ import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
 import { activatePolicyExecutor } from './activate-policy.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
+import { cashCodeExecutor } from './cash-code.js';
 import { confirmMatchExecutor } from './confirm-match.js';
+import { confirmSuggestedExecutor } from './confirm-suggested.js';
+import { periodCloseExecutor, periodReopenExecutor } from './period-close.js';
+import { unmatchExecutor } from './unmatch.js';
 import { offboardBusinessExecutor } from './offboard-business.js';
 import { purgeDocumentExecutor } from './purge-document.js';
 import { reactivateBusinessExecutor } from './reactivate-business.js';
@@ -144,6 +148,12 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // package H). The workflow itself is written by ingest-class operations;
     // what needs a signature is the GATE, in both directions.
     'policy.activate': activatePolicyExecutor,
+    // rush/matching (15 Oct 2026) — SoT §4 Stage 7 matching extensions.
+    'bank.unmatch': unmatchExecutor,
+    'bank.confirm-suggested': confirmSuggestedExecutor,
+    'bank.cash-code': cashCodeExecutor,
+    'period.close': periodCloseExecutor,
+    'period.reopen': periodReopenExecutor,
   };
 }
 

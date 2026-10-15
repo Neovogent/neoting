@@ -276,6 +276,17 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   'document.reject': false,
   'document.split': false,
   'bank.confirm-match': false,
+  // rush/matching (15 Oct 2026). Matching work is the bookkeeper's own and
+  // every one of these is undone by another proposal (unmatch undoes a
+  // confirm, a cash-coded item can be unmatched and archived) — tier 2, the
+  // confirm-match precedent. Closing a month is the principal's sign-off on a
+  // period's books, and reopening is its undo, so both are tier 1 — the
+  // business.offboard/reactivate symmetry.
+  'bank.unmatch': false,
+  'bank.confirm-suggested': false,
+  'bank.cash-code': false,
+  'period.close': true,
+  'period.reopen': true,
   // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — this RATIFIES the flag the entry
   // was carrying.** It read `false` on the ground that removal destroys DERIVED
   // rows only: the source document stays in the vault and re-import re-proves
@@ -440,6 +451,10 @@ const TIER_1_REFUSAL: Partial<Record<ProposalKind, string>> = {
     "Only your practice's super admin can approve a new coding rule. The rule is queued for them and codes nothing until they approve it.",
   'policy.activate':
     "Only your practice's super admin can approve turning an approval workflow on or off. The change is queued for them; the workflow is exactly as it was.",
+  'period.close':
+    "Only your practice's super admin can approve closing a month. The close is queued for them; the month is still open.",
+  'period.reopen':
+    "Only your practice's super admin can approve reopening a closed month. The reopen is queued for them; the month stays closed until they approve it.",
 };
 
 /** D44's whole rule, in one expression: the release role AND the ownership flag. */

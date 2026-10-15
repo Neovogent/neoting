@@ -52,6 +52,10 @@ export { type ChaseComposeConfig, CHASE_LINK_TTL_SECONDS, computeChaseSendPayloa
 // preview — the computePublishBatchPayload pattern. The EXECUTOR stays off the
 // seam like every other one; only the compute travels.
 export { computeRemoveStatementPayload, MAX_REMOVE_STATEMENT_BATCH } from './proposals/remove-statement.js';
+// rush/matching — the creation-time halves of the new bank kinds.
+export { computeConfirmSuggestedPayload } from './proposals/confirm-suggested.js';
+export { computePeriodClosePayload } from './proposals/period-close.js';
+export { assertCashCodeAllowed } from './proposals/cash-code.js';
 // The correction-integrity package (5 Sep 2026, review items 22/36/46/47):
 // the creation-time gate for `document.update-coding` (chart-membership is a
 // REFUSAL, the drafts.ts rule applied to the manual boundary) and the

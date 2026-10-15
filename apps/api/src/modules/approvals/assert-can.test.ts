@@ -99,6 +99,9 @@ test("the tier table is total over ProposalKind, and tier 1 is exactly the matri
     'business.offboard',
     'business.reactivate',
     'document.purge',
+    // rush/matching: closing a month and reopening it are the principal's.
+    'period.close',
+    'period.reopen',
     'policy.activate',
     'publish.batch',
     'rule.create',

@@ -132,7 +132,35 @@ const IDENTITY: Readonly<Record<ProposalKind, (payload: StoredPayload) => string
   'bank.confirm-match': (p) => {
     const transactionId = str(p['transactionId']);
     const documentId = str(p['documentId']);
-    return transactionId === null || documentId === null ? null : `${transactionId}:${documentId}`;
+    if (transactionId === null || documentId === null) return null;
+    // rush/matching: an allocation set is identified by every pair it names.
+    const allocations = p['allocations'];
+    if (Array.isArray(allocations) && allocations.length > 0) {
+      const pairs = allocations.map((a) => {
+        const r = (typeof a === 'object' && a !== null ? a : {}) as StoredPayload;
+        return `${str(r['transactionId']) ?? ''}:${str(r['documentId']) ?? ''}`;
+      });
+      return [...pairs].sort().join('|');
+    }
+    return `${transactionId}:${documentId}`;
+  },
+  // rush/matching kinds.
+  'bank.unmatch': (p) => ids(p['transactionIds']),
+  // One bulk confirm per client and month is the open question.
+  'bank.confirm-suggested': (p) => {
+    const businessId = str(p['businessId']);
+    return businessId === null ? null : `${businessId}:${str(p['period']) ?? 'all'}`;
+  },
+  'bank.cash-code': (p) => str(p['transactionId']),
+  'period.close': (p) => {
+    const businessId = str(p['businessId']);
+    const period = str(p['period']);
+    return businessId === null || period === null ? null : `${businessId}:${period}`;
+  },
+  'period.reopen': (p) => {
+    const businessId = str(p['businessId']);
+    const period = str(p['period']);
+    return businessId === null || period === null ? null : `${businessId}:${period}`;
   },
   // The PAIR being ruled on, in the payload's own two fields. A later ruling
   // supersedes an earlier one, so two pending rulings over one pair are two

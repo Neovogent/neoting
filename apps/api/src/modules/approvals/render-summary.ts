@@ -143,6 +143,11 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'document.purge': 'Delete documents permanently',
   'document.resolve-duplicate': 'Resolve a suspected duplicate',
   'policy.activate': 'Turn an approval workflow on or off',
+  'bank.unmatch': 'Unmatch bank lines',
+  'bank.confirm-suggested': 'Confirm suggested bank matches',
+  'bank.cash-code': 'Cash code a bank line',
+  'period.close': 'Close a month',
+  'period.reopen': 'Reopen a closed month',
 };
 
 export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
@@ -618,20 +623,133 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         ],
       );
     }
-    default:
-      // Honest generic rendering for the kinds whose stages have not shaped a
-      // richer card yet (move-business, split, revoke-link, bank.confirm-match):
-      // every payload member, named. `reprocess` and `reject` left this list in
-      // stage A12.
-      return summary(`${kind}`, [
+    // ---- rush/matching (15 Oct 2026) ----------------------------------------
+    case 'bank.confirm-match': {
+      const allocations = Array.isArray(payload['allocations']) ? payload['allocations'].filter(isObject) : [];
+      if (allocations.length === 0) return genericSummary(kind, payload);
+      const lines = new Set(allocations.map((a) => text(a['transactionId'])));
+      const docs = new Set(allocations.map((a) => text(a['documentId'])));
+      return summary(
+        `Match ${count(docs.size, 'document')} to ${count(lines.size, 'bank line')} (${text(payload['matchKind'])})`,
+        [
+          {
+            heading: 'Allocations — signed pence in the bank line’s direction',
+            entries: allocations.map((a) => ({
+              label: `Line ${text(a['transactionId'])} ↔ document ${text(a['documentId'])}`,
+              value: penceToMoney(a['amountPence'], 'GBP'),
+            })),
+          },
+          {
+            heading: 'Checked at approval',
+            entries: [
+              { label: 'Each bank line', value: 'Its allocations must add up to exactly its amount, or nothing is confirmed' },
+              { label: 'Each document', value: 'Never paid or refunded past its total' },
+              { label: 'Closed months', value: 'A line inside a closed month refuses' },
+            ],
+          },
+        ],
+      );
+    }
+    case 'bank.unmatch': {
+      const ids = stringArray(payload['transactionIds']);
+      return summary(`Unmatch ${count(ids.length, 'bank line')}`, [
         {
-          heading: 'Proposed action',
-          entries: Object.entries(payload)
-            .filter(([, v]) => v !== undefined)
-            .map(([label, value]) => ({ label, value: text(value) })),
+          heading: 'What this does',
+          entries: [
+            { label: 'Matches on these lines', value: 'Broken — confirmed and suggested links are kept as history, marked unmatched' },
+            { label: 'The lines', value: 'Back to unmatched, so they are chased again if nothing explains them' },
+            { label: 'Documents', value: 'Unchanged — nothing is deleted, and a document paid by other lines keeps those' },
+            ...(payload['reason'] ? [{ label: 'Reason', value: text(payload['reason']) }] : []),
+          ],
+        },
+        { heading: 'Bank lines', entries: ids.map((id, i) => ({ label: `Line ${i + 1}`, value: id })) },
+      ]);
+    }
+    case 'bank.confirm-suggested': {
+      const items = Array.isArray(payload['items']) ? payload['items'].filter(isObject) : [];
+      const period = typeof payload['period'] === 'string' ? ` for ${payload['period']}` : '';
+      return summary(`Confirm ${count(items.length, 'suggested match')}${period}`, [
+        {
+          heading: 'Each match, as suggested',
+          entries: items.map((item) => ({
+            label: text(item['label']),
+            value: `${text(item['kind'])}${typeof item['confidence'] === 'number' ? ` · confidence ${text(item['confidence'])}` : ''}${
+              typeof item['allocatedPence'] === 'number' ? ` · allocate ${penceToMoney(item['allocatedPence'], 'GBP')}` : ''
+            }`,
+          })),
+        },
+        {
+          heading: 'Checked at approval',
+          entries: [{ label: 'Drift', value: 'If any suggestion was decided or changed since this review, nothing is confirmed' }],
         },
       ]);
+    }
+    case 'bank.cash-code':
+      return summary(`Cash code a bank line as ${text(payload['supplierName'])}`, [
+        {
+          heading: 'The cost item this creates',
+          entries: [
+            { label: 'Bank line', value: text(payload['transactionId']) },
+            { label: 'Supplier', value: text(payload['supplierName']) },
+            { label: 'Category', value: text(payload['categoryCode']) },
+            ...(payload['description'] ? [{ label: 'Description', value: text(payload['description']) }] : []),
+            ...(typeof payload['taxPence'] === 'number' ? [{ label: 'VAT', value: penceToMoney(payload['taxPence'], 'GBP') }] : []),
+            { label: 'Total and date', value: 'Taken from the bank line' },
+            { label: 'Original file', value: 'None — this item is keyed by the accountant, and says so' },
+            { label: 'Then', value: 'Matched to the line, which leaves the chase list; the item goes to Ready or To review like any upload' },
+          ],
+        },
+      ]);
+    case 'period.close': {
+      const summaryCounts = isObject(payload['summary']) ? payload['summary'] : {};
+      return summary(`Close ${text(payload['period'])}`, [
+        {
+          heading: 'What closing locks',
+          entries: [
+            { label: 'While closed', value: 'Matches, unmatches, cash coding, coding edits and releases dated in this month are refused' },
+            { label: 'Undo', value: 'A period.reopen proposal, signed the same way' },
+          ],
+        },
+        {
+          heading: 'The month as it stands',
+          entries: [
+            { label: 'Bank lines', value: text(summaryCounts['transactionCount']) },
+            { label: 'Matched', value: text(summaryCounts['confirmedCount']) },
+            { label: 'Suggested, not yet confirmed', value: text(summaryCounts['suggestedCount']) },
+            { label: 'Unmatched', value: text(summaryCounts['unmatchedCount']) },
+          ],
+        },
+      ]);
+    }
+    case 'period.reopen':
+      return summary(`Reopen ${text(payload['period'])}`, [
+        {
+          heading: 'What reopening allows',
+          entries: [
+            { label: 'Effect', value: 'Edits, matches and releases dated in this month are allowed again' },
+            ...(payload['reason'] ? [{ label: 'Reason', value: text(payload['reason']) }] : []),
+          ],
+        },
+      ]);
+    default:
+      return genericSummary(kind, payload);
   }
+}
+
+/**
+ * Honest generic rendering for the kinds whose stages have not shaped a richer
+ * card yet (move-business, split, revoke-link, a one-to-one bank.confirm-match):
+ * every payload member, named.
+ */
+function genericSummary(kind: ProposalKind, payload: Record<string, unknown>): RenderedSummary {
+  return summary(`${kind}`, [
+    {
+      heading: 'Proposed action',
+      entries: Object.entries(payload)
+        .filter(([, v]) => v !== undefined)
+        .map(([label, value]) => ({ label, value: text(value) })),
+    },
+  ]);
 }
 
 function summary(title: string, sections: readonly RenderedSection[]): RenderedSummary {

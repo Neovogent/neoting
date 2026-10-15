@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import { transitionDocument } from '../document-state.js';
 import { type ReadinessInput, resolveProcessedState } from '../readiness.js';
+import { assertPeriodsOpen } from './period-lock.js';
 import {
   type ExecutionInput,
   type ExecutionResult,
@@ -78,6 +79,12 @@ export const updateCodingExecutor: ProposalExecutor<'document.update-coding', Up
     if (document.state === 'PUBLISHED' || document.state === 'ARCHIVED') {
       throw new ProposalExecutionRefused('document.update-coding', `cannot update coding on a ${document.state} document — it is locked`);
     }
+    // rush/matching: a closed month refuses edits dated inside it — the date
+    // the document has AND the date the correction would give it.
+    await assertPeriodsOpen(db, 'document.update-coding', document.businessId, [
+      document.documentDate,
+      payload.fields.documentDate === undefined ? null : new Date(`${payload.fields.documentDate}T00:00:00.000Z`),
+    ]);
 
     // The expense claimant (review item 50). It is NOT handled by
     // `collectChanges`' `scalar`, which cannot express the difference between

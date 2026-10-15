@@ -3,8 +3,13 @@ import type {
   BusinessOffboardPayload,
   BusinessReactivatePayload,
   ErrorCode,
+  BankCashCodePayload,
   BankConfirmMatchPayload,
+  BankConfirmSuggestedPayload,
   BankRemoveStatementPayload,
+  BankUnmatchPayload,
+  PeriodClosePayload,
+  PeriodReopenPayload,
   ChaseSendPayload,
   DocumentPurgePayload,
   DuplicateResolvePayload,
@@ -57,6 +62,11 @@ export interface ProposalPayloadMap {
   'document.purge': DocumentPurgePayload;
   'document.resolve-duplicate': DuplicateResolvePayload;
   'policy.activate': PolicyActivatePayload;
+  'bank.unmatch': BankUnmatchPayload;
+  'bank.confirm-suggested': BankConfirmSuggestedPayload;
+  'bank.cash-code': BankCashCodePayload;
+  'period.close': PeriodClosePayload;
+  'period.reopen': PeriodReopenPayload;
 }
 
 export interface ExecutionInput<P> {

@@ -16,6 +16,7 @@ import {
 } from '../../publishing/index.js';
 import { money as advisoryMoney } from '../correction-checks.js';
 import { transitionDocument } from '../document-state.js';
+import { assertPeriodsOpen } from './period-lock.js';
 import {
   type ExecutionInput,
   type ExecutionResult,
@@ -485,6 +486,8 @@ export function createPublishBatchExecutor(
       if (documents.some((document) => document.businessId !== businessId)) {
         throw new ProposalExecutionRefused('publish.batch', 'a release belongs to one client — propose one batch per client');
       }
+      // rush/matching: nothing dated inside a closed month is released.
+      await assertPeriodsOpen(db, 'publish.batch', businessId, documents.map((document) => document.documentDate));
 
       // The contract's mandated re-validation, through publishing's own rule.
       const outcome = publishing.previewPublishBatch(documents);
