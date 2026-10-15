@@ -7,7 +7,8 @@ import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import { wrapUntrusted } from '../../common/untrusted-content.js';
 import type { AiBudget } from '../../common/ai-budget.js';
-import { buildRuleDraft } from './drafts.js';
+import { buildCodingDraft, buildConfirmMatchDraft, buildRejectDraft, buildRuleDraft } from './drafts.js';
+import { composeScreen, defaultScreen, SCREEN_INTENTS, type ScreenIntent } from './screens.js';
 import { composeDisplay } from './display.js';
 import type { ChatDisplayBlock } from '@neoting/contracts/model';
 import {
@@ -175,7 +176,18 @@ export interface ChatTurnOutput {
   intent: ModelTurn['intent'];
   reply: string;
   draft?: unknown;
-  navigation?: { businessId?: string; documentId?: string; statusFilter?: string; clientName?: string };
+  navigation?: {
+    businessId?: string;
+    documentId?: string;
+    statusFilter?: string;
+    clientName?: string;
+    screen?: string;
+    supplier?: string;
+    from?: string;
+    to?: string;
+    unmatchedOnly?: boolean;
+    email?: string;
+  };
   references?: { type: GroundedRecord['type']; id: string; label: string }[];
   /** Server-composed illustrations of a grounded answer — see `display.ts`. */
   display?: ChatDisplayBlock[];
@@ -436,6 +448,76 @@ export class ChatService {
     // because the form is where it gets edited, not the model's paraphrase.
     if (turn.intent === 'ADD_CLIENT' && turn.navigation?.clientName !== undefined) {
       output.navigation = { ...output.navigation, clientName: turn.navigation.clientName };
+    }
+
+    // Chat reach (15 Oct 2026). Filters and the screen are the model's words
+    // and dates; they narrow server reads and pick a link, nothing more.
+    const nav = turn.navigation;
+    if (nav !== undefined) {
+      output.navigation = {
+        ...output.navigation,
+        ...(nav.supplier === undefined ? {} : { supplier: nav.supplier }),
+        ...(nav.from === undefined ? {} : { from: nav.from }),
+        ...(nav.to === undefined ? {} : { to: nav.to }),
+        ...(nav.unmatchedOnly === undefined ? {} : { unmatchedOnly: nav.unmatchedOnly }),
+        ...(turn.intent === 'INVITE_MEMBER' && nav.email !== undefined ? { email: nav.email } : {}),
+      };
+    }
+    const screen = nav?.screen ?? defaultScreen(turn.intent, businessId !== undefined);
+    if (screen !== undefined) output.navigation = { ...output.navigation, screen };
+
+    const clientBound =
+      turn.intent === 'DRAFT_CODING' ||
+      turn.intent === 'DRAFT_REJECT' ||
+      turn.intent === 'DRAFT_CONFIRM_MATCH' ||
+      turn.intent === 'REQUEST_STATEMENT';
+    if (clientBound && businessId === undefined) {
+      // The rule beat's picker, reused: the act belongs to one client and the
+      // client is chosen by a human, by name — never guessed from the words.
+      output.intent = 'GENERAL';
+      output.awaiting = 'client';
+      output.reply = 'That belongs to one client. Which client is it for?';
+      return output;
+    }
+
+    if (
+      businessId !== undefined &&
+      (turn.intent === 'DRAFT_CODING' || turn.intent === 'DRAFT_REJECT' || turn.intent === 'DRAFT_CONFIRM_MATCH')
+    ) {
+      const built = await scopedDb(this.prisma, context, (db) =>
+        turn.intent === 'DRAFT_CODING'
+          ? buildCodingDraft(db, businessId, turn, categories)
+          : turn.intent === 'DRAFT_REJECT'
+            ? buildRejectDraft(db, businessId, turn)
+            : buildConfirmMatchDraft(db, businessId, turn),
+      );
+      if (!built.ok) {
+        output.intent = 'GENERAL';
+        output.reply = built.reason;
+        return output;
+      }
+      output.draft = built.draft;
+      // Composed server-side from resolved rows, like the rule reply below.
+      output.reply = built.reply;
+      return output;
+    }
+
+    if (SCREEN_INTENTS.includes(turn.intent)) {
+      try {
+        const block = await scopedDb(this.prisma, context, (db) =>
+          composeScreen(
+            db,
+            { businessId: businessId ?? null, practiceId: context.practiceId ?? null, actorId: context.actorId },
+            turn.intent as ScreenIntent,
+            nav ?? {},
+          ),
+        );
+        if (block !== null) output.display = [block];
+      } catch {
+        // ponytail: a failed table read degrades to the link alone; the screen
+        // it opens reads the same data with its own error handling.
+      }
+      return output;
     }
 
     if (turn.intent === 'REVIEW_DOCUMENT' && turn.navigation?.documentQuery !== undefined) {

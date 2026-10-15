@@ -97,6 +97,40 @@ function classify(text: string): unknown {
     }
   }
 
+  // Chat reach (15 Oct 2026) — the stand-in learns the new routes crudely,
+  // first keyword wins, so a local session can walk every screen from chat.
+  const invite = /([\w.+-]+@[\w-]+\.[\w.]+)/.exec(text);
+  if (/\binvite\b/.test(text)) {
+    return { intent: 'INVITE_MEMBER', reply: 'Here is the invite form.', ...(invite?.[1] ? { navigation: { email: invite[1] } } : {}) };
+  }
+  if (/\brequest\b.*\bstatement\b/.test(text)) {
+    return { intent: 'REQUEST_STATEMENT', reply: 'Pick the period and confirm to send the request.' };
+  }
+  const docNamed = /\b(?:the|on the)\s+([a-z0-9&' -]+?)\s+(?:receipt|invoice|bill|document)\b/.exec(text)?.[1];
+  if (/\breject\b/.test(text) && docNamed !== undefined) {
+    return {
+      intent: 'DRAFT_REJECT',
+      reply: 'Drafted.',
+      navigation: { documentQuery: docNamed },
+      action: { reason: /\bbecause\s+(.+)$/.exec(text)?.[1] ?? 'Rejected by the accountant' },
+    };
+  }
+  if (/\baccept\b.*\bcategor/.test(text) && docNamed !== undefined) {
+    return { intent: 'DRAFT_CODING', reply: 'Drafted.', navigation: { documentQuery: docNamed } };
+  }
+  if (/\bconfirm\b.*\bmatch/.test(text)) {
+    return { intent: 'DRAFT_CONFIRM_MATCH', reply: 'Drafted.', ...(docNamed === undefined ? {} : { navigation: { documentQuery: docNamed } }) };
+  }
+  if (/\bunmatched\b|\bbank (lines|transactions)\b/.test(text)) {
+    return { intent: 'SHOW_BANK', reply: 'Here are the bank lines.', ...(/unmatched/.test(text) ? { navigation: { unmatchedOnly: true } } : {}) };
+  }
+  if (/\bsupplier statements?\b/.test(text)) return { intent: 'SHOW_SUPPLIER_STATEMENTS', reply: 'Here are the supplier statements.' };
+  if (/\bduplicates?\b/.test(text)) return { intent: 'SHOW_DUPLICATES', reply: 'Here are the suspected duplicates.' };
+  if (/\btasks?\b/.test(text)) return { intent: 'SHOW_TASKS', reply: 'Here are the open tasks.' };
+  if (/\bteam\b|\bcolleagues?\b/.test(text)) return { intent: 'SHOW_TEAM', reply: 'Here is the team.' };
+  if (/\banalytics\b|\bmetrics\b|\bstats\b/.test(text)) return { intent: 'SHOW_ANALYTICS', reply: 'Here are the pipeline numbers.' };
+  if (/\bdeadlines?\b/.test(text)) return { intent: 'SHOW_DEADLINES', reply: 'Here are the upcoming deadlines.' };
+  if (/\bsettings\b/.test(text)) return { intent: 'NAVIGATE', reply: 'Opening settings.', navigation: { screen: 'settings' } };
   if (/\b(chase|nudge|remind|follow up)\b/.test(text)) {
     return {
       intent: 'LIVE_CHASE',

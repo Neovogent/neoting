@@ -52,7 +52,68 @@ export const ChatIntentSchema = z.enum([
   // one. SHOW_APPROVALS points at the Review → Approve queue.
   'SHOW_EXPORTS',
   'SHOW_APPROVALS',
+  // Chat reach (15 Oct 2026). The SHOW_* values answer with a SERVER-composed
+  // table (`screens.ts`) and a screen to open; the model picks only the intent
+  // and the filters below. The DRAFT_* values become an ActionProposal draft
+  // the server builds from real rows (`drafts.ts`) — a human reviews and
+  // approves it. REQUEST_STATEMENT / INVITE_MEMBER render a form the human
+  // submits; the turn itself changes nothing.
+  'SHOW_BANK',
+  'SHOW_SUPPLIER_STATEMENTS',
+  'SHOW_DUPLICATES',
+  'SHOW_TASKS',
+  'SHOW_TEAM',
+  'SHOW_ANALYTICS',
+  'SHOW_DEADLINES',
+  'NAVIGATE',
+  'DRAFT_CODING',
+  'DRAFT_REJECT',
+  'DRAFT_CONFIRM_MATCH',
+  'REQUEST_STATEMENT',
+  'INVITE_MEMBER',
 ]);
+
+/** Every screen the chat can open — mirrors `ChatNavigation.screen` in the contract. */
+export const ChatScreenSchema = z.enum([
+  'workspace',
+  'clients',
+  'inboxes',
+  'chases',
+  'approvals',
+  'documents',
+  'export',
+  'analytics',
+  'team',
+  'settings',
+  'client-overview',
+  'client-costs',
+  'client-sales',
+  'client-bank',
+  'client-statements',
+  'client-supplier-statements',
+  'client-expense-claims',
+  'client-approvals',
+  'client-documents',
+  'client-chases',
+  'client-tasks',
+  'client-users',
+  'client-connections',
+  'client-settings',
+]);
+
+export type ChatScreen = z.infer<typeof ChatScreenSchema>;
+
+const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** The DRAFT_* intents' words — never an id, never a figure. */
+const ActionSchema = z
+  .object({
+    /** DRAFT_CODING: a code copied from the client's chart; omitted = accept the current one. */
+    categoryCode: z.string().min(1).max(64).optional(),
+    /** DRAFT_REJECT: the accountant's reason, surfaced verbatim in the Rejected view. */
+    reason: z.string().min(1).max(300).optional(),
+  })
+  .strict();
 
 export type ChatIntentValue = z.infer<typeof ChatIntentSchema>;
 
@@ -79,7 +140,16 @@ const NavigationSchema = z
      * resolves this against documents the caller can actually see.
      */
     documentQuery: z.string().min(1).max(120).optional(),
-    statusFilter: z.enum(['review', 'ready', 'failed', 'processing', 'unrouted']).optional(),
+    statusFilter: z.enum(['review', 'ready', 'failed', 'processing', 'unrouted', 'published']).optional(),
+    /** Filters the server applies to its own table — words and dates the accountant said. */
+    supplier: z.string().min(1).max(80).optional(),
+    from: IsoDate.optional(),
+    to: IsoDate.optional(),
+    unmatchedOnly: z.boolean().optional(),
+    /** NAVIGATE (required) or any SHOW_* intent: which screen to offer. */
+    screen: ChatScreenSchema.optional(),
+    /** INVITE_MEMBER only: a prefill for the invite form. */
+    email: z.string().email().max(254).optional(),
     /**
      * With ADD_CLIENT only: the company name the accountant said ("add a
      * client called Ananda Group"), for prefilling the intake form. Words,
@@ -132,6 +202,7 @@ export const ModelTurnSchema = z
     navigation: NavigationSchema.optional(),
     grounded: GroundedAnswerSchema.optional(),
     display: DisplayRequestSchema.optional(),
+    action: ActionSchema.optional(),
   })
   .strict()
   .superRefine((turn, ctx) => {
@@ -170,6 +241,44 @@ export const ModelTurnSchema = z
         code: z.ZodIssueCode.custom,
         path: ['navigation', 'clientName'],
         message: 'navigation.clientName may only accompany intent ADD_CLIENT',
+      });
+    }
+    if (turn.intent === 'NAVIGATE' && turn.navigation?.screen === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['navigation', 'screen'],
+        message: 'intent NAVIGATE requires navigation.screen',
+      });
+    }
+    if (turn.intent !== 'INVITE_MEMBER' && turn.navigation?.email !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['navigation', 'email'],
+        message: 'navigation.email may only accompany intent INVITE_MEMBER',
+      });
+    }
+    if (turn.action !== undefined && turn.intent !== 'DRAFT_CODING' && turn.intent !== 'DRAFT_REJECT') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['action'],
+        message: 'action may only accompany intent DRAFT_CODING or DRAFT_REJECT',
+      });
+    }
+    if (turn.intent === 'DRAFT_REJECT' && turn.action?.reason === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['action', 'reason'],
+        message: 'intent DRAFT_REJECT requires action.reason — a rejection without a reason is not a rejection',
+      });
+    }
+    if (
+      (turn.intent === 'DRAFT_CODING' || turn.intent === 'DRAFT_REJECT') &&
+      turn.navigation?.documentQuery === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['navigation', 'documentQuery'],
+        message: `intent ${turn.intent} requires navigation.documentQuery naming the document`,
       });
     }
     // A display block is a grounded answer's illustration, and only that: the
@@ -237,7 +346,17 @@ export const RESPOND_TOOL_SCHEMA = {
           type: 'string',
           description: 'What the accountant called the document, e.g. "Currys receipt". Never an id.',
         },
-        statusFilter: { type: 'string', enum: ['review', 'ready', 'failed', 'processing', 'unrouted'] },
+        statusFilter: { type: 'string', enum: ['review', 'ready', 'failed', 'processing', 'unrouted', 'published'] },
+        supplier: { type: 'string', description: 'A supplier name the accountant said, to filter the list by.' },
+        from: { type: 'string', description: 'YYYY-MM-DD — start of a date range the accountant said.' },
+        to: { type: 'string', description: 'YYYY-MM-DD — end of a date range the accountant said.' },
+        unmatchedOnly: { type: 'boolean', description: 'SHOW_BANK: only lines with no paperwork matched.' },
+        screen: {
+          type: 'string',
+          enum: ChatScreenSchema.options,
+          description: 'Required with NAVIGATE: the screen to open. client-* screens need a client in scope.',
+        },
+        email: { type: 'string', description: 'Only with INVITE_MEMBER: the address the accountant said, verbatim.' },
         clientName: {
           type: 'string',
           description:
@@ -257,6 +376,19 @@ export const RESPOND_TOOL_SCHEMA = {
         },
       },
       description: 'Only with intent GROUNDED_ANSWER.',
+    },
+    action: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        categoryCode: {
+          type: 'string',
+          description:
+            'DRAFT_CODING: a category code copied EXACTLY from the reference list. Omit to accept the category the document already has.',
+        },
+        reason: { type: 'string', description: 'DRAFT_REJECT (required): why, in the accountant’s words.' },
+      },
+      description: 'Only with DRAFT_CODING or DRAFT_REJECT. The document is named in navigation.documentQuery.',
     },
     display: {
       type: 'object',

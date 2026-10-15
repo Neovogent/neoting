@@ -173,3 +173,42 @@ describe('the system prompt (Governance §9.6, §9.8)', () => {
     expect(SYSTEM_PROMPT).not.toMatch(/\$\{/);
   });
 });
+
+describe('chat reach (15 Oct 2026) — new intents carry words and filters, never ids or figures', () => {
+  test('the tool schema and the prompt both name every intent', () => {
+    expect(RESPOND_TOOL_SCHEMA.properties.intent.enum).toEqual(ChatIntentSchema.options);
+    for (const intent of ['SHOW_BANK', 'NAVIGATE', 'DRAFT_CODING', 'DRAFT_REJECT', 'DRAFT_CONFIRM_MATCH', 'INVITE_MEMBER']) {
+      expect(SYSTEM_PROMPT).toContain(`\`${intent}\``);
+    }
+  });
+
+  test('NAVIGATE needs a known screen', () => {
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'NAVIGATE' }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'NAVIGATE', navigation: { screen: 'the-moon' } }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'NAVIGATE', navigation: { screen: 'client-bank' } }).success).toBe(true);
+  });
+
+  test('a rejection needs a named document and a reason', () => {
+    const reject = { ...base, intent: 'DRAFT_REJECT' as const };
+    expect(ModelTurnSchema.safeParse({ ...reject, navigation: { documentQuery: 'Currys receipt' } }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...reject, action: { reason: 'blurry' } }).success).toBe(false);
+    expect(
+      ModelTurnSchema.safeParse({ ...reject, navigation: { documentQuery: 'Currys receipt' }, action: { reason: 'blurry' } })
+        .success,
+    ).toBe(true);
+  });
+
+  test('action and email ride only their own intents; date filters are dates', () => {
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'SHOW_BANK', action: { reason: 'x' } }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'SHOW_TEAM', navigation: { email: 'a@b.co' } }).success).toBe(false);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'INVITE_MEMBER', navigation: { email: 'a@b.co' } }).success).toBe(true);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'SHOW_INBOX', navigation: { from: 'last week' } }).success).toBe(false);
+    expect(
+      ModelTurnSchema.safeParse({
+        ...base,
+        intent: 'SHOW_BANK',
+        navigation: { unmatchedOnly: true, from: '2026-08-01', to: '2026-08-31', supplier: 'Currys' },
+      }).success,
+    ).toBe(true);
+  });
+});

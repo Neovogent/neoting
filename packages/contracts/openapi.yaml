@@ -251,6 +251,11 @@ tags:
       one: applying item 66's question — *whose signature does this carry* — a
       ticked checkbox carries nobody's. Nothing here touches a client's books,
       a document's coding, or anything outside the product.
+  - name: analytics
+    description: |
+      Document-pipeline analytics (SoT §11), computed server-side over what the
+      caller's RLS context can see. Pipeline counts, rates and ages only — never
+      ledger health and never a financial statement.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -4845,6 +4850,128 @@ paths:
   # ever changed except by poll. This is the READ half — the bell.
   # ==========================================================================
 
+  # ==========================================================================
+  # ANALYTICS — SoT §11 pipeline metrics
+  # ==========================================================================
+
+  /analytics/practice:
+    get:
+      operationId: getPracticeAnalytics
+      summary: Pipeline analytics across the practice
+      description: |
+        Server-computed pipeline metrics for the period `from`..`to` (inclusive
+        UTC calendar dates; default the last 30 days). Every figure is a count,
+        a rate or an age derived from RLS-scoped rows — the browser computes
+        nothing. A metric the data cannot support is `null`, never a guess.
+      tags: [analytics]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/AnalyticsFrom'
+        - $ref: '#/components/parameters/AnalyticsTo'
+      responses:
+        '200':
+          description: The report.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /analytics/practice/csv:
+    get:
+      operationId: getPracticeAnalyticsCsv
+      summary: Pipeline analytics across the practice, as CSV
+      description: |
+        Server-computed pipeline metrics for the period `from`..`to` (inclusive
+        UTC calendar dates; default the last 30 days). Every figure is a count,
+        a rate or an age derived from RLS-scoped rows — the browser computes
+        nothing. A metric the data cannot support is `null`, never a guess.
+      tags: [analytics]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/AnalyticsFrom'
+        - $ref: '#/components/parameters/AnalyticsTo'
+      responses:
+        '200':
+          description: The same report as CSV (one metric per row, then the series and breakdowns).
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /analytics/businesses/{businessId}:
+    get:
+      operationId: getBusinessAnalytics
+      summary: Pipeline analytics for one client
+      description: |
+        Server-computed pipeline metrics for the period `from`..`to` (inclusive
+        UTC calendar dates; default the last 30 days). Every figure is a count,
+        a rate or an age derived from RLS-scoped rows — the browser computes
+        nothing. A metric the data cannot support is `null`, never a guess.
+      tags: [analytics]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/AnalyticsFrom'
+        - $ref: '#/components/parameters/AnalyticsTo'
+        - name: businessId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The report.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /analytics/businesses/{businessId}/csv:
+    get:
+      operationId: getBusinessAnalyticsCsv
+      summary: Pipeline analytics for one client, as CSV
+      description: |
+        Server-computed pipeline metrics for the period `from`..`to` (inclusive
+        UTC calendar dates; default the last 30 days). Every figure is a count,
+        a rate or an age derived from RLS-scoped rows — the browser computes
+        nothing. A metric the data cannot support is `null`, never a guess.
+      tags: [analytics]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/AnalyticsFrom'
+        - $ref: '#/components/parameters/AnalyticsTo'
+        - name: businessId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The same report as CSV (one metric per row, then the series and breakdowns).
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /notifications:
     get:
       operationId: listNotifications
@@ -5928,6 +6055,18 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
 
+    AnalyticsFrom:
+      name: from
+      in: query
+      required: false
+      description: First day of the period (UTC, inclusive). Defaults to 29 days before `to`.
+      schema: { type: string, format: date }
+    AnalyticsTo:
+      name: to
+      in: query
+      required: false
+      description: Last day of the period (UTC, inclusive). Defaults to today.
+      schema: { type: string, format: date }
     BusinessIdFilter:
       name: businessId
       in: query
@@ -6384,6 +6523,90 @@ components:
         # and this surface is x-nt-side-effect: none (D42).
         - SHOW_EXPORTS     # navigation — the Export screen (D42's sole egress)
         - SHOW_APPROVALS   # navigation — the Review → Approve queue
+        # 15 Oct 2026 — chat reach: every screen reachable from the chat. The
+        # SHOW_* values below carry a server-composed display table (the model
+        # chooses only the intent and filters) plus `navigation.screen`. The
+        # DRAFT_* values carry a server-built `draft` for Review → Approve.
+        # REQUEST_STATEMENT and INVITE_MEMBER render a form the human submits.
+        - SHOW_BANK                 # bank transactions, optionally unmatched only
+        - SHOW_SUPPLIER_STATEMENTS  # supplier statements and their reconciliation
+        - SHOW_DUPLICATES           # suspected duplicate pairs awaiting a ruling
+        - SHOW_TASKS                # the practice's tasks
+        - SHOW_TEAM                 # the practice's colleagues
+        - SHOW_ANALYTICS            # pipeline metrics (SoT §11)
+        - SHOW_DEADLINES            # client deadlines
+        - NAVIGATE                  # open a named screen — the universal fallback
+        - DRAFT_CODING              # draft document.update-coding (accept or change a category)
+        - DRAFT_REJECT              # draft document.reject with the accountant's reason
+        - DRAFT_CONFIRM_MATCH       # draft bank.confirm-match for a suggested match
+        - REQUEST_STATEMENT         # the statement-request form, prefilled for this client
+        - INVITE_MEMBER             # the colleague-invite form, prefilled
+
+    AnalyticsMetric:
+      type: object
+      required: [key, label, value, unit]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        value:
+          type: [number, 'null']
+          description: Null when the period holds nothing to measure — never a zero standing in for "unknown".
+        unit: { type: string, enum: [count, percent, days, hours] }
+
+    AnalyticsBreakdown:
+      type: object
+      required: [key, title, rows]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer, minimum: 0 }
+
+    AnalyticsReport:
+      type: object
+      required: [scope, businessId, from, to, bucket, generatedAt, series, metrics, breakdowns, inactiveClients]
+      description: |
+        SoT §11 pipeline analytics for one period. `series` buckets documents
+        received/processed by day (periods up to 31 days) or ISO week.
+        Breakdowns are counts only.
+      properties:
+        scope: { type: string, enum: [practice, business] }
+        businessId: { type: [string, 'null'] }
+        from: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        to: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        bucket: { type: string, enum: [day, week] }
+        generatedAt: { type: string, format: date-time }
+        series:
+          type: array
+          items:
+            type: object
+            required: [period, received, processed]
+            properties:
+              period: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+              received: { type: integer, minimum: 0 }
+              processed: { type: integer, minimum: 0 }
+        metrics:
+          type: array
+          items: { $ref: '#/components/schemas/AnalyticsMetric' }
+        breakdowns:
+          type: array
+          items: { $ref: '#/components/schemas/AnalyticsBreakdown' }
+        inactiveClients:
+          type: array
+          description: Active clients with no document received in the period.
+          items:
+            type: object
+            required: [businessId, name, lastDocumentAt]
+            properties:
+              businessId: { type: string }
+              name: { type: string }
+              lastDocumentAt: { type: [string, 'null'], format: date-time }
 
     ChatHistoryTurn:
       type: object
@@ -6430,6 +6653,21 @@ components:
         statusFilter:
           type: string
           description: A document status to narrow the inbox to.
+        screen:
+          type: string
+          description: The screen the UI should offer to open. `client-*` screens need `businessId`.
+          enum: [workspace, clients, inboxes, chases, approvals, documents, export, analytics, team, settings,
+                 client-overview, client-costs, client-sales, client-bank, client-statements,
+                 client-supplier-statements, client-expense-claims, client-approvals, client-documents,
+                 client-chases, client-tasks, client-users, client-connections, client-settings]
+        supplier: { type: string, maxLength: 80, description: A supplier-name filter the accountant said. }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        unmatchedOnly: { type: boolean }
+        email:
+          type: string
+          maxLength: 254
+          description: With `INVITE_MEMBER` only — a prefill for the invite form, never an act.
         clientName:
           type: string
           maxLength: 120

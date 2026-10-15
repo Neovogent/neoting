@@ -6,6 +6,7 @@ import { ContextModule } from './common/context/context.module.js';
 import { ProblemFilter } from './common/problem/problem.filter.js';
 import { TraceMiddleware } from './common/trace/trace.middleware.js';
 import { EnvModule } from './config/env.module.js';
+import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
 import { BankingMatchingModule } from './modules/banking-matching/banking-matching.module.js';
@@ -31,6 +32,7 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
   imports: [
     EnvModule,
     ContextModule,
+    AnalyticsModule,
     ApprovalsModule,
     AuthTenancyModule,
     BankingMatchingModule,

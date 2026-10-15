@@ -1,4 +1,5 @@
 import type { ScopedClient } from '../../common/db/scoped-db.js';
+import { notDeleted } from '../../common/documents/deleted-documents.js';
 import type { CategoryOption } from './grounding.js';
 import type { ModelTurn } from './prompts/output-schema.js';
 
@@ -132,4 +133,169 @@ function titleCase(value: string): string {
     .split(/\s+/)
     .map((word) => (word.length > 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
     .join(' ');
+}
+
+// ---------------------------------------------------------------------------
+// Chat reach (15 Oct 2026): three more drafts, the rule.create posture. The
+// model names a document in WORDS and, for coding, a category code; this file
+// resolves the id from RLS-scoped rows, checks the code against the client's
+// own chart, and builds a request `POST /action-proposals` already accepts.
+// Nothing here executes — a human reviews and approves the proposal.
+// ---------------------------------------------------------------------------
+
+export type ChatDraft =
+  | {
+      readonly kind: 'document.update-coding';
+      readonly businessId: string;
+      readonly payload: { documentId: string; fields: { categoryCode: string } };
+    }
+  | {
+      readonly kind: 'document.reject';
+      readonly businessId: string;
+      readonly payload: { documentIds: string[]; reason: string };
+    }
+  | {
+      readonly kind: 'bank.confirm-match';
+      readonly businessId: string;
+      readonly payload: { transactionId: string; documentId: string; matchKind: string; confidence: number | null };
+    };
+
+export type DraftResult = { ok: true; draft: ChatDraft; reply: string } | RuleDraftRejection;
+
+/** Words that name a KIND of document rather than which one. */
+const NOISE = /\b(the|a|an|that|this|receipt|invoice|bill|document|doc|from|for|one|latest|last|recent)\b/gi;
+
+interface FoundDocument {
+  id: string;
+  supplierName: string | null;
+  categoryCode: string | null;
+}
+
+/** "the Currys receipt" → this client's newest live document from Currys. */
+export async function findNamedDocument(db: ScopedClient, businessId: string, query: string): Promise<FoundDocument | null> {
+  const needle = query.replace(NOISE, ' ').replace(/\s+/g, ' ').trim();
+  if (needle.length < 2) return null;
+  const contains = { contains: needle, mode: 'insensitive' as const };
+  return db.document.findFirst({
+    where: {
+      businessId,
+      archivedAt: null,
+      ...notDeleted(),
+      OR: [{ supplierName: contains }, { originalFilename: contains }, { reference: contains }],
+    },
+    orderBy: { receivedAt: 'desc' },
+    select: { id: true, supplierName: true, categoryCode: true },
+  });
+}
+
+const notFound = (query: string): RuleDraftRejection => ({
+  ok: false,
+  reason: `I could not find a document matching "${query}" for this client.`,
+});
+
+export async function buildCodingDraft(
+  db: ScopedClient,
+  businessId: string,
+  turn: ModelTurn,
+  categories: readonly CategoryOption[],
+): Promise<DraftResult> {
+  const query = turn.navigation?.documentQuery ?? '';
+  const doc = await findNamedDocument(db, businessId, query);
+  if (doc === null) return notFound(query);
+  const supplier = doc.supplierName ?? 'named';
+
+  const asked = turn.action?.categoryCode;
+  const code = asked ?? doc.categoryCode;
+  if (code === null) {
+    return {
+      ok: false,
+      reason: `The ${supplier} document has no category yet, so there is nothing to accept. Tell me which category to code it to.`,
+    };
+  }
+  // A changed code must be on the client's own chart — the rule.create check.
+  // Accepting the code the document already carries needs no chart: it is
+  // what the pipeline (or a person) already put there.
+  const known = categories.find((c) => c.code === code);
+  if (asked !== undefined && known === undefined) {
+    const names = categories.map((c) => c.name).join(', ');
+    return {
+      ok: false,
+      reason:
+        names.length === 0
+          ? 'This client has no synced chart of accounts yet, so I cannot check that category.'
+          : `I could not match that category on this client's chart of accounts. The available ones are: ${names}.`,
+    };
+  }
+  const name = known?.name ?? code;
+  const accepting = asked === undefined || asked === doc.categoryCode;
+  return {
+    ok: true,
+    draft: { kind: 'document.update-coding', businessId, payload: { documentId: doc.id, fields: { categoryCode: code } } },
+    reply: accepting
+      ? `Accept ${name} as the category on the ${supplier} document. It takes effect only after you review and approve it.`
+      : `Change the ${supplier} document's category to ${name}. It takes effect only after you review and approve it.`,
+  };
+}
+
+export async function buildRejectDraft(db: ScopedClient, businessId: string, turn: ModelTurn): Promise<DraftResult> {
+  const query = turn.navigation?.documentQuery ?? '';
+  const doc = await findNamedDocument(db, businessId, query);
+  if (doc === null) return notFound(query);
+  const reason = (turn.action?.reason ?? '').trim();
+  if (reason.length === 0) {
+    return { ok: false, reason: 'Tell me why it should be rejected — the reason is shown to whoever sent it.' };
+  }
+  return {
+    ok: true,
+    draft: { kind: 'document.reject', businessId, payload: { documentIds: [doc.id], reason } },
+    reply: `Reject the ${doc.supplierName ?? 'named'} document with the reason "${reason}". Nothing changes until you review and approve it.`,
+  };
+}
+
+export async function buildConfirmMatchDraft(db: ScopedClient, businessId: string, turn: ModelTurn): Promise<DraftResult> {
+  const query = turn.navigation?.documentQuery;
+  let documentId: string | undefined;
+  if (query !== undefined) {
+    const doc = await findNamedDocument(db, businessId, query);
+    if (doc === null) return notFound(query);
+    documentId = doc.id;
+  }
+  const match = await db.match.findFirst({
+    where: { businessId, state: 'SUGGESTED', unmatchedAt: null, ...(documentId === undefined ? {} : { documentId }) },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      documentId: true,
+      transactionId: true,
+      kind: true,
+      confidence: true,
+      transaction: { select: { merchantName: true, descriptionRaw: true, bookedAt: true } },
+    },
+  });
+  if (match === null) {
+    return {
+      ok: false,
+      reason:
+        query === undefined
+          ? 'There is no suggested bank match waiting for this client.'
+          : `There is no suggested bank match for the "${query}" document.`,
+    };
+  }
+  const doc = await db.document.findUnique({ where: { id: match.documentId }, select: { supplierName: true } });
+  const line = match.transaction.merchantName ?? match.transaction.descriptionRaw;
+  return {
+    ok: true,
+    draft: {
+      kind: 'bank.confirm-match',
+      businessId,
+      payload: {
+        transactionId: match.transactionId,
+        documentId: match.documentId,
+        matchKind: match.kind,
+        confidence: match.confidence,
+      },
+    },
+    reply:
+      `Confirm the suggested match between the ${doc?.supplierName ?? 'named'} document and the bank line ` +
+      `"${line}" booked ${match.transaction.bookedAt.toISOString().slice(0, 10)}. Nothing changes until you review and approve it.`,
+  };
 }
