@@ -149,19 +149,8 @@ locals {
       }
     }
 
-    # TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID,
-    # TWILIO_MESSAGING_SERVICE_SID. Sole SMS + OTP provider (SoT §"Third-party
-    # rails"). Staging holds SANDBOX credentials only (Guideline §8.4) — a
-    # production Twilio token here would let a staging bug text real clients.
-    twilio = {
-      description = "Twilio platform credentials - SMS chase + Verify OTP (sandbox keys in staging)"
-      values = {
-        account_sid           = "PLACEHOLDER_TWILIO_ACCOUNT_SID"
-        auth_token            = "PLACEHOLDER_TWILIO_AUTH_TOKEN"
-        verify_service_sid    = "PLACEHOLDER_TWILIO_VERIFY_SERVICE_SID"
-        messaging_service_sid = "PLACEHOLDER_TWILIO_MESSAGING_SERVICE_SID"
-      }
-    }
+    # (The `twilio` group was deleted 15 Oct 2026: SMS is AWS End User
+    # Messaging and no task definition or code ever read it.)
 
     # XERO_CLIENT_ID, XERO_CLIENT_SECRET. Our app's registration, not any
     # client's connection — see the SCOPE note at the top of this file.

@@ -48,7 +48,6 @@ module "data" {
   redis_node_type                  = "cache.t4g.micro"
   redis_num_cache_clusters         = 1
   redis_automatic_failover_enabled = false # single node in staging; prod = true with 2+
-  redis_parameter_group_name       = "default.redis7"
   redis_snapshot_retention_limit   = 1
   redis_maintenance_window         = "sun:04:30-sun:05:30"
   redis_apply_immediately          = true

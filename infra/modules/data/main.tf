@@ -114,6 +114,19 @@ resource "random_password" "redis_auth" {
   special = false # ElastiCache auth tokens reject several punctuation characters
 }
 
+# BullMQ requires `noeviction` (it warns on every boot otherwise): under memory
+# pressure the AWS default, volatile-lru, can evict queue keys that carry a TTL
+# and silently drop jobs. Cluster mode stays disabled.
+resource "aws_elasticache_parameter_group" "redis" {
+  name   = "nt-${var.env}-redis7-noeviction"
+  family = "redis7"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+}
+
 resource "aws_elasticache_replication_group" "main" {
   replication_group_id = "nt-${var.env}-redis"
   description          = "Neoting ${var.env} - BullMQ + cache"
@@ -122,7 +135,7 @@ resource "aws_elasticache_replication_group" "main" {
   engine_version       = var.redis_engine_version
   node_type            = var.redis_node_type
   num_cache_clusters   = var.redis_num_cache_clusters
-  parameter_group_name = var.redis_parameter_group_name
+  parameter_group_name = aws_elasticache_parameter_group.redis.name
   port                 = 6379
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name

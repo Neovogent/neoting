@@ -233,7 +233,8 @@ function bootstrap(): void {
 
   worker.on('ready', () => logger.log(`ingest worker ready on '${INGEST_QUEUE_NAME}'`));
   worker.on('error', (err: Error) => logger.error(`worker error: ${err.message}`));
-  logger.log(`ingest worker starting (redis ${env.REDIS_URL})`);
+  // Host only — the URL carries the ElastiCache auth token (`rediss://:token@…`).
+  logger.log(`ingest worker starting (redis ${new URL(env.REDIS_URL).host})`);
 
   // ── D50: keep idle ledger connections alive ──────────────────────────────
   //

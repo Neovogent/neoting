@@ -251,12 +251,6 @@ variable "redis_automatic_failover_enabled" {
   description = "Requires redis_num_cache_clusters >= 2. false with a single node; ElastiCache rejects the combination outright."
 }
 
-variable "redis_parameter_group_name" {
-  type        = string
-  default     = "default.redis7"
-  description = "AWS-managed default. Cluster mode stays disabled."
-}
-
 variable "redis_snapshot_retention_limit" {
   type        = number
   default     = 1

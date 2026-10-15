@@ -204,7 +204,9 @@ locals {
     #                        delivery receipt, so the outbox screen is still not
     #                        proof a client's phone rang.
     #
-    #   SMS_SENDER=aws       ⚠ REVERTED 14 Oct 2026, owner's instruction, for
+    #   SMS_SENDER=aws       LIVE AGAIN 15 Oct 2026 (owner) now that #317
+    #                        emails a contact with no mobile. Had been
+    #                        REVERTED 14 Oct 2026, owner's instruction, for
     #                        failure (2) below: a statement request to an
     #                        email-only contact (Aldgate Kitchen) refused
     #                        NT-PRP-006 at approve, rolled back, logged nothing,
@@ -372,9 +374,10 @@ locals {
     # and the portal renders "OneDrive — coming soon". Add the three ONEDRIVE_*
     # entries the day an Azure app registration exists — no code changes.
 
-    # `email+sms`, not `aws`, since 14 Oct 2026 — the reason is at the
-    # SMS_SENDER notes above. No real text leaves the account under it.
-    { name = "SMS_SENDER", value = "email+sms" },
+    # `aws` again since 15 Oct 2026 (owner's instruction): texts first, and
+    # #317 emails a contact with no mobile, closing failure (2) in the
+    # SMS_SENDER notes above. Failure (1), non-UK mobiles, still stands.
+    { name = "SMS_SENDER", value = "aws" },
     # The dedicated UK number every chase and sign-in code originates from.
     # Read only under `aws`; kept so the re-flip is one value.
     # env.ts REFUSES TO BOOT on `aws` with this empty — deliberately, because

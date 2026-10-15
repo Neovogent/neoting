@@ -197,7 +197,6 @@ module "data" {
   # claim failover you have not paid for.
   redis_automatic_failover_enabled = true
 
-  redis_parameter_group_name = "default.redis7"
 
   # 7 days, not staging's 1. Queues are replayable from the database, so this
   # is still not a recovery plan — it is the difference between reconstructing

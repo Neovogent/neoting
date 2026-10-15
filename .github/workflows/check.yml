@@ -307,7 +307,7 @@ jobs:
           [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
           [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
           if [ "$deploy" = yes ]; then
-            echo "::notice title=Stage 9 deploys the real ingest lane::Migrations, api and workers deploy; INGEST_QUEUE=bullmq, OBJECT_STORE=s3, IMAGE_NORMALISER=sharp and DOCUMENT_GUARD=qpdf are set on the task definitions, so ingested documents survive a restart and PDFs are really checked. Still fixture-mode by design: the email lane (EMAIL_SOURCE — the s3 poller has no ECS service yet)."
+            echo "::notice title=Stage 9 deploys the real ingest lane::Migrations, api and workers deploy; INGEST_QUEUE=bullmq, OBJECT_STORE=s3, IMAGE_NORMALISER=sharp and DOCUMENT_GUARD=qpdf are set on the task definitions, so ingested documents survive a restart and PDFs are really checked. The email-intake poller (nt-staging-email-intake) is rolled onto the same image."
           else
             echo "::warning title=Stage 9 not implemented::No deploy path exists yet. See the DEPLOY_READY block in check.yml."
           fi
@@ -458,6 +458,8 @@ jobs:
       TASK_FAMILY: nt-staging-api
       WORKERS_SERVICE: nt-staging-workers
       WORKERS_TASK_FAMILY: nt-staging-workers
+      EMAIL_INTAKE_SERVICE: nt-staging-email-intake
+      EMAIL_INTAKE_TASK_FAMILY: nt-staging-email-intake
       MIGRATE_TASK_FAMILY: nt-staging-migrate
       MIGRATE_LOG_GROUP: /nt/staging/migrate
       API_LOG_GROUP: /nt/staging/api
@@ -793,6 +795,58 @@ jobs:
             exit 1
           fi
 
+      # email-intake (the s3 inbound-mail poller) runs the workers image. It was
+      # left out of this job until 15 Oct 2026, sat pinned by hand on a revision
+      # whose image the ECR lifecycle rule (keep 30) then deleted, and failed
+      # every placement with CannotPullContainerError for weeks. Rolling it on
+      # every deploy keeps its image inside the kept window. The service is
+      # 0/100 (services.tf) — replaced in place, never two pollers at once.
+      - name: Register an email-intake task definition revision pinned to this commit
+        id: emaildef
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition --task-definition "$EMAIL_INTAKE_TASK_FAMILY" \
+            --query taskDefinition > live-email.json
+
+          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/workers:${{ github.sha }}" '
+            .containerDefinitions |= map(if .name == "email-intake" then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' live-email.json > next-email.json
+
+          arn=$(aws ecs register-task-definition --cli-input-json file://next-email.json \
+                  --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "registered $arn"
+
+      - name: Deploy email-intake
+        run: |
+          set -euo pipefail
+          aws ecs update-service --cluster "$CLUSTER" --service "$EMAIL_INTAKE_SERVICE" \
+            --task-definition "${{ steps.emaildef.outputs.arn }}" --no-cli-pager > /dev/null
+
+      - name: Wait for email-intake to reach steady state
+        run: aws ecs wait services-stable --cluster "$CLUSTER" --services "$EMAIL_INTAKE_SERVICE"
+
+      - name: Assert email-intake is running THIS run's revision (rollback = red)
+        run: |
+          set -euo pipefail
+          serving=$(aws ecs describe-services --cluster "$CLUSTER" --services "$EMAIL_INTAKE_SERVICE" \
+                      --query "services[0].deployments[?status=='PRIMARY'].taskDefinition | [0]" --output text)
+          expected="${{ steps.emaildef.outputs.arn }}"
+          echo "serving:  $serving"
+          echo "expected: $expected"
+          if [ "$serving" != "$expected" ]; then
+            for t in $(aws ecs list-tasks --cluster "$CLUSTER" --family "$EMAIL_INTAKE_TASK_FAMILY" \
+                         --desired-status STOPPED --query 'taskArns[0:3]' --output text); do
+              aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$t" \
+                --query 'tasks[0].{def:taskDefinitionArn,stoppedReason:stoppedReason,exitCode:containers[0].exitCode}' \
+                --output json || true
+            done
+            echo "::error title=Email-intake deploy rolled back::ECS settled on $serving, not on the revision this run registered."
+            exit 1
+          fi
+
       - name: Say what was and was not deployed
         if: ${{ always() }}
         run: |
@@ -802,12 +856,10 @@ jobs:
             echo "- **migrations** — \`prisma migrate deploy\` ran as ECS task \`${{ steps.migrate.outputs.task || 'not started' }}\`, before any service was updated."
             echo "- **api** → \`${{ github.sha }}\`, live at https://$EDGE_HOST"
             echo "- **workers** → \`${{ github.sha }}\`, consuming BullMQ over TLS."
+            echo "- **email-intake** → \`${{ github.sha }}\`, polling the SES receipts bucket (\`inbound/\`)."
             echo
             echo "#### Still fixture-mode, by design"
             echo
-            echo "- **Email intake**: \`EMAIL_SOURCE\` stays \`fixture\` — the s3 poller"
-            echo "  (\`worker/email-intake-main.js\`) has no ECS service yet, and env.ts refuses"
-            echo "  \`EMAIL_SOURCE=s3\` against fixture stores anyway."
             echo "- **Second factor**: \`OTP_MODE=totp\` — the real verifier lands in A2, so"
             echo "  every second factor fails CLOSED until then and nobody can sign in."
             echo "- **Extraction**: \`EXTRACTOR=bedrock\` — BedrockExtractor is images-only until"
