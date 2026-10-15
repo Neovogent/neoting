@@ -60,6 +60,8 @@ const ProposalFlowModal = lazy(() =>
  * Now the route downloads a list, and the viewer arrives on the first click.
  */
 const DocumentViewer = lazy(() => import('../components/DynamicComponents/DocumentViewer'));
+/** Full-text search over documents + practice vault (live only). Lazy: its own chunk. */
+const DocumentSearch = lazy(() => import('../components/DynamicComponents/DocumentSearch'));
 
 /** Permanent delete's Review → Approve card. Loads on the first purge, which is the only moment it can render. */
 const PurgeDocumentsDialog = lazy(() => import('../components/DynamicComponents/PurgeDocumentsDialog'));
@@ -1006,6 +1008,20 @@ export function DocumentsView() {
             </span>
             <DataSourceBadge slice="documents" status={slices.documents} onRetry={refetchDocuments} />
           </div>
+        )}
+
+        {live && (
+          <Suspense fallback={null}>
+            <DocumentSearch
+              onOpenDocument={(id) => {
+                // Open it on the tab that actually lists it, or the viewer has
+                // nothing to page through and stays shut.
+                if (archived.some((d) => d.id === id)) setTab('Archive');
+                else setTab('All');
+                setViewerId(id);
+              }}
+            />
+          </Suspense>
         )}
 
         {/* A batch in flight. `aria-live` because the only other signal is
