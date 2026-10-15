@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react';
 import { BarChart2, Download } from 'lucide-react';
+import { API_ENABLED } from '../api/config';
+import { analyticsCsvHref, isoDaysAgo, useAnalyticsReport, type AnalyticsReport } from '../api/analytics';
+import { UkDateField } from '../components/DynamicComponents/UkDateField';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
@@ -132,7 +135,232 @@ const m = defineMessages({
   },
 });
 
+/**
+ * Live, every figure is the SERVER's (`GET /v1/analytics/…`, SoT §11) for a
+ * chosen period; the synthetic cast keeps its client-side derivation so the
+ * demo still walks with no API (METH_MODE §1).
+ */
 export function AnalyticsView() {
+  return API_ENABLED ? <LiveAnalytics /> : <SyntheticAnalytics />;
+}
+
+const mLive = defineMessages({
+  preset: { id: 'analytics.live.preset', defaultMessage: 'Last {days} days' },
+  from: { id: 'analytics.live.from', defaultMessage: 'From' },
+  to: { id: 'analytics.live.to', defaultMessage: 'To' },
+  csv: { id: 'analytics.live.csv', defaultMessage: 'Download CSV' },
+  loading: { id: 'analytics.live.loading', defaultMessage: 'Working out the numbers for this period…' },
+  failed: { id: 'analytics.live.failed', defaultMessage: 'Analytics could not be loaded: {error}' },
+  notMeasurable: { id: 'analytics.live.notMeasurable', defaultMessage: 'Nothing to measure in this period' },
+  hours: { id: 'analytics.live.hours', defaultMessage: '{value}h' },
+  seriesTitle: { id: 'analytics.live.seriesTitle', defaultMessage: 'Documents received and processed' },
+  seriesSubtitle: {
+    id: 'analytics.live.seriesSubtitle',
+    defaultMessage: '{bucket, select, week {By week} other {By day}} · {from} to {to}',
+  },
+  received: { id: 'analytics.live.received', defaultMessage: 'Received' },
+  seriesTip: {
+    id: 'analytics.live.seriesTip',
+    defaultMessage: '{period} · {received} received · {processed} processed',
+  },
+  processed: { id: 'analytics.live.processed', defaultMessage: 'Processed' },
+  breakdownSubtitle: { id: 'analytics.live.breakdownSubtitle', defaultMessage: 'In this period' },
+  inactiveTitle: { id: 'analytics.live.inactiveTitle', defaultMessage: 'Clients with nothing received' },
+  inactiveNone: { id: 'analytics.live.inactiveNone', defaultMessage: 'Every active client sent something in this period.' },
+  lastSeen: { id: 'analytics.live.lastSeen', defaultMessage: 'Last document {date}' },
+  neverSeen: { id: 'analytics.live.neverSeen', defaultMessage: 'No documents yet' },
+});
+
+function LiveAnalytics() {
+  const { businesses } = useAppContext();
+  const intl = useIntl();
+  const [scope, setScope] = useState('practice');
+  const [period, setPeriod] = useState(() => ({ from: isoDaysAgo(29), to: isoDaysAgo(0) }));
+  const report = useAnalyticsReport(scope, period);
+
+  // A half-typed date reports '' — keep the last whole one rather than querying nothing.
+  const setBound = (key: 'from' | 'to') => (iso: string) => {
+    if (iso !== '') setPeriod((p) => ({ ...p, [key]: iso }));
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
+      <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
+              <BarChart2 size={22} />
+            </div>
+            <div>
+              <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+              <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">{intl.formatMessage(m.subheading)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+              className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
+            >
+              <option value="practice">{intl.formatMessage(m.scopePractice)}</option>
+              {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <a
+              href={analyticsCsvHref(scope, period)}
+              download
+              rel="noreferrer noopener"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-brand-on text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+            >
+              <Download size={16} />
+              {intl.formatMessage(mLive.csv)}
+            </a>
+          </div>
+        </div>
+        <div className="flex items-end gap-3 flex-wrap">
+          {[7, 30, 90].map((days) => {
+            const active = period.from === isoDaysAgo(days - 1) && period.to === isoDaysAgo(0);
+            return (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setPeriod({ from: isoDaysAgo(days - 1), to: isoDaysAgo(0) })}
+                className={`px-4 py-2 rounded-full text-[12px] font-bold border transition-colors ${active ? 'bg-brand text-brand-on border-brand' : 'bg-card text-zinc-300 border-white/5 hover:border-brand'}`}
+              >
+                {intl.formatMessage(mLive.preset, { days })}
+              </button>
+            );
+          })}
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest" htmlFor="analytics-from">
+              {intl.formatMessage(mLive.from)}
+            </label>
+            <UkDateField id="analytics-from" value={period.from} max={period.to} onChange={setBound('from')} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest" htmlFor="analytics-to">
+              {intl.formatMessage(mLive.to)}
+            </label>
+            <UkDateField id="analytics-to" value={period.to} min={period.from} onChange={setBound('to')} />
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {report.isPending && <p className="text-[13px] text-zinc-500">{intl.formatMessage(mLive.loading)}</p>}
+        {report.isError && (
+          <p role="alert" className="text-[13px] text-red-400">
+            {intl.formatMessage(mLive.failed, { error: report.error instanceof Error ? report.error.message : String(report.error) })}
+          </p>
+        )}
+        {report.data !== undefined && <LiveReport report={report.data} />}
+      </div>
+    </div>
+  );
+}
+
+function LiveReport({ report }: { report: AnalyticsReport }) {
+  const intl = useIntl();
+  const value = (metric: AnalyticsReport['metrics'][number]): string => {
+    if (metric.value === null) return '—';
+    if (metric.unit === 'percent') return intl.formatMessage(m.percent, { value: metric.value });
+    if (metric.unit === 'days') return intl.formatMessage(m.days, { days: metric.value });
+    if (metric.unit === 'hours') return intl.formatMessage(mLive.hours, { value: metric.value });
+    return intl.formatNumber(metric.value);
+  };
+  const max = Math.max(1, ...report.series.map((s) => s.received));
+  const day = (iso: string) => intl.formatDate(new Date(`${iso}T00:00:00.000Z`), { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+  return (
+    <motion.div key={`${report.scope}-${report.from}-${report.to}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
+      <div data-tour="analytics-kpis" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        {report.metrics.map((metric) => (
+          <Tile
+            key={metric.key}
+            label={metric.label}
+            value={value(metric)}
+            sub={metric.value === null ? intl.formatMessage(mLive.notMeasurable) : ''}
+          />
+        ))}
+      </div>
+
+      <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
+        <div className="p-6 pb-4 border-b border-white/5">
+          <h3 className="font-sans font-bold text-lg text-white tracking-tight">{intl.formatMessage(mLive.seriesTitle)}</h3>
+          <p className="text-[12px] text-zinc-500 mt-0.5 font-semibold uppercase tracking-wider">
+            {intl.formatMessage(mLive.seriesSubtitle, { bucket: report.bucket, from: day(report.from), to: day(report.to) })}
+          </p>
+        </div>
+        <div className="p-6 flex items-end gap-1 h-48 overflow-x-auto">
+          {report.series.map((s) => (
+            <div
+              key={s.period}
+              className="flex-1 min-w-[10px] h-full flex flex-col justify-end"
+              title={intl.formatMessage(mLive.seriesTip, { period: day(s.period), received: s.received, processed: s.processed })}
+            >
+              <div className="w-full rounded-t bg-brand/30 relative" style={{ height: `${(s.received / max) * 100}%` }}>
+                <div className="absolute bottom-0 inset-x-0 rounded-t bg-brand" style={{ height: s.received === 0 ? 0 : `${(s.processed / s.received) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="px-6 pb-5 flex gap-4 text-[12px] font-semibold text-zinc-400">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-brand/30" />
+            {intl.formatMessage(mLive.received)}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-brand" />
+            {intl.formatMessage(mLive.processed)}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {report.breakdowns.map((b) => (
+          <BarPanel
+            key={b.key}
+            title={b.title}
+            subtitle={intl.formatMessage(mLive.breakdownSubtitle)}
+            data={b.rows.map((r) => ({ label: r.label, value: r.count }))}
+          />
+        ))}
+      </div>
+
+      <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl p-6 flex flex-col gap-3">
+        <h3 className="font-sans font-bold text-lg text-white tracking-tight">{intl.formatMessage(mLive.inactiveTitle)}</h3>
+        {report.inactiveClients.length === 0 ? (
+          <p className="text-[13px] text-zinc-500">{intl.formatMessage(mLive.inactiveNone)}</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {report.inactiveClients.map((c) => (
+              <li key={c.businessId} className="flex items-baseline justify-between gap-4 text-[13px]">
+                <span className="text-zinc-200 font-semibold">{c.name}</span>
+                <span className="text-zinc-500">
+                  {c.lastDocumentAt === null
+                    ? intl.formatMessage(mLive.neverSeen)
+                    : intl.formatMessage(mLive.lastSeen, {
+                        date: intl.formatDate(new Date(c.lastDocumentAt), {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                          timeZone: 'Europe/London',
+                        }),
+                      })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border border-white/5 rounded-[32px] bg-card p-6 text-[13px] text-zinc-500 leading-relaxed">
+        {intl.formatMessage(m.outOfScope)}
+      </div>
+    </motion.div>
+  );
+}
+
+function SyntheticAnalytics() {
   const { clients, businesses, documents, missing, chases, approvals, transactions, statementGaps, statsFor, auditLog } = useAppContext();
   const [scope, setScope] = useState('practice');
   const intl = useIntl();
