@@ -383,6 +383,12 @@ locals {
     # The phone-number id rather than +447441471756: the id survives the number
     # being re-leased, and it is what describe-phone-numbers keys on.
     { name = "SMS_ORIGINATION_IDENTITY", value = "phone-b307702afd4b4c598b92e6e9ff73b71c" },
+    # rush/chase-detection — SMS delivery receipts (sms-events.tf). Sends carry
+    # the configuration set; the workers drain the queue and write delivery
+    # state + cost_pence onto sms_log. Inert while SMS_SENDER is not `aws`.
+    { name = "SMS_CONFIGURATION_SET", value = local.sms_configuration_set_name },
+    { name = "SMS_EVENTS_QUEUE_URL", value = aws_sqs_queue.sms_events.url },
+    { name = "SMS_COST_GBP_PER_USD_MILLI", value = "790" },
     # WhatsApp media fetch (Phase 2). ⚠ LIVE since 11 Sep 2026 — a real System
     # User token (never-expiring, `whatsapp_business_messaging`) replaced the
     # placeholder in the whatsapp secret, so `graph` really downloads receipt
