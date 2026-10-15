@@ -26,6 +26,7 @@ import { type ScopeContext, systemContext } from '../../common/db/scope-context.
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import type { StoredCodingSuggestion } from '../../common/documents/coding-suggestion.js';
 import { CODING_SUGGESTION_KEY } from '../../common/documents/coding-suggestion.js';
+import type { VatNumberCheck } from '../../common/tax/vat-number.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
 import { adviseCoding, type DocumentCodingAdvisor, finishCoding } from './coding-advice.js';
 import {
@@ -176,6 +177,12 @@ export interface PrismaExtractionStepOptions {
    * category. Nothing downstream branches on having one.
    */
   readonly coding?: DocumentCodingAdvisor;
+  /**
+   * The supplier VAT-number check (rush/tax-compliance — checksum, plus HMRC
+   * when configured). Optional like `coding`: absent, nothing is checked and
+   * nothing else changes. Structural, so this module never imports a client.
+   */
+  readonly vatChecker?: { check(raw: string): Promise<VatNumberCheck> };
 }
 
 export class PrismaExtractionStep implements ExtractionStep {
@@ -190,6 +197,8 @@ export class PrismaExtractionStep implements ExtractionStep {
   /** The coding ladder. Absent = no suggestion is offered, and nothing else changes. */
   private readonly coding: DocumentCodingAdvisor | undefined;
 
+  private readonly vatChecker: PrismaExtractionStepOptions['vatChecker'];
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly extractor: DocumentExtractor,
@@ -200,6 +209,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     this.ocrReader = options.ocr;
     this.store = options.store;
     this.coding = options.coding;
+    this.vatChecker = options.vatChecker;
   }
 
   /**
@@ -305,6 +315,22 @@ export class PrismaExtractionStep implements ExtractionStep {
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
     const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed, extractor, coding));
+
+    // Phase 4 — the supplier's VAT number, checked OUTSIDE every transaction
+    // (HMRC is somebody else's network) and stored beside the document. A
+    // verdict is information for the reviewer, never a gate: any failure here
+    // is a WARN and the document stands exactly as phase 3 left it.
+    if (completion !== null && placed.ok && placed.document.vatNumber !== null && this.vatChecker !== undefined) {
+      try {
+        const verdict = await this.vatChecker.check(placed.document.vatNumber);
+        await scopedDb(this.prisma, ctx, (db) =>
+          db.document.update({ where: { id: input.documentId }, data: { supplierVatCheck: verdict as unknown as Prisma.InputJsonValue } }),
+        );
+      } catch (error) {
+        this.logger.warn(`extract: VAT check for ${input.documentId} skipped — ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     if (completion === null || ocr === undefined) return completion;
     return { ...completion, ocr };
   }

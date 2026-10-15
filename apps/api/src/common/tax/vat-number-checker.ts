@@ -147,14 +147,12 @@ export class VatNumberChecker {
 
 /** Config selection: no keys, no HMRC — checksum only, and every verdict says so. */
 export function selectVatNumberChecker(env: {
-  readonly HMRC_CLIENT_ID: string;
-  readonly HMRC_CLIENT_SECRET: string;
-  readonly HMRC_API_BASE: string;
+  readonly HMRC_CLIENT_ID?: string | undefined;
+  readonly HMRC_CLIENT_SECRET?: string | undefined;
+  readonly HMRC_API_BASE?: string | undefined;
 }): VatNumberChecker {
-  const configured = env.HMRC_CLIENT_ID !== '' && env.HMRC_CLIENT_SECRET !== '';
-  return new VatNumberChecker(
-    configured
-      ? new HmrcVatClient({ clientId: env.HMRC_CLIENT_ID, clientSecret: env.HMRC_CLIENT_SECRET, baseUrl: env.HMRC_API_BASE.replace(/\/+$/, '') })
-      : null,
-  );
+  const clientId = env.HMRC_CLIENT_ID ?? '';
+  const clientSecret = env.HMRC_CLIENT_SECRET ?? '';
+  const baseUrl = (env.HMRC_API_BASE ?? 'https://test-api.service.hmrc.gov.uk').replace(/\/+$/, '');
+  return new VatNumberChecker(clientId !== '' && clientSecret !== '' ? new HmrcVatClient({ clientId, clientSecret, baseUrl }) : null);
 }

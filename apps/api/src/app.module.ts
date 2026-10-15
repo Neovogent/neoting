@@ -25,6 +25,7 @@ import { LedgerConnectionsModule } from './modules/publishing/ledger/ledger-conn
 import { PublishingModule } from './modules/publishing/publishing.module.js';
 import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-suggestions.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
+import { TaxComplianceModule } from './modules/tax-compliance/tax-compliance.module.js';
 import { ValidationDedupeModule } from './modules/validation-dedupe/validation-dedupe.module.js';
 
 @Module({
@@ -61,6 +62,7 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
     LedgerConnectionsModule,
     RulesSuggestionsModule,
     TasksModule,
+    TaxComplianceModule,
     ValidationDedupeModule,
     WebUploadModule,
     WhatsAppWebhookModule,

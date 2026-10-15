@@ -513,14 +513,16 @@ const EnvSchema = z.object({
   GOOGLE_DRIVE_REDIRECT_URI: z.string().default(''),
 
   // rush/tax-compliance. HMRC "Check a UK VAT number" v2 (app-restricted,
-  // client credentials). Empty id/secret = checksum-only verdicts, labelled as
-  // such — never an error. Base defaults to the HMRC SANDBOX.
-  HMRC_CLIENT_ID: z.string().default(''),
-  HMRC_CLIENT_SECRET: z.string().default(''),
-  HMRC_API_BASE: z.string().url().default('https://test-api.service.hmrc.gov.uk'),
-  // Companies House public data API key (basic auth, key as username). Empty =
+  // client credentials). Unset id/secret = checksum-only verdicts, labelled as
+  // such — never an error. Base defaults (in selectVatNumberChecker) to the
+  // HMRC SANDBOX, https://test-api.service.hmrc.gov.uk. Optional rather than
+  // defaulted so the hand-built Env fixtures in other lanes' tests stand.
+  HMRC_CLIENT_ID: z.string().optional(),
+  HMRC_CLIENT_SECRET: z.string().optional(),
+  HMRC_API_BASE: z.string().url().optional(),
+  // Companies House public data API key (basic auth, key as username). Unset =
   // the lookup endpoints answer 503 with a sentence saying so.
-  COMPANIES_HOUSE_API_KEY: z.string().default(''),
+  COMPANIES_HOUSE_API_KEY: z.string().optional(),
 
   ONEDRIVE_CLIENT_ID: z.string().default(''),
   ONEDRIVE_CLIENT_SECRET: z.string().default(''),

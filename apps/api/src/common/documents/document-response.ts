@@ -7,6 +7,7 @@ import type {
 import type { Document, DocumentEvent, DocumentSummary, Extraction } from '@neoting/contracts/model';
 
 import { CODING_SUGGESTION_KEY, readStoredCodingSuggestion } from './coding-suggestion.js';
+import { readVatNumberCheck } from '../tax/vat-number.js';
 
 /**
  * Prisma row → contract shape, for every document read surface (#76 wrote the
@@ -59,6 +60,8 @@ export function toDocumentResponse(row: WithClaimant<DocumentRow>, categoryLabel
     routingConfidence: row.routingConfidence,
     pageRange: row.pageRange,
     acceptedExtraction: null, // set by the caller that fetched it — see `withAcceptedExtraction`
+    // rush/tax-compliance — parsed, never cast: the column is Json.
+    supplierVatCheck: readVatNumberCheck(row.supplierVatCheck),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

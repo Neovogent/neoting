@@ -106,6 +106,12 @@ export interface SupplierCodingResult {
   readonly decision: CodingDecision;
   readonly chart: ClientChartOfAccounts;
   readonly history: SupplierHistory;
+  /**
+   * The capitalisation policy `decide()` used — the PRACTICE's when it set one
+   * (`practices.capitalisation_threshold_pence`, rush/tax-compliance), else the
+   * constructor's default. `reconsider()` hands the same one to the model.
+   */
+  readonly policy?: CapitalisationPolicy;
 }
 
 export class SupplierCodingService {
@@ -268,6 +274,16 @@ export class SupplierCodingService {
     // Resolving the chart also proves the business is visible under RLS — an
     // invisible one throws 404 from here, before anything else is read.
     const chart = await this.charts.resolve(db, businessId);
+    // The practice's own threshold, when it set one. `practices` carries no RLS
+    // and this joins through a business RLS just admitted, so it reads only the
+    // caller's own practice.
+    const owner = await db.business.findUnique({
+      where: { id: businessId },
+      select: { practice: { select: { capitalisationThresholdPence: true } } },
+    });
+    const practiceThreshold = owner?.practice?.capitalisationThresholdPence ?? null;
+    const policy: CapitalisationPolicy =
+      practiceThreshold === null ? this.capitalisation : { ...this.capitalisation, thresholdPence: practiceThreshold, source: 'PRACTICE' };
     const supplierKey = normaliseSupplierKey(supplierName);
     const history = await loadHistory(db, businessId, supplierKey);
     const supplier = supplierContext(supplierName, chart, history);
@@ -372,13 +388,14 @@ export class SupplierCodingService {
     const suggestion = suggestCoding(
       { supplier, currency: evidence?.currency ?? null, totalPence: evidence?.totalPence ?? null, taxPence: evidence?.taxPence ?? null, lines: evidence?.lines ?? [] },
       chart,
-      this.capitalisation,
+      policy,
     );
 
     return {
       businessId,
       chart,
       history,
+      policy,
       decision: {
         outcome: 'REVIEW',
         conflictingCategoryCodes: history.categoryCodes,
@@ -440,7 +457,7 @@ export class SupplierCodingService {
     const answer = await this.model.suggest({
       practiceId,
       chart,
-      policy: this.capitalisation,
+      policy: result.policy ?? this.capitalisation,
       client: clientCodingContext(chart),
       evidence: {
         supplier: decision.supplier,

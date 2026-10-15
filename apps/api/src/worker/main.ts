@@ -6,6 +6,7 @@ import { type Job, UnrecoverableError, Worker } from 'bullmq';
 
 import { selectAiBudget } from '../common/ai-budget.js';
 import { getPrismaClient } from '../common/db/prisma.js';
+import { selectVatNumberChecker } from '../common/tax/vat-number-checker.js';
 import { loadEnv } from '../config/env.js';
 import { PrismaChaseAutoClose, PrismaStatementRequestRefusal } from '../modules/chase/index.js';
 import { PrismaExtractionStep, selectExtractor } from '../modules/extraction/index.js';
@@ -34,6 +35,7 @@ import {
 } from '../modules/rules-suggestions/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { LEDGER_REFRESH_INTERVAL_MS, runLedgerRefreshSweep } from '../modules/publishing/ledger/refresh-scheduler.js';
+import { OBLIGATIONS_SWEEP_INTERVAL_MS, runObligationsSweep } from '../modules/tax-compliance/index.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
 /**
@@ -114,6 +116,8 @@ function bootstrap(): void {
   const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore, aiBudget), {
     logger: ocrLogger,
     coding: codingAdvisor,
+    // rush/tax-compliance: the supplier VAT number, checksum + HMRC when keyed.
+    vatChecker: selectVatNumberChecker(env),
     ...(ocrReader === undefined ? {} : { ocr: ocrReader, store: documentStore }),
   });
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
@@ -260,6 +264,19 @@ function bootstrap(): void {
     sweep();
     logger.log('ledger refresh sweep armed (every 12h)');
   }
+
+  // rush/tax-compliance: the daily deadline sweep — recompute every client's
+  // obligations and ring the bell for due-in-7-days and overdue. Idempotent by
+  // its own notified_* stamps; unref() so it never holds shutdown open.
+  const obligationsSweep = (): void => {
+    void runObligationsSweep(getPrismaClient())
+      .then((r) => logger.log(`obligations sweep: ${r.businesses} client(s), ${r.notified} notification(s)`))
+      .catch((error: unknown) =>
+        logger.error(`obligations sweep failed: ${error instanceof Error ? error.message : String(error)}`),
+      );
+  };
+  setInterval(obligationsSweep, OBLIGATIONS_SWEEP_INTERVAL_MS).unref();
+  setTimeout(obligationsSweep, 30_000).unref();
 }
 
 bootstrap();
