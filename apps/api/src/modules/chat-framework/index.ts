@@ -23,6 +23,17 @@
  */
 
 export { MODELS, TASKS, TASK_BUDGETS, DEGRADE_CHAIN, costPence } from './models.js';
+
+/**
+ * rush/documents: the practice Document Vault's auto-name/summary/tag pass is a
+ * structured model call on the `vaultSummary` task. It reuses the SAME runtime
+ * (ladder, Zod retry, breaker, telemetry) rather than a fourth copy of the
+ * forced-tool-call wire.
+ */
+export { invokeStructured } from './invoke-structured.js';
+export { CircuitBreaker } from './provider/circuit-breaker.js';
+export { BedrockModelProvider } from './provider/bedrock-provider.js';
+export type { ModelProvider } from './provider/model-provider.js';
 export type { Tier, Effort, TaskConfig, TaskName } from './models.js';
 
 /**
