@@ -134,7 +134,8 @@ DECLARE
     'integrations', 'reference_syncs', 'publishes',
     'vault_items', 'tasks', 'notifications', 'sms_log',
     'imports', 'exports', 'audit_events',
-    'document_links', 'chat_conversations', 'teams', 'team_members'
+    'document_links', 'chat_conversations', 'teams', 'team_members',
+    'feature_flag_overrides'
   ];
 BEGIN
   FOREACH t IN ARRAY tenant_tables LOOP
@@ -389,6 +390,13 @@ DROP POLICY IF EXISTS team_members_tenant ON team_members;
 CREATE POLICY team_members_tenant ON team_members
   USING (EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND app_can_access_document(NULL::text, t.practice_id)))
   WITH CHECK (EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND app_can_access_document(NULL::text, t.practice_id)));
+
+-- feature_flag_overrides (rush/admin): practice-anchored, no business — the
+-- teams shape. Platform staff write it under the practice's SYSTEM context.
+DROP POLICY IF EXISTS feature_flag_overrides_tenant ON feature_flag_overrides;
+CREATE POLICY feature_flag_overrides_tenant ON feature_flag_overrides
+  USING (app_can_access_document(NULL::text, practice_id))
+  WITH CHECK (app_can_access_document(NULL::text, practice_id));
 
 -- ===========================================================================
 -- 4. Delegated OTP sessions — scoped to exactly the granted items

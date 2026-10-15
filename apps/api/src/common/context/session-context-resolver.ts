@@ -1,5 +1,12 @@
 import type { ScopeContext } from '../db/scope-context.js';
-import { type ContextResolver, type HeaderReader, sessionExpired, unauthenticated } from './request-context.js';
+import {
+  type ContextResolver,
+  type HeaderReader,
+  type ImpersonationInfo,
+  markImpersonation,
+  sessionExpired,
+  unauthenticated,
+} from './request-context.js';
 
 /**
  * The `AUTH_MODE=session` resolver — real since METH Stage 1 (issue #118).
@@ -26,6 +33,15 @@ export interface SessionContextDeps {
    * see `modules/auth-tenancy/session-scope.ts` for why it is safe.
    */
   readonly loadScopeForUser: (userId: string) => Promise<ScopeContext | null>;
+  /**
+   * Support "view as" (rush/admin): a valid impersonation cookie belonging to
+   * THIS verified user swaps the scope for the target practice's SYSTEM
+   * context. Null means "no impersonation" and the ordinary path runs.
+   */
+  readonly resolveImpersonation?: (
+    cookieHeader: string | undefined,
+    userId: string,
+  ) => Promise<{ readonly scope: ScopeContext; readonly info: ImpersonationInfo } | null>;
 }
 
 export class SessionContextResolver implements ContextResolver {
@@ -40,6 +56,14 @@ export class SessionContextResolver implements ContextResolver {
       // was genuinely ours, so "log in again" is safe and more useful.
       if (verdict.reason === 'expired') throw sessionExpired('The session has expired — log in again.');
       throw unauthenticated('missing or invalid session cookie');
+    }
+
+    if (this.deps.resolveImpersonation !== undefined) {
+      const impersonated = await this.deps.resolveImpersonation(headers('cookie'), verdict.userId);
+      if (impersonated !== null) {
+        markImpersonation(impersonated.info);
+        return impersonated.scope;
+      }
     }
 
     const scope = await this.deps.loadScopeForUser(verdict.userId);

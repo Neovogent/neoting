@@ -98,6 +98,11 @@ const EnvSchema = z.object({
   // still protected was therefore only the case it was never meant to allow —
   // a real environment signing real sessions with the empty string.
   SESSION_SECRET: z.string().default(''),
+  // Platform staff (rush/admin): a comma-separated list of login emails allowed
+  // into the `/v1/admin` support console. Empty means nobody — fail closed.
+  // Compared case-insensitively against `users.email` on every request, so
+  // removing an address ends access at the next request.
+  PLATFORM_ADMIN_EMAILS: z.string().optional(),
 
   // Second-factor verification mode, for both the accountant sign-in
   // (`auth.service.ts`) and the client portal (`portal-session.service.ts`).

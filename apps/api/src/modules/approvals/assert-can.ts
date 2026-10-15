@@ -378,6 +378,11 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // except that items stop pausing. "Off" is not the safe direction here, and
   // a table that priced it as one would be the way around the gate.
   'policy.activate': true,
+  // **TIER 1, and the plainest entry here (rush/admin, 15 Oct 2026).** Handing
+  // over ownership hands over this very table: whoever approves it decides who
+  // signs every tier-1 act from then on. Only the current owner may give it
+  // away — the executor additionally refuses anyone else's approval.
+  'practice.transfer-ownership': true,
 };
 
 /** Does approving this kind need the super admin — i.e. is it tier 1? */
@@ -440,6 +445,8 @@ const TIER_1_REFUSAL: Partial<Record<ProposalKind, string>> = {
     "Only your practice's super admin can approve a new coding rule. The rule is queued for them and codes nothing until they approve it.",
   'policy.activate':
     "Only your practice's super admin can approve turning an approval workflow on or off. The change is queued for them; the workflow is exactly as it was.",
+  'practice.transfer-ownership':
+    "Only your practice's current owner can hand over ownership. Nothing has changed.",
 };
 
 /** D44's whole rule, in one expression: the release role AND the ownership flag. */

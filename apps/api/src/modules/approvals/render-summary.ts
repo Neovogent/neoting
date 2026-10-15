@@ -143,6 +143,7 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'document.purge': 'Delete documents permanently',
   'document.resolve-duplicate': 'Resolve a suspected duplicate',
   'policy.activate': 'Turn an approval workflow on or off',
+  'practice.transfer-ownership': 'Transfer practice ownership',
 };
 
 export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
@@ -618,6 +619,20 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         ],
       );
     }
+    case 'practice.transfer-ownership':
+      // Payload-pure like every card: the colleague's NAME is not in the
+      // payload, so the card names the id and states the consequence in full.
+      return summary('Transfer ownership of this practice', [
+        {
+          heading: 'What this does',
+          entries: [
+            { label: 'New owner (user)', value: text(payload['toUserId']) },
+            { label: 'They become', value: 'Practice admin and the practice owner (super admin)' },
+            { label: 'You become', value: 'Practice admin — no longer the owner; you lose release authority' },
+            { label: 'Owners afterwards', value: 'Exactly one' },
+          ],
+        },
+      ]);
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a
       // richer card yet (move-business, split, revoke-link, bank.confirm-match):

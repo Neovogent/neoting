@@ -116,6 +116,7 @@ const DUPLICATE_DETAIL: Partial<Record<ProposalKind, string>> = {
   'document.purge': 'Deleting these documents is already awaiting review. Decide that one in Approvals.',
   'business.offboard': 'Removing this client is already awaiting review. Decide that one in Approvals.',
   'business.reactivate': 'Restoring this client is already awaiting review. Decide that one in Approvals.',
+  'practice.transfer-ownership': 'Handing ownership to this colleague is already awaiting review. Decide that one in Approvals.',
 };
 
 /**

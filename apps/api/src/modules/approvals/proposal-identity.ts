@@ -152,6 +152,8 @@ const IDENTITY: Readonly<Record<ProposalKind, (payload: StoredPayload) => string
   // offboard and a pending restore over one client are two live cards, which
   // is a state a person should be shown rather than one deduped away.
   'business.reactivate': (p) => str(p['businessId']),
+  // One pending hand-over to the same person is one decision.
+  'practice.transfer-ownership': (p) => str(p['toUserId']),
   // ⚠ **`rule.create` deliberately has NO identity.** Two rules over the same
   // client are two different rules — that is what a rule set IS — and the
   // payload carries conditions and effects rather than record ids, so any key

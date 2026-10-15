@@ -19,7 +19,7 @@ import { PasswordResetService } from './password-reset.service.js';
 import { buildPasswordResetLink, NotificationsSignupMailer } from './notifications-signup-mailer.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
-import { InMemorySignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
+import { sharedSignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
 import type { SignupMailer } from './signup-mailer.js';
 import { SignupChainController } from './signup-chain.controller.js';
 import { TotpEnrolmentService } from './totp-enrolment.service.js';
@@ -79,7 +79,7 @@ import {
       // ceiling is really per API task — `sign-in-throttle.ts` states the cost
       // and names the Redis follow-up.
       provide: SIGN_IN_THROTTLE,
-      useFactory: (): SignInThrottle => new InMemorySignInThrottle(),
+      useFactory: (): SignInThrottle => sharedSignInThrottle,
     },
     {
       provide: AUTH_SERVICE,

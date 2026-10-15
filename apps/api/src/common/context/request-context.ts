@@ -48,12 +48,38 @@ export function sessionExpired(detail: string): AppException {
   return new AppException('NT-AUTH-002', HttpStatus.UNAUTHORIZED, 'Session expired', detail);
 }
 
+/**
+ * Support "view as" (rush/admin). Present only when this request resolved
+ * through a valid impersonation cookie: the scope is then the practice's SYSTEM
+ * actor, and this records WHO is really looking. Read-only is enforced by
+ * `ImpersonationMiddleware` before any handler runs; this is for display
+ * (`GET /me`) and audit.
+ */
+export interface ImpersonationInfo {
+  readonly adminUserId: string;
+  readonly adminEmail: string;
+  readonly practiceId: string;
+  readonly expiresAtMs: number;
+}
+
 interface ContextStore {
   readonly headers: HeaderReader;
   resolved?: Promise<ScopeContext>;
+  impersonation?: ImpersonationInfo;
 }
 
 const storage = new AsyncLocalStorage<ContextStore>();
+
+/** Called by the session resolver when the scope came from an impersonation cookie. */
+export function markImpersonation(info: ImpersonationInfo): void {
+  const store = storage.getStore();
+  if (store !== undefined) store.impersonation = info;
+}
+
+/** The impersonation behind THIS request's resolved scope, if any. Valid after `require()`. */
+export function currentImpersonation(): ImpersonationInfo | undefined {
+  return storage.getStore()?.impersonation;
+}
 
 /** Open the per-request context store. Mirrors `runWithTrace` — capture at the edge, read in the work. */
 export function runWithRequestContext<T>(headers: HeaderReader, fn: () => T): T {

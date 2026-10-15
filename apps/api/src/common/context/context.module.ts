@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { getPrismaClient } from '../db/prisma.js';
-import { loadScopeForUser, verifySessionCookieHeader } from '../../modules/auth-tenancy/index.js';
+import { loadScopeForUser, resolveImpersonationScope, verifySessionCookieHeader } from '../../modules/auth-tenancy/index.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { AlsRequestContext, type ContextResolver, type RequestContext } from './request-context.js';
@@ -36,6 +36,8 @@ const CONTEXT_RESOLVER = Symbol('CONTEXT_RESOLVER');
         selectContextResolver(env.AUTH_MODE, {
           verifyCookieHeader: (cookieHeader) => verifySessionCookieHeader(cookieHeader, env.SESSION_SECRET),
           loadScopeForUser: (userId) => loadScopeForUser(getPrismaClient(), userId),
+          resolveImpersonation: (cookieHeader, userId) =>
+            resolveImpersonationScope(getPrismaClient(), env, cookieHeader, userId),
         }),
       inject: [ENV],
     },

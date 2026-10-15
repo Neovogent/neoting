@@ -7331,6 +7331,34 @@ components:
             properties:
               id: { type: string }
               name: { type: string }
+        hideFinancialFields:
+          type: boolean
+          description: |
+            The acting membership's `hide_financial_fields` (SoT §3.3). When
+            true the server nulls amounts and coding in every response and
+            refuses bank, statement and export reads; the screen hides the same
+            surfaces. Display only — the server is the rule.
+        platformAdmin:
+          type: boolean
+          description: True when this login is platform support staff (`PLATFORM_ADMIN_EMAILS`) and may open `/admin`.
+        flags:
+          type: object
+          description: |
+            Every feature flag evaluated for this session — the global value,
+            overridden per practice. Cached server-side for ~30 s.
+          additionalProperties: { type: boolean }
+        impersonation:
+          type: object
+          description: |
+            Present only while platform support is viewing this practice
+            read-only ("view as"). Every write is refused server-side while it
+            is present, and every request is audit-logged with the admin's
+            identity.
+          required: [adminEmail, practiceId, expiresAt]
+          properties:
+            adminEmail: { type: string }
+            practiceId: { type: string }
+            expiresAt: { type: string, format: date-time }
 
     # ---- documents --------------------------------------------------------
 
@@ -8501,6 +8529,7 @@ components:
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
         - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
+        - practice.transfer-ownership # hand the practice's super-admin (owner) flag to another practice-wide colleague
 
     CreateActionProposalRequest:
       description: |
@@ -8527,6 +8556,7 @@ components:
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
         - $ref: '#/components/schemas/PolicyActivateProposalRequest'
+        - $ref: '#/components/schemas/TransferOwnershipProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -8548,6 +8578,7 @@ components:
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
           policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
+          practice.transfer-ownership: '#/components/schemas/TransferOwnershipProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -8761,6 +8792,30 @@ components:
           properties:
             kind: { const: document.purge }
             payload: { $ref: '#/components/schemas/DocumentPurgePayload' }
+
+    TransferOwnershipProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: practice.transfer-ownership }
+            payload: { $ref: '#/components/schemas/TransferOwnershipPayload' }
+
+    TransferOwnershipPayload:
+      type: object
+      required: [toUserId]
+      description: |
+        Hand the practice's ownership (D44's super admin — `PRACTICE_ADMIN` +
+        `is_owner`) to another ACTIVE, practice-WIDE human colleague (rush/admin,
+        15 Oct 2026). Tier 1: only the current owner may approve it. On
+        execution the target becomes `PRACTICE_ADMIN` with `is_owner`, the
+        previous owner keeps `PRACTICE_ADMIN` without it, and exactly one owner
+        remains. Practice-anchored (no `businessId`).
+      properties:
+        toUserId:
+          type: string
+          description: The colleague who becomes the owner. Must hold a practice-wide membership in the caller's practice.
 
     PolicyActivateProposalRequest:
       allOf:
@@ -10983,6 +11038,14 @@ components:
 
             Refused for `CLIENT_ADMIN`, which is practice-wide by definition.
           items: { type: string }
+        hideFinancialFields:
+          type: boolean
+          description: |
+            SoT §3.3's non-finance submitter (rush/admin, 15 Oct 2026). When
+            true, the API serves this colleague documents and extractions with
+            every amount and every coding field nulled, refuses them bank
+            transactions, statements and exports, and grounds their chat on no
+            figure. Omit to leave it alone.
 
     InvitationPreviewRequest:
       type: object

@@ -50,6 +50,7 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   'document.purge': { documentIds: ['doc_1'], reason: 'Duplicate scan, already in Trash' },
   'document.resolve-duplicate': { documentKeepId: 'doc_1', documentCopyId: 'doc_2', resolution: 'delete-copy' },
   'policy.activate': { workflowId: 'wfl_1', active: true },
+  'practice.transfer-ownership': { toUserId: 'usr_2' },
 };
 
 test('every kind parses its own valid example — the index ↔ kind pin', () => {

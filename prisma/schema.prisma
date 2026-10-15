@@ -2000,3 +2000,23 @@ model FeatureFlag {
 
   @@map("feature_flags")
 }
+
+// ── rush/admin ──
+
+/// A per-practice override of one `feature_flags` row. A row here wins over the
+/// global `is_enabled` for that practice; no row means "inherit the global".
+/// Written only by platform staff through the admin console (audited), read by
+/// `FeatureFlagService` under the practice's own scope. No FK to `practices` or
+/// `feature_flags` on purpose: plain columns, so this lands without touching
+/// either existing model.
+model FeatureFlagOverride {
+  id         String   @id @default(cuid())
+  practiceId String   @map("practice_id")
+  flagKey    String   @map("flag_key")
+  isEnabled  Boolean  @map("is_enabled")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([practiceId, flagKey])
+  @@index([flagKey])
+  @@map("feature_flag_overrides")
+}

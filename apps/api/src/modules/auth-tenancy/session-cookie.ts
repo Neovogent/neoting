@@ -78,7 +78,7 @@ export function verifySessionCookieHeader(
  * dependency (METH §3: none), and no decoding: the token alphabet is base64url
  * plus `.`, none of which a cookie encodes.
  */
-function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
+export function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
   if (cookieHeader === undefined) return undefined;
   for (const part of cookieHeader.split(';')) {
     const eq = part.indexOf('=');

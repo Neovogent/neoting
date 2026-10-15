@@ -19,3 +19,23 @@
  */
 export { SESSION_COOKIE_NAME, verifySessionCookieHeader } from './session-cookie.js';
 export { loadScopeForUser } from './session-scope.js';
+
+// rush/admin — the platform support console's auth primitives.
+export {
+  isPlatformAdminEmail,
+  loadPlatformAdmin,
+  notPlatformStaff,
+  type PlatformAdmin,
+  resolvePlatformAdmin,
+} from './platform-admin-auth.js';
+export {
+  IMPERSONATION_COOKIE_NAME,
+  IMPERSONATION_TTL_MS,
+  type ImpersonationClaims,
+  impersonationRefuses,
+  resolveImpersonationScope,
+  signImpersonation,
+  verifyImpersonation,
+} from './impersonation.js';
+export { isSignInLocked, unlockSignInAddress } from './sign-in-throttle.js';
+export { normaliseEmail } from './practice-signup.service.js';

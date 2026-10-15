@@ -209,3 +209,24 @@ export class RateLimitedException extends AppException {
 function secondsUntil(atMs: number, nowMs: number): number {
   return Math.max(1, Math.ceil((atMs - nowMs) / 1000));
 }
+
+/**
+ * The process-wide instance (rush/admin). `auth-tenancy.module.ts` provides
+ * THIS object, so the support console's "unlock" clears the same counter
+ * sign-in reads. ⚠ ponytail: in-process like the throttle itself — with more
+ * than one API task, an unlock reaches only the task that served it. Moves to
+ * Redis with the throttle (see this module's CLAUDE.md TODO).
+ */
+export const sharedSignInThrottle: SignInThrottle = new InMemorySignInThrottle();
+
+/** Clear a locked sign-in address. Returns whether it was locked before. */
+export function unlockSignInAddress(normalisedEmail: string, nowMs: number = Date.now()): boolean {
+  const wasLocked = sharedSignInThrottle.inspect(normalisedEmail, nowMs).locked;
+  sharedSignInThrottle.recordSuccess(normalisedEmail);
+  return wasLocked;
+}
+
+/** Is this address locked right now? (The console's tenant browser shows it.) */
+export function isSignInLocked(normalisedEmail: string, nowMs: number = Date.now()): boolean {
+  return sharedSignInThrottle.inspect(normalisedEmail, nowMs).locked;
+}
