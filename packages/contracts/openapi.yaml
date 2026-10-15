@@ -251,6 +251,12 @@ tags:
       one: applying item 66's question — *whose signature does this carry* — a
       ticked checkbox carries nobody's. Nothing here touches a client's books,
       a document's coding, or anything outside the product.
+  - name: tax-compliance
+    description: |
+      UK VAT number checks (HMRC), Companies House lookup, the per-client
+      filing and payment deadline calendar, and the practice's capitalisation
+      threshold. Every write is `ingest`: profile metadata and a checklist,
+      never a client's books.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -5852,6 +5858,290 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+  # ==========================================================================
+  # rush/tax-compliance — VAT number checks, Companies House lookup, the
+  # obligation (deadline) calendar, and the practice capitalisation threshold.
+  # ==========================================================================
+  /vat-number-checks:
+    get:
+      operationId: checkVatNumber
+      summary: Check a UK VAT registration number
+      description: |
+        Format + HMRC modulus check (mod-97 and the 9755 series) always; the
+        HMRC "Check a UK VAT number" API v2 as well when the deployment has
+        HMRC credentials. `source` says which answered — a checksum pass is
+        never presented as an HMRC confirmation. Results are cached.
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      parameters:
+        - name: vatNumber
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 20 }
+      responses:
+        '200':
+          description: The verdict.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VatNumberCheck' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /companies-house/companies:
+    get:
+      operationId: searchCompanies
+      summary: Search Companies House by company name or number
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+      responses:
+        '200':
+          description: Up to ten matches.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanySearchResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /companies-house/companies/{companyNumber}:
+    parameters:
+      - name: companyNumber
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9]{1,10}$' }
+    get:
+      operationId: getCompanyProfile
+      summary: One company's Companies House profile
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyProfile' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /businesses/{businessId}/tax-profile:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+    get:
+      operationId: getTaxProfile
+      summary: The client's tax profile (what its deadlines are computed from)
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxProfile' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      operationId: replaceTaxProfile
+      summary: Update the client's tax profile
+      description: |
+        Omitted fields are unchanged; `null` clears. A VAT number is checked
+        (checksum, and HMRC when configured) and the verdict stored beside it —
+        flagged, never refused. Saving recomputes this client's obligations.
+        Profile metadata, not books: `ingest`, no proposal.
+      tags: [tax-compliance]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaxProfileWriteRequest' }
+      responses:
+        '200':
+          description: The stored profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /obligations:
+    get:
+      operationId: listObligations
+      summary: Filing and payment deadlines
+      description: |
+        Every client the caller reaches, or one with `businessId`. Ordered by
+        due date, soonest first. `status` is recomputed against today on read,
+        so an unticked deadline that passed overnight reads OVERDUE.
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ObligationStatus' }
+        - name: from
+          in: query
+          required: false
+          description: Due on or after this date.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          description: Due on or before this date.
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of obligations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Obligation' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createObligation
+      summary: Add a manual deadline for a client
+      tags: [tax-compliance]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ObligationCreateRequest' }
+      responses:
+        '201':
+          description: The stored obligation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Obligation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /obligations/regeneration:
+    post:
+      operationId: regenerateObligations
+      summary: Recompute deadlines from the tax profiles
+      description: |
+        Upserts the COMPUTED rows for one client (`businessId`) or every client
+        the caller reaches. Idempotent by construction; manual rows and ticked
+        rows are never touched.
+      tags: [tax-compliance]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ObligationRegenerationRequest' }
+      responses:
+        '200':
+          description: How much was recomputed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObligationRegenerationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /obligations/{obligationId}/completion:
+    parameters:
+      - name: obligationId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: setObligationCompletion
+      summary: Mark a deadline done (or not done)
+      tags: [tax-compliance]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ObligationCompletionRequest' }
+      responses:
+        '200':
+          description: The stored obligation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Obligation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /practice-settings/capitalisation:
+    get:
+      operationId: getCapitalisationPolicy
+      summary: The practice's capital-vs-revenue threshold
+      tags: [tax-compliance]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The policy in force.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapitalisationPolicy' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      operationId: replaceCapitalisationPolicy
+      summary: Set the practice's capital-vs-revenue threshold
+      description: |
+        Practice admins only. `thresholdPence: null` returns the practice to
+        the platform default (£1,000 per unit).
+      tags: [tax-compliance]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapitalisationPolicyWriteRequest' }
+      responses:
+        '200':
+          description: The policy now in force.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapitalisationPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 # ============================================================================
 # COMPONENTS
 # ============================================================================
@@ -7597,6 +7887,14 @@ components:
             acceptedExtraction:
               oneOf:
                 - $ref: '#/components/schemas/Extraction'
+                - type: 'null'
+            supplierVatCheck:
+              description: |
+                The extracted supplier VAT number's verdict (rush/tax-compliance).
+                Optional: absent on documents read before the check existed and
+                on documents with no VAT number.
+              oneOf:
+                - $ref: '#/components/schemas/VatNumberCheck'
                 - type: 'null'
             links:
               type: array
@@ -11623,3 +11921,212 @@ components:
           oneOf:
             - $ref: '#/components/schemas/BusinessSubscription'
             - type: 'null'
+
+    # ---- rush/tax-compliance ---------------------------------------------
+    VatNumberCheckStatus:
+      type: string
+      description: |
+        `VALID` — HMRC confirms the registration. `NOT_REGISTERED` — HMRC has
+        no such registration. `CHECKSUM_ONLY` — the number passes the HMRC
+        modulus check but no HMRC lookup was made (no credentials configured,
+        or HMRC unavailable — see `note`). `INVALID_FORMAT` /
+        `INVALID_CHECKSUM` — the number cannot be a UK VRN.
+      enum: [VALID, NOT_REGISTERED, CHECKSUM_ONLY, INVALID_FORMAT, INVALID_CHECKSUM]
+
+    VatNumberCheck:
+      type: object
+      required: [vatNumber, status, source, checkedAt]
+      properties:
+        vatNumber: { type: string, description: 'Normalised: GB + nine digits (or GBGD/GBHA + three).' }
+        status: { $ref: '#/components/schemas/VatNumberCheckStatus' }
+        source:
+          type: string
+          enum: [HMRC, CHECKSUM]
+          description: Who answered. CHECKSUM is a format/modulus check only — never a registration confirmation.
+        registeredName: { type: [string, 'null'] }
+        registeredAddress: { type: [string, 'null'] }
+        note: { type: [string, 'null'], description: 'Why HMRC was not consulted, when it was not.' }
+        checkedAt: { type: string, format: date-time }
+
+    CompanySearchItem:
+      type: object
+      required: [companyNumber, title]
+      properties:
+        companyNumber: { type: string }
+        title: { type: string }
+        companyStatus: { type: [string, 'null'] }
+        companyType: { type: [string, 'null'] }
+        incorporatedOn: { type: [string, 'null'], format: date }
+        addressSnippet: { type: [string, 'null'] }
+
+    CompanySearchResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CompanySearchItem' }
+
+    CompanyProfile:
+      type: object
+      required: [companyNumber, companyName, sicCodes]
+      properties:
+        companyNumber: { type: string }
+        companyName: { type: string }
+        companyStatus: { type: [string, 'null'] }
+        companyType: { type: [string, 'null'] }
+        incorporatedOn: { type: [string, 'null'], format: date }
+        registeredOfficeAddress: { type: [string, 'null'] }
+        sicCodes: { type: array, items: { type: string } }
+        yearEndDay: { type: [integer, 'null'], minimum: 1, maximum: 31 }
+        yearEndMonth: { type: [integer, 'null'], minimum: 1, maximum: 12 }
+        accountsNextDue: { type: [string, 'null'], format: date }
+        accountsNextMadeUpTo: { type: [string, 'null'], format: date }
+        confirmationStatementNextDue: { type: [string, 'null'], format: date }
+
+    LegalStructure:
+      type: string
+      enum: [SOLE_TRADER, PARTNERSHIP, LIMITED_COMPANY, LLP, OTHER]
+
+    VatFrequency:
+      type: string
+      enum: [MONTHLY, QUARTERLY, ANNUAL]
+
+    TaxProfile:
+      type: object
+      required: [businessId, vatRegistered, sicCodes]
+      properties:
+        businessId: { type: string }
+        legalStructure:
+          oneOf:
+            - $ref: '#/components/schemas/LegalStructure'
+            - type: 'null'
+        companyNumber: { type: [string, 'null'] }
+        incorporatedOn: { type: [string, 'null'], format: date }
+        yearEndMonth: { type: [integer, 'null'], minimum: 1, maximum: 12 }
+        yearEndDay: { type: [integer, 'null'], minimum: 1, maximum: 31 }
+        vatRegistered: { type: boolean }
+        vatNumber: { type: [string, 'null'] }
+        vatFrequency:
+          oneOf:
+            - $ref: '#/components/schemas/VatFrequency'
+            - type: 'null'
+        vatPeriodStart:
+          type: [string, 'null']
+          format: date
+          description: The first day of any one VAT period — the stagger is derived from it.
+        hasEmployees: { type: [boolean, 'null'] }
+        accountsNextDue: { type: [string, 'null'], format: date }
+        confirmationStatementNextDue: { type: [string, 'null'], format: date }
+        companyStatus: { type: [string, 'null'] }
+        sicCodes: { type: array, items: { type: string } }
+        vatNumberCheck:
+          oneOf:
+            - $ref: '#/components/schemas/VatNumberCheck'
+            - type: 'null'
+
+    TaxProfileWriteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        legalStructure:
+          oneOf:
+            - $ref: '#/components/schemas/LegalStructure'
+            - type: 'null'
+        companyNumber: { type: [string, 'null'], maxLength: 20 }
+        incorporatedOn: { type: [string, 'null'], format: date }
+        yearEndMonth: { type: [integer, 'null'], minimum: 1, maximum: 12 }
+        yearEndDay: { type: [integer, 'null'], minimum: 1, maximum: 31 }
+        vatRegistered: { type: boolean }
+        vatNumber: { type: [string, 'null'], maxLength: 20 }
+        vatFrequency:
+          oneOf:
+            - $ref: '#/components/schemas/VatFrequency'
+            - type: 'null'
+        vatPeriodStart: { type: [string, 'null'], format: date }
+        hasEmployees: { type: [boolean, 'null'] }
+        accountsNextDue: { type: [string, 'null'], format: date }
+        confirmationStatementNextDue: { type: [string, 'null'], format: date }
+        companyStatus: { type: [string, 'null'], maxLength: 60 }
+        sicCodes: { type: array, maxItems: 4, items: { type: string, maxLength: 10 } }
+
+    ObligationKind:
+      type: string
+      enum: [VAT_RETURN, PAYE, SA_PAYMENT, SA_REGISTRATION, CT_PAYMENT, CT600, CH_ACCOUNTS, CH_CONFIRMATION, MANUAL]
+
+    ObligationStatus:
+      type: string
+      description: DUE is within the next 7 days (today included); OVERDUE is past and unticked.
+      enum: [UPCOMING, DUE, OVERDUE, DONE]
+
+    Obligation:
+      type: object
+      required: [id, businessId, businessName, kind, source, title, dueDate, status]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        businessName: { type: string }
+        kind: { $ref: '#/components/schemas/ObligationKind' }
+        source: { type: string, enum: [COMPUTED, MANUAL] }
+        title: { type: string }
+        periodStart: { type: [string, 'null'], format: date }
+        periodEnd: { type: [string, 'null'], format: date }
+        dueDate: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'YYYY-MM-DD, a calendar date.' }
+        status: { $ref: '#/components/schemas/ObligationStatus' }
+        notes: { type: [string, 'null'] }
+        doneAt: { type: [string, 'null'], format: date-time }
+
+    ObligationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [businessId, title, dueDate]
+      properties:
+        businessId: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        dueDate: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'YYYY-MM-DD, a calendar date.' }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+
+    ObligationCompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [done]
+      properties:
+        done: { type: boolean }
+
+    ObligationRegenerationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        businessId: { type: string }
+
+    ObligationRegenerationResult:
+      type: object
+      required: [businesses, obligations]
+      properties:
+        businesses: { type: integer, minimum: 0 }
+        obligations: { type: integer, minimum: 0 }
+
+    CapitalisationPolicy:
+      type: object
+      required: [thresholdPence, source]
+      properties:
+        thresholdPence:
+          type: integer
+          minimum: 0
+          x-nt-money: true
+          description: Per-unit threshold, integer pence. At or above it, hardware capitalises.
+        source:
+          type: string
+          enum: [PRACTICE, PLATFORM_DEFAULT]
+
+    CapitalisationPolicyWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [thresholdPence]
+      properties:
+        thresholdPence:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100000000
+          x-nt-money: true

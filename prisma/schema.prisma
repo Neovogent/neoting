@@ -56,6 +56,11 @@ model Practice {
   /// choose between a link that dies and a link that outlives the engagement.
   documentLinkTtlDays Int? @map("document_link_ttl_days")
 
+  /// The practice's capital-vs-revenue threshold, integer pence per unit.
+  /// NULL means the platform default (100000 = £1,000) and the coding card says
+  /// "our default" rather than "your policy" (rush/tax-compliance).
+  capitalisationThresholdPence Int? @map("capitalisation_threshold_pence")
+
   /// The Meta phone_number_id of the WhatsApp Business number that RECEIVES
   /// this practice's client messages (#79's promised column — additive,
   /// 1 Sep 2026). Derived from the number that received the message, never
@@ -207,6 +212,8 @@ model Business {
   imports            Import[]
   auditEvents        AuditEvent[]
   documentLinks      DocumentLink[]
+  obligations        Obligation[]
+  taxProfile         TaxProfile?
 
   @@index([practiceId])
   @@index([practiceId, isActive])
@@ -712,6 +719,10 @@ model Document {
   /// that appears in any export (D43 — every exported line must resolve back to
   /// its source).
   deletedAt DateTime? @map("deleted_at")
+
+  /// The extracted supplier VAT number's verdict (checksum, and HMRC when keys
+  /// are configured). Json, parsed on the way out (rush/tax-compliance).
+  supplierVatCheck Json? @map("supplier_vat_check")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1999,4 +2010,87 @@ model FeatureFlag {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+// ── rush/tax-compliance ──
+
+/// The tax-profile facts `businesses` has no column for (Companies House dates,
+/// the employees flag, the client's own VRN verdict), 1:1 with the business.
+/// The obligation calendar computes from these plus the existing businesses
+/// columns (legal_structure, vat_frequency, vat_period_start, year_end_*).
+model TaxProfile {
+  businessId String @id @map("business_id")
+
+  incorporatedOn               DateTime? @map("incorporated_on") @db.Date
+  hasEmployees                 Boolean?  @map("has_employees")
+  accountsNextDue              DateTime? @map("accounts_next_due") @db.Date
+  confirmationStatementNextDue DateTime? @map("confirmation_statement_next_due") @db.Date
+  sicCodes                     String[]  @default([]) @map("sic_codes")
+  companyStatus                String?   @map("company_status")
+  /// The client's own VRN verdict, same shape as documents.supplier_vat_check.
+  vatNumberCheck               Json?     @map("vat_number_check")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("tax_profiles")
+}
+
+enum ObligationKind {
+  VAT_RETURN
+  PAYE
+  SA_PAYMENT
+  SA_REGISTRATION
+  CT_PAYMENT
+  CT600
+  CH_ACCOUNTS
+  CH_CONFIRMATION
+  MANUAL
+}
+
+enum ObligationStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  DONE
+}
+
+enum ObligationSource {
+  COMPUTED
+  MANUAL
+}
+
+/// A filing or payment deadline for one client. COMPUTED rows are regenerated
+/// from the tax profile (keyed by `computeKey`, so a re-run updates rather than
+/// duplicates); MANUAL rows are the practice's own.
+model Obligation {
+  id         String  @id @default(cuid())
+  businessId String  @map("business_id")
+  practiceId String? @map("practice_id")
+
+  kind         ObligationKind
+  source       ObligationSource
+  title        String
+  computeKey   String?          @map("compute_key")
+  periodStart  DateTime?        @map("period_start") @db.Date
+  periodEnd    DateTime?        @map("period_end") @db.Date
+  dueDate      DateTime         @map("due_date") @db.Date
+  status       ObligationStatus @default(UPCOMING)
+  notes        String?
+  doneAt       DateTime?        @map("done_at")
+  doneByUserId String?          @map("done_by_user_id")
+
+  notifiedDueSoonAt DateTime? @map("notified_due_soon_at")
+  notifiedOverdueAt DateTime? @map("notified_overdue_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, computeKey])
+  @@index([businessId, dueDate])
+  @@index([practiceId, dueDate])
+  @@map("obligations")
 }
