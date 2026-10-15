@@ -74,6 +74,12 @@ const OffboardClientDialog = lazy(() =>
 );
 /** This client's Trash (review item 61). Its own chunk — see the file's header. */
 const ClientTrashPanel = lazy(() => import('./ClientTrashPanel'));
+/** The practice-side Document Vault (SoT §10), one client's shelf. Its own chunk. */
+const VaultView = lazy(() => import('./VaultView').then((m) => ({ default: m.VaultView })));
+/** Dext / Hubdoc / AutoEntry bundle import — opens on a click, so lazy. */
+const ImportBundleDialog = lazy(() => import('../components/DynamicComponents/ImportBundleDialog'));
+/** The £2/month Vault add-on switch on the Settings tab. Its own chunk. */
+const VaultAddOnToggle = lazy(() => import('../components/DynamicComponents/VaultAddOnToggle'));
 import { currency } from '../lib/resolver';
 import { DocumentDate, DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import { healthTone } from '../lib/selectors';
@@ -104,6 +110,7 @@ const m = defineMessages({
      documents live. See `ClientTrashPanel`'s header for why not Settings. */
   subTabRegister: { id: 'clients.clientDetailView.subTabRegister', defaultMessage: 'Register' },
   subTabTrash: { id: 'clients.clientDetailView.subTabTrash', defaultMessage: 'Trash' },
+  importBundle: { id: 'clients.clientDetailView.importBundle', defaultMessage: 'Import from Dext / Hubdoc / AutoEntry' },
   // The client's contact email, editable since 8 Sep 2026 — see
   // `ContactEmailField` for why it could not be until now.
   contactEmailHint: {
@@ -675,7 +682,7 @@ const m = defineMessages({
  */
 const TABS = [
   'Overview', 'Costs', 'Sales', 'Bank', 'Supplier Statements', 'Expense Claims',
-  'Approvals', 'Documents', 'Chases', 'Tasks', 'Users', 'Connections', 'Settings', 'AI',
+  'Approvals', 'Documents', 'Vault', 'Chases', 'Tasks', 'Users', 'Connections', 'Settings', 'AI',
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -709,6 +716,7 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   'Expense Claims': { id: 'clients.clientDetailView.tabExpenseClaims', defaultMessage: 'Expense Claims' },
   Approvals: { id: 'clients.clientDetailView.tabApprovals', defaultMessage: 'Approvals' },
   Documents: { id: 'clients.clientDetailView.tabDocuments', defaultMessage: 'Documents' },
+  Vault: { id: 'clients.clientDetailView.tabVault', defaultMessage: 'Vault' },
   Chases: { id: 'clients.clientDetailView.tabChases', defaultMessage: 'Chases' },
   Tasks: { id: 'clients.clientDetailView.tabTasks', defaultMessage: 'Tasks' },
   Users: { id: 'clients.clientDetailView.tabUsers', defaultMessage: 'Users' },
@@ -855,6 +863,7 @@ export function ClientDetailView() {
   const client = clients.find((c) => c.id === openClientId);
   /** The Documents tab's own upload door (review item 62). */
   const registerFileRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   /**
    * Wireframe screen 7, "Channel mix (how docs arrive)" — a real share of this
@@ -1938,6 +1947,16 @@ export function ClientDetailView() {
                     className="hidden"
                     onChange={(e) => { uploadToRegister(e.target.files); e.target.value = ''; }}
                   />
+                  {API_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={() => setImportOpen(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-zinc-200 border border-white/10 hover:bg-raised transition-colors"
+                    >
+                      <Upload size={16} strokeWidth={2.5} />
+                      {intl.formatMessage(m.importBundle)}
+                    </button>
+                  )}
                 </>
               }
               emptyMessage={intl.formatMessage(m.documentsEmpty)}
@@ -2067,6 +2086,12 @@ export function ClientDetailView() {
               goes when a connection has stopped working, and a screen you visit
               because something is wrong should not be three scrolls down
               somebody else's page. */}
+          {tab === 'Vault' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <VaultView businessId={client.id} />
+            </Suspense>
+          )}
+
           {tab === 'Connections' && (
             <Suspense fallback={<TabSkeleton />}>
               <ClientConnections client={client} />
@@ -2106,6 +2131,9 @@ export function ClientDetailView() {
                     email={contactEmail}
                     sentAt={client.setupLinkSentAt}
                   />
+                  <Suspense fallback={null}>
+                    <VaultAddOnToggle businessId={client.id} />
+                  </Suspense>
                 </Panel>
               ) : (
               <Panel title={intl.formatMessage(m.panelSetupLink)} icon={Smartphone}>
@@ -2237,6 +2265,17 @@ export function ClientDetailView() {
       </div>
 
       <AnimatePresence>
+        {importOpen && (
+          <Modal onClose={() => setImportOpen(false)} label={intl.formatMessage(m.importBundle)}>
+            <Suspense fallback={<TabSkeleton />}>
+              <ImportBundleDialog
+                businessId={client.id}
+                onClose={() => setImportOpen(false)}
+                onOpenApprovals={() => { setImportOpen(false); setActiveTab('Approvals'); }}
+              />
+            </Suspense>
+          </Modal>
+        )}
         {chasing && (
           <Modal onClose={() => setChasing(null)}>
             <div className="w-full flex flex-col items-center gap-3">

@@ -130,7 +130,7 @@ export type { ClientStats } from '../lib/selectors';
  */
 export const SIDEBAR_TABS = [
   'AI Workspace', 'Clients', 'Inboxes', 'Chases', 'Approvals',
-  'Documents', 'Export', 'Analytics', 'Team', 'Settings',
+  'Documents', 'Vault', 'Export', 'Analytics', 'Team', 'Settings',
 ] as const;
 
 interface AppContextType {

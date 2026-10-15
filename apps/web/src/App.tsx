@@ -66,6 +66,7 @@ const TeamView = lazy(() => import('./views/TeamView').then((m) => ({ default: m
 const SettingsView = lazy(() => import('./views/SettingsView').then((m) => ({ default: m.SettingsView })));
 const ChasesView = lazy(() => import('./views/ChasesView').then((m) => ({ default: m.ChasesView })));
 const ExportView = lazy(() => import('./views/ExportView').then((m) => ({ default: m.ExportView })));
+const VaultView = lazy(() => import('./views/VaultView').then((m) => ({ default: m.VaultView })));
 const GenericView = lazy(() => import('./views/GenericView').then((m) => ({ default: m.GenericView })));
 
 // Practice-only, and a modal, so it is the safest thing in the file to defer:
@@ -256,6 +257,13 @@ export default function App() {
     // that stage was told to stop short of.
     case 'Export':
       content = <ExportView />;
+      break;
+    case 'Vault':
+      content = (
+        <div className="flex-1 min-w-0 bg-ground h-full overflow-y-auto p-4 md:p-10">
+          <VaultView />
+        </div>
+      );
       break;
     case 'Team':
       content = <TeamView />;

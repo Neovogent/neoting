@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Bot, Users, Inbox, CheckCircle, MoreHorizontal, Send, FileText, Download, BarChart2,
-  Shield, Settings, Store, Sun, Moon, X, type LucideProps,
+  Shield, Settings, Store, Sun, Moon, X, Lock, type LucideProps,
 } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { motion, AnimatePresence } from 'motion/react';
@@ -63,6 +63,7 @@ const PRIMARY: Item[] = [
 const MORE: Item[] = [
   { icon: Send, tab: 'Chases', label: shellNav.chases },
   { icon: FileText, tab: 'Documents', label: shellNav.documents },
+  { icon: Lock, tab: 'Vault', label: shellNav.vault },
   { icon: Download, tab: 'Export', label: shellNav.export },
   { icon: BarChart2, tab: 'Analytics', label: shellNav.analytics },
   { icon: Shield, tab: 'Team', label: shellNav.team },

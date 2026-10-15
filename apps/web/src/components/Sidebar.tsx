@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import {
   Bot, Users, Inbox,
   Send, CheckCircle, FileText, Download, BarChart2,
-  Shield, Settings, Store, Sun, Moon,
+  Shield, Settings, Store, Sun, Moon, Lock,
   type LucideProps,
 } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -30,6 +30,7 @@ export const shellNav = defineMessages({
   chases: { id: 'shell.sidebar.chases', defaultMessage: 'Chases' },
   approvals: { id: 'shell.sidebar.approvals', defaultMessage: 'Approvals' },
   documents: { id: 'shell.sidebar.documents', defaultMessage: 'Documents' },
+  vault: { id: 'shell.sidebar.vault', defaultMessage: 'Vault' },
   // 'Export', never 'Publish' or 'Send' — in ID nothing leaves the product on
   // its own and no label may suggest a ledger was written to (D42).
   export: { id: 'shell.sidebar.export', defaultMessage: 'Export' },
@@ -50,6 +51,7 @@ const navItems = [
   { icon: Send, tab: 'Chases', label: shellNav.chases },
   { icon: CheckCircle, tab: 'Approvals', label: shellNav.approvals },
   { icon: FileText, tab: 'Documents', label: shellNav.documents },
+  { icon: Lock, tab: 'Vault', label: shellNav.vault },
   { icon: Download, tab: 'Export', label: shellNav.export },
   { icon: BarChart2, tab: 'Analytics', label: shellNav.analytics },
   { icon: Shield, tab: 'Team', label: shellNav.team },
