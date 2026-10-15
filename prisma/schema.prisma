@@ -232,6 +232,9 @@ model Business {
 enum UserKind {
   HUMAN
   SYSTEM
+  /// rush/public-api: the actor behind one practice API key. No email, no
+  /// password — it cannot sign in (`loadScopeForUser` admits HUMAN only).
+  API
 }
 
 model User {
@@ -1999,4 +2002,123 @@ model FeatureFlag {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+// ── rush/public-api ──
+//
+// Practice-level tables (no business): RLS is the anchor-pair predicate called
+// with a NULL business, the `teams` shape. `webhook_events` carries the
+// business of the thing that happened, so a client-scoped actor can write it.
+
+/// A practice API key (`nt_live_<practiceId>_<secret>`). Only the SHA-256 of the
+/// whole token is stored; the token is shown once, at creation.
+model ApiKey {
+  id          String    @id @default(cuid())
+  practiceId  String    @map("practice_id")
+  /// The `UserKind.API` user this key acts as — what audit rows and proposals name.
+  actorUserId String    @unique @map("actor_user_id")
+  name        String
+  tokenHash   String    @unique @map("token_hash")
+  /// Last four characters of the token, for recognising a key in a list.
+  hint        String
+  scopes      String[]
+  createdById String    @map("created_by_id")
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([practiceId])
+  @@map("api_keys")
+}
+
+/// An outbound webhook target. The signing secret is AES-GCM sealed
+/// (`common/oauth/token-vault.ts`), never stored in the clear.
+model WebhookEndpoint {
+  id           String    @id @default(cuid())
+  practiceId   String    @map("practice_id")
+  url          String
+  description  String?
+  secretSealed String    @map("secret_sealed")
+  events       String[]
+  disabledAt   DateTime? @map("disabled_at")
+  createdById  String    @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
+
+  @@index([practiceId])
+  @@map("webhook_endpoints")
+}
+
+/// The outbox: one row per thing that happened, written inside the
+/// transaction that made it happen. The worker sweep fans it out to endpoints.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  practiceId  String    @map("practice_id")
+  businessId  String?   @map("business_id")
+  type        String
+  payload     Json
+  fannedOutAt DateTime? @map("fanned_out_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  deliveries WebhookDelivery[]
+
+  @@index([practiceId, fannedOutAt])
+  @@map("webhook_events")
+}
+
+/// One event to one endpoint: the delivery log, and the retry clock.
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  endpointId    String    @map("endpoint_id")
+  eventId       String    @map("event_id")
+  /// pending | succeeded | failed
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  responseCode  Int?      @map("response_code")
+  lastError     String?   @map("last_error")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event    WebhookEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}
+
+/// A browser's Web Push subscription for one practice member.
+model PushSubscription {
+  id         String   @id @default(cuid())
+  practiceId String   @map("practice_id")
+  userId     String   @map("user_id")
+  endpoint   String
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([practiceId, endpoint])
+  @@index([practiceId, userId])
+  @@map("push_subscriptions")
+}
+
+/// A Slack or Microsoft Teams incoming-webhook URL. The URL is itself a
+/// credential, so it is sealed like a webhook secret.
+model ChatWebhook {
+  id         String   @id @default(cuid())
+  practiceId String   @map("practice_id")
+  /// slack | teams
+  kind       String
+  urlSealed  String   @map("url_sealed")
+  urlHint    String   @map("url_hint")
+  events     String[]
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([practiceId, kind])
+  @@map("chat_webhooks")
 }

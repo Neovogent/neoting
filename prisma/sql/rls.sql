@@ -614,3 +614,40 @@ CREATE TRIGGER action_proposals_guard_trigger
 
 CREATE INDEX IF NOT EXISTS memberships_user_business_idx ON memberships (user_id, business_id);
 CREATE INDEX IF NOT EXISTS memberships_user_practice_idx ON memberships (user_id, practice_id);
+
+-- ===========================================================================
+-- 8. rush/public-api — API keys, outbound webhooks, push, Slack/Teams
+--    (migration 20261015150000_public_api_webhooks_push)
+-- ===========================================================================
+--
+-- Practice-level tables use the anchor-pair predicate with a NULL business —
+-- the `teams` shape — so a delegated portal session can never read them.
+-- `webhook_events` is written inside whatever transaction caused the event,
+-- including a client-scoped one, so it takes the business branch too.
+-- `webhook_deliveries` is reached through its endpoint (the chase_messages shape).
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['api_keys', 'webhook_endpoints', 'webhook_events', 'webhook_deliveries', 'push_subscriptions', 'chat_webhooks'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+  END LOOP;
+  FOREACH t IN ARRAY ARRAY['api_keys', 'webhook_endpoints', 'push_subscriptions', 'chat_webhooks'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_tenant', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON %I USING (app_can_access_document(NULL::text, practice_id)) WITH CHECK (app_can_access_document(NULL::text, practice_id))',
+      t || '_tenant', t
+    );
+  END LOOP;
+END $$;
+
+DROP POLICY IF EXISTS webhook_events_tenant ON webhook_events;
+CREATE POLICY webhook_events_tenant ON webhook_events
+  USING (app_can_access_document(business_id, practice_id))
+  WITH CHECK (app_can_access_document(business_id, practice_id));
+
+DROP POLICY IF EXISTS webhook_deliveries_tenant ON webhook_deliveries;
+CREATE POLICY webhook_deliveries_tenant ON webhook_deliveries
+  USING (EXISTS (SELECT 1 FROM webhook_endpoints e WHERE e.id = endpoint_id AND app_can_access_document(NULL::text, e.practice_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM webhook_endpoints e WHERE e.id = endpoint_id AND app_can_access_document(NULL::text, e.practice_id)));

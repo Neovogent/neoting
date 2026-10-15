@@ -48,12 +48,30 @@ export function sessionExpired(detail: string): AppException {
   return new AppException('NT-AUTH-002', HttpStatus.UNAUTHORIZED, 'Session expired', detail);
 }
 
+/** The API key a request authenticated with (rush/public-api) — what the scope guard checks. */
+export interface ApiKeyPrincipal {
+  readonly keyId: string;
+  readonly scopes: readonly string[];
+}
+
 interface ContextStore {
   readonly headers: HeaderReader;
   resolved?: Promise<ScopeContext>;
+  apiKey?: ApiKeyPrincipal;
 }
 
 const storage = new AsyncLocalStorage<ContextStore>();
+
+/** Record the key the API-key resolver verified for this request. No-op outside a request. */
+export function setCurrentApiKey(principal: ApiKeyPrincipal): void {
+  const store = storage.getStore();
+  if (store !== undefined) store.apiKey = principal;
+}
+
+/** The verified API key for this request, if it authenticated with one. */
+export function currentApiKey(): ApiKeyPrincipal | undefined {
+  return storage.getStore()?.apiKey;
+}
 
 /** Open the per-request context store. Mirrors `runWithTrace` — capture at the edge, read in the work. */
 export function runWithRequestContext<T>(headers: HeaderReader, fn: () => T): T {
