@@ -8501,6 +8501,7 @@ components:
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
         - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
+        - document.import         # create documents from a Dext/Hubdoc/AutoEntry/Datamolino export bundle; review lists every row
 
     CreateActionProposalRequest:
       description: |
@@ -8527,6 +8528,7 @@ components:
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
         - $ref: '#/components/schemas/PolicyActivateProposalRequest'
+        - $ref: '#/components/schemas/DocumentImportProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -8548,6 +8550,7 @@ components:
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
           policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
+          document.import: '#/components/schemas/DocumentImportProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -8761,6 +8764,55 @@ components:
           properties:
             kind: { const: document.purge }
             payload: { $ref: '#/components/schemas/DocumentPurgePayload' }
+
+    DocumentImportProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.import }
+            payload: { $ref: '#/components/schemas/DocumentImportPayload' }
+
+    DocumentImportPayload:
+      type: object
+      description: |
+        Rows parsed from another capture tool's export bundle (Dext, Hubdoc,
+        AutoEntry, Datamolino, or a generic CSV). Each row becomes ONE document
+        in TO_REVIEW on approval, with its fields pre-filled and its matching
+        image (or, when none matched, the CSV itself) stored as the original.
+        Created only by `POST /v1/imports`, which has already stored every
+        object under the business's own key prefix; the executor re-checks it.
+      required: [importId, source, rows]
+      properties:
+        importId: { type: string }
+        source: { type: string, enum: [dext, hubdoc, autoentry, datamolino, generic] }
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: '#/components/schemas/DocumentImportRow' }
+
+    DocumentImportRow:
+      type: object
+      required: [rowNumber, s3Key, originalFilename, mimeType, byteSize, byteHash, hasImage]
+      properties:
+        rowNumber: { type: integer, minimum: 1 }
+        s3Key: { type: string }
+        originalFilename: { type: string }
+        mimeType: { type: string }
+        byteSize: { type: integer, minimum: 0 }
+        byteHash: { type: string }
+        hasImage: { type: boolean }
+        supplierName: { type: [string, 'null'] }
+        documentDate: { type: [string, 'null'], description: 'YYYY-MM-DD' }
+        reference: { type: [string, 'null'] }
+        netPence: { type: [integer, 'null'], x-nt-money: true }
+        taxPence: { type: [integer, 'null'], x-nt-money: true }
+        totalPence: { type: [integer, 'null'], x-nt-money: true }
+        currency: { type: [string, 'null'] }
+        categoryCode: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
 
     PolicyActivateProposalRequest:
       allOf:

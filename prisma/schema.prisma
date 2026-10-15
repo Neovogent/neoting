@@ -713,6 +713,10 @@ model Document {
   /// its source).
   deletedAt DateTime? @map("deleted_at")
 
+  /// rush/documents: GENERATED ALWAYS full-text vector over the header fields
+  /// (supplier, customer, reference, description, filename, category, project).
+  searchVector Unsupported("tsvector")? @map("search_vector")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -762,6 +766,7 @@ model Document {
   /// precisely NULL for the rows this query wants, so none of them can serve it.
   /// Ships with the query pattern it exists for (Governance, expand-contract).
   @@index([practiceId, inbox])
+  @@index([searchVector], type: Gin)
   @@map("documents")
 }
 
@@ -1560,6 +1565,20 @@ model VaultItem {
   expiresAt        DateTime? @map("expires_at")
   uploadedByUserId String?   @map("uploaded_by_user_id")
 
+  // ── rush/documents (SoT §10 practice vault) ──
+  /// UK financial year the document belongs to, e.g. "2025-26".
+  financialYear    String?   @map("financial_year")
+  /// OCR / plain text, capped, for search. Untrusted content.
+  extractedText    String?   @map("extracted_text")
+  /// pending | done | failed — the AI auto-name/summary/tag pass.
+  aiState          String    @default("pending") @map("ai_state")
+  /// Set when an archived Costs/Sales document was moved into the vault.
+  sourceDocumentId String?   @map("source_document_id")
+  /// Last expiry notification stage sent: "soon" | "expired". Null = none.
+  expiryNotice     String?   @map("expiry_notice")
+  /// GENERATED ALWAYS (title, summary, filename, category, extracted text) — see migration.
+  searchVector     Unsupported("tsvector")? @map("search_vector")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1567,6 +1586,7 @@ model VaultItem {
 
   @@index([businessId, category])
   @@index([businessId, expiresAt])
+  @@index([searchVector], type: Gin)
   @@map("vault_items")
 }
 
