@@ -2000,3 +2000,32 @@ model FeatureFlag {
 
   @@map("feature_flags")
 }
+
+// ── rush/chase-scheduler ──
+
+/// A practice's chasing schedule — the automatic-reminder policy (SoT §4
+/// Stage 8 item 6). Written ONLY by an approved `policy.activate` proposal
+/// carrying `chasePolicy`; the worker's reminder job runs because THIS row was
+/// approved (Governance §10.5), and every automated reminder records
+/// `action_proposal_id` as the policy it ran under. No row = no reminders.
+///
+/// Practice-anchored, no business: RLS is the `teams` shape,
+/// `app_can_access_document(NULL::text, practice_id)`.
+/// ponytail: no FK to `practices` (a relation needs a back-field on the shared
+/// `Practice` model); practices are never deleted. Add it when `Practice` is
+/// next touched anyway.
+model ChasePolicy {
+  practiceId         String   @id @map("practice_id")
+  enabled            Boolean  @default(false)
+  firstReminderDays  Int      @map("first_reminder_days")
+  secondReminderDays Int      @map("second_reminder_days")
+  escalateAfterDays  Int      @map("escalate_after_days")
+  maxReminders       Int      @map("max_reminders")
+  /// Whole hours, Europe/London. start == end means no quiet hours.
+  quietHoursStart    Int      @map("quiet_hours_start")
+  quietHoursEnd      Int      @map("quiet_hours_end")
+  actionProposalId   String   @map("action_proposal_id")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("chase_policies")
+}

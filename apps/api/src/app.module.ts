@@ -12,6 +12,7 @@ import { BankingMatchingModule } from './modules/banking-matching/banking-matchi
 import { ArchiveVaultSearchModule } from './modules/archive-vault-search/archive-vault-search.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { ChaseModule } from './modules/chase/chase.module.js';
+import { ChasePolicyModule } from './modules/chase/chase-policy.module.js';
 import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
 import { ClientsTeamSettingsModule } from './modules/clients-team-settings/clients-team-settings.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
@@ -48,6 +49,8 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
     ArchiveVaultSearchModule,
     BillingModule,
     ChaseModule,
+    // rush/chase-scheduler — `GET /v1/chase-policy`.
+    ChasePolicyModule,
     ChatFrameworkModule,
     ClientsTeamSettingsModule,
     DocumentsModule,

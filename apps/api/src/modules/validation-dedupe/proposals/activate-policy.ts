@@ -1,4 +1,4 @@
-import type { PolicyActivatePayload } from '@neoting/contracts/model';
+import type { ChasePolicySettings, PolicyActivatePayload } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import {
@@ -42,6 +42,18 @@ export const activatePolicyExecutor: ProposalExecutor<'policy.activate', PolicyA
   async execute(db: ScopedClient, input: ExecutionInput<PolicyActivatePayload>): Promise<ExecutionResult> {
     const { payload } = input;
 
+    // rush/chase-scheduler — the practice's chasing schedule rides the same
+    // kind: it is a standing automation, and arming it is the gate.
+    if (payload.chasePolicy !== undefined) {
+      if (payload.workflowId !== undefined) {
+        throw new ProposalExecutionRefused('policy.activate', 'name a workflow OR a chasing schedule, not both');
+      }
+      return activateChasePolicy(db, input, payload.chasePolicy);
+    }
+    if (payload.workflowId === undefined) {
+      throw new ProposalExecutionRefused('policy.activate', 'names neither a workflow nor a chasing schedule');
+    }
+
     const workflow = await db.approvalWorkflow.findUnique({
       where: { id: payload.workflowId },
       select: { id: true, isActive: true, businessId: true },
@@ -78,3 +90,56 @@ export const activatePolicyExecutor: ProposalExecutor<'policy.activate', PolicyA
     };
   },
 };
+
+/**
+ * Upsert the practice's `chase_policies` row — the ONLY writer of it. The
+ * practice is the PROPOSAL's own anchor (read back by id, the `rule.create`
+ * pattern), never a payload field. Idempotent by the proposal stamp: a replay
+ * finds its own id on the row and reports `alreadyApplied`.
+ */
+async function activateChasePolicy(
+  db: ScopedClient,
+  input: ExecutionInput<PolicyActivatePayload>,
+  settings: ChasePolicySettings,
+): Promise<ExecutionResult> {
+  const values = Object.values(settings);
+  if (!values.every((v) => Number.isInteger(v))) {
+    throw new ProposalExecutionRefused('policy.activate', 'every chasing-schedule setting is a whole number');
+  }
+  if (settings.secondReminderDays <= settings.firstReminderDays) {
+    throw new ProposalExecutionRefused('policy.activate', 'the second reminder must come after the first');
+  }
+
+  const proposal = await db.actionProposal.findUnique({
+    where: { id: input.proposalId },
+    select: { practiceId: true },
+  });
+  const practiceId = proposal?.practiceId ?? null;
+  if (practiceId === null) {
+    throw new ProposalExecutionRefused('policy.activate', 'a chasing schedule belongs to a practice, and this proposal names none');
+  }
+
+  const existing = await db.chasePolicy.findUnique({ where: { practiceId }, select: { actionProposalId: true } });
+  if (existing?.actionProposalId === input.proposalId) {
+    return { changed: [{ entity: 'chasePolicy', id: practiceId }], alreadyApplied: true, followUps: [] };
+  }
+
+  const data = {
+    enabled: input.payload.active,
+    firstReminderDays: settings.firstReminderDays,
+    secondReminderDays: settings.secondReminderDays,
+    escalateAfterDays: settings.escalateAfterDays,
+    maxReminders: settings.maxReminders,
+    quietHoursStart: settings.quietHoursStart,
+    quietHoursEnd: settings.quietHoursEnd,
+    actionProposalId: input.proposalId,
+  };
+  await db.chasePolicy.upsert({ where: { practiceId }, create: { practiceId, ...data }, update: data });
+
+  return {
+    changed: [{ entity: 'chasePolicy', id: practiceId }],
+    alreadyApplied: false,
+    followUps: [],
+    detail: { chasePolicy: true, ...data },
+  };
+}

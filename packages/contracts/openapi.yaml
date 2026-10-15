@@ -2578,6 +2578,33 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ── rush/chase-scheduler ──
+  /chase-policy:
+    get:
+      operationId: getChasePolicy
+      summary: The practice's chasing schedule (automatic reminders)
+      description: |
+        The reminder policy the worker runs every 15 minutes (SoT §4 Stage 8
+        item 6). Read-only: the schedule is changed — and switched on or off —
+        ONLY by an approved `policy.activate` proposal carrying `chasePolicy`
+        (Governance §10.5: a standing automation runs because the policy itself
+        was approved). A practice that never approved one reads the defaults
+        with `enabled: false` and `actionProposalId: null`.
+      tags: [chases]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The practice's current chasing schedule.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChasePolicy' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # OTP PORTAL (SoT Stage 8.3 — the no-app client journey; METH Stage 2 #120)
   # ==========================================================================
@@ -8773,7 +8800,7 @@ components:
 
     PolicyActivatePayload:
       type: object
-      required: [workflowId, active]
+      required: [active]
       description: |
         Arm or disarm one approval workflow (review package H).
 
@@ -8800,6 +8827,48 @@ components:
             True arms it, false disarms it. Idempotent at execution — a
             workflow already in the requested state is `alreadyApplied`, not a
             second effect.
+        # rush/chase-scheduler — present INSTEAD of `workflowId` when the policy
+        # being armed or disarmed is the practice's chasing schedule. Exactly
+        # one of the two; the executor refuses both or neither. `active` is the
+        # schedule's on/off switch.
+        chasePolicy: { $ref: '#/components/schemas/ChasePolicySettings' }
+
+    ChasePolicySettings:
+      type: object
+      description: |
+        The practice's automatic-reminder schedule. Days are counted from the
+        chase's first send. Reminder 1 goes at `firstReminderDays`, reminder 2
+        at `secondReminderDays`, each later one the same gap again, up to
+        `maxReminders`; the practice is told the chase is overdue at
+        `escalateAfterDays`. Nothing is sent to a client between
+        `quietHoursStart` and `quietHoursEnd` (whole hours, Europe/London).
+      required:
+        [firstReminderDays, secondReminderDays, escalateAfterDays, maxReminders, quietHoursStart, quietHoursEnd]
+      properties:
+        firstReminderDays: { type: integer, minimum: 1, maximum: 60 }
+        secondReminderDays: { type: integer, minimum: 2, maximum: 90 }
+        escalateAfterDays: { type: integer, minimum: 1, maximum: 180 }
+        maxReminders: { type: integer, minimum: 0, maximum: 5 }
+        quietHoursStart: { type: integer, minimum: 0, maximum: 23 }
+        quietHoursEnd: { type: integer, minimum: 0, maximum: 23 }
+
+    ChasePolicy:
+      type: object
+      description: The practice's chasing schedule as it stands, plus the approval that set it.
+      required:
+        [enabled, firstReminderDays, secondReminderDays, escalateAfterDays, maxReminders, quietHoursStart, quietHoursEnd, actionProposalId, updatedAt]
+      properties:
+        enabled: { type: boolean }
+        firstReminderDays: { type: integer, minimum: 1 }
+        secondReminderDays: { type: integer, minimum: 2 }
+        escalateAfterDays: { type: integer, minimum: 1 }
+        maxReminders: { type: integer, minimum: 0 }
+        quietHoursStart: { type: integer, minimum: 0, maximum: 23 }
+        quietHoursEnd: { type: integer, minimum: 0, maximum: 23 }
+        actionProposalId:
+          type: [string, 'null']
+          description: The approved `policy.activate` proposal every automatic reminder records. Null — never approved.
+        updatedAt: { type: [string, 'null'], format: date-time }
 
     ResolveDuplicateProposalRequest:
       allOf:
@@ -9743,6 +9812,10 @@ components:
           description: The approved `chase.send` proposal that created it. Null only for states before PROPOSED.
         firstSentAt: { type: [string, 'null'], format: date-time }
         lastSentAt: { type: [string, 'null'], format: date-time }
+        remindersSent:
+          type: integer
+          minimum: 0
+          description: Automatic reminders attempted under the practice's chasing schedule (rush/chase-scheduler).
         closedAt: { type: [string, 'null'], format: date-time }
         closedReason: { type: [string, 'null'] }
         closedByDocumentId:

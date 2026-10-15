@@ -562,6 +562,47 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
       // created and reviewed. That case says so rather than rendering a blank
       // policy the reviewer would read as "no stages".
       const active = payload['active'] === true;
+      // rush/chase-scheduler — the chasing schedule is rendered from the
+      // payload itself: every setting the approver signs for is in it.
+      const chasePolicy = payload['chasePolicy'];
+      if (isObject(chasePolicy)) {
+        const days = (key: string): string => count(Number(chasePolicy[key]), 'day');
+        const hour = (key: string): string => `${String(chasePolicy[key]).padStart(2, '0')}:00`;
+        return summary(
+          active
+            ? 'Turn ON automatic chase reminders for this practice'
+            : 'Turn OFF automatic chase reminders for this practice',
+          [
+            {
+              heading: 'What changes',
+              entries: [
+                {
+                  label: 'Effect',
+                  value: active
+                    ? 'Unanswered chases are re-sent automatically — the same approved message with "Reminder:" in front and a working upload link — on the schedule below. No new chase is ever created by this.'
+                    : 'No reminder is sent automatically. Chases already sent are unchanged.',
+                },
+              ],
+            },
+            {
+              heading: 'The schedule',
+              entries: [
+                { label: 'First reminder', value: `${days('firstReminderDays')} after the chase was sent` },
+                { label: 'Second reminder', value: `${days('secondReminderDays')} after the chase was sent` },
+                { label: 'Most reminders per chase', value: String(chasePolicy['maxReminders']) },
+                { label: 'Tell the practice it is overdue', value: `${days('escalateAfterDays')} after the chase was sent` },
+                {
+                  label: 'Quiet hours (UK time) — nothing is sent',
+                  value:
+                    chasePolicy['quietHoursStart'] === chasePolicy['quietHoursEnd']
+                      ? 'None'
+                      : `${hour('quietHoursStart')} to ${hour('quietHoursEnd')}`,
+                },
+              ],
+            },
+          ],
+        );
+      }
       const workflow = context.workflow;
       if (workflow === undefined) {
         return summary(`${active ? 'Turn on' : 'Turn off'} approval workflow ${text(payload['workflowId'])}`, [

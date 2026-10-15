@@ -7,6 +7,8 @@ import type {
 
 import type { Chase, ChaseItem, ChaseMessage, ChaseSummary, SmsOutboxMessage } from '@neoting/contracts/model';
 
+import { readChaseSchedule } from './chase-policy.js';
+
 /**
  * Prisma row → contract shape, for the chase read surface (METH Stage 8 — the
  * three GETs `GET /v1/chases`, `/chases/{id}`, `/sms-outbox`).
@@ -48,6 +50,8 @@ export function toChaseSummary(row: ChaseRow): ChaseSummary {
     actionProposalId: row.actionProposalId,
     firstSentAt: toIso(row.firstSentAt),
     lastSentAt: toIso(row.lastSentAt),
+    // rush/chase-scheduler — automatic reminders attempted on this chase.
+    remindersSent: readChaseSchedule(row.schedule).remindersSent,
     closedAt: toIso(row.closedAt),
     closedReason: row.closedReason,
     closedByDocumentId: row.closedByDocumentId,

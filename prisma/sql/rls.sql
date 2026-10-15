@@ -614,3 +614,16 @@ CREATE TRIGGER action_proposals_guard_trigger
 
 CREATE INDEX IF NOT EXISTS memberships_user_business_idx ON memberships (user_id, business_id);
 CREATE INDEX IF NOT EXISTS memberships_user_practice_idx ON memberships (user_id, practice_id);
+
+-- ===========================================================================
+-- rush/chase-scheduler — chase_policies (migration 20261015100000)
+-- ===========================================================================
+-- The practice's chasing schedule. Practice-anchored, no business: the
+-- `teams` shape. Kept out of the tenant_tables loop above so this block is
+-- self-contained.
+ALTER TABLE chase_policies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chase_policies FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS chase_policies_tenant ON chase_policies;
+CREATE POLICY chase_policies_tenant ON chase_policies
+  USING (app_can_access_document(NULL::text, practice_id))
+  WITH CHECK (app_can_access_document(NULL::text, practice_id));

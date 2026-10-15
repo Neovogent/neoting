@@ -35,6 +35,10 @@ import {
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { LEDGER_REFRESH_INTERVAL_MS, runLedgerRefreshSweep } from '../modules/publishing/ledger/refresh-scheduler.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
+import { selectSmsSender } from '../modules/chase/index.js';
+import { CHASE_REMINDER_INTERVAL_MS, runChaseReminderSweep } from './chase-reminders.js';
+import { registerScheduledJob, startScheduler } from './scheduler.js';
+import { purgeExpiredTrash } from './trash-purge.js';
 
 /**
  * The ingest worker — a SEPARATE process from the API (staging scales them
@@ -260,6 +264,31 @@ function bootstrap(): void {
     sweep();
     logger.log('ledger refresh sweep armed (every 12h)');
   }
+
+  // ── rush/chase-scheduler: the scheduled queue ─────────────────────────────
+  //
+  // Repeating jobs, each idempotent and reading its own work list from the
+  // database. Register here, before `startScheduler`.
+  const chaseSender = selectSmsSender(env);
+  registerScheduledJob({
+    name: 'chase-reminders',
+    everyMs: CHASE_REMINDER_INTERVAL_MS,
+    run: () =>
+      runChaseReminderSweep({
+        prisma: getPrismaClient(),
+        sender: chaseSender,
+        portalLinkSecret: env.PORTAL_LINK_SECRET,
+        logger: ocrLogger,
+      }),
+  });
+  registerScheduledJob({
+    name: 'trash-purge',
+    everyMs: 24 * 60 * 60 * 1000,
+    run: () => purgeExpiredTrash(getPrismaClient(), { apply: true, log: (line) => logger.log(line) }),
+  });
+  void startScheduler({ mode: env.INGEST_QUEUE === 'bullmq' ? 'bullmq' : 'fixture', connection, logger }).catch(
+    (error: unknown) => logger.error(`scheduler failed to start: ${error instanceof Error ? error.message : String(error)}`),
+  );
 }
 
 bootstrap();

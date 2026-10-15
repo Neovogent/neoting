@@ -111,7 +111,7 @@ export type FollowUp =
  * `rule.create` (METH S13), which creates `rules`, for `business.offboard`,
  * which deactivates a `businesses` row, and for `policy.activate` (review
  * package H), which arms or disarms an `approval_workflows` row. */
-export type ChangedEntity = 'document' | 'chase' | 'rule' | 'business' | 'approvalWorkflow';
+export type ChangedEntity = 'document' | 'chase' | 'rule' | 'business' | 'approvalWorkflow' | 'chasePolicy';
 
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {
