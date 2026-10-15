@@ -50,6 +50,11 @@ const LivePublishCard = lazy(() => import('./LivePublishCard').then((m) => ({ de
 const ApprovalBatchCard = lazy(() => import('./ApprovalBatchCard').then((m) => ({ default: m.ApprovalBatchCard })));
 const LiveRuleCard = lazy(() => import('./LiveRuleCard').then((m) => ({ default: m.LiveRuleCard })));
 const LiveMissingCard = lazy(() => import('./LiveMissingCard').then((m) => ({ default: m.LiveMissingCard })));
+// Chat reach (15 Oct 2026): one module, four cards, all after a model turn.
+const ScreenLinkCard = lazy(() => import('./ChatActionCards').then((m) => ({ default: m.ScreenLinkCard })));
+const ChatDraftCard = lazy(() => import('./ChatActionCards').then((m) => ({ default: m.ChatDraftCard })));
+const RequestStatementCard = lazy(() => import('./ChatActionCards').then((m) => ({ default: m.RequestStatementCard })));
+const InviteMemberCard = lazy(() => import('./ChatActionCards').then((m) => ({ default: m.InviteMemberCard })));
 const ChatUploadDecisionCard = lazy(() => import('./ChatUploadDecisionCard').then((m) => ({ default: m.ChatUploadDecisionCard })));
 
 /**
@@ -137,6 +142,15 @@ export function IntentRenderer({ message }: { message: Message }) {
       );
 
     case 'SHOW_INBOX':
+      // Chat reach: a server turn carries its own filtered table in `display`
+      // (rendered by ChatArea); the card is then only the way to the screen.
+      if (message.display !== undefined && message.display.length > 0) {
+        return (
+          <Suspense fallback={null}>
+            <ScreenLinkCard screen={payload.screen} businessId={payload.businessId} />
+          </Suspense>
+        );
+      }
       return (
         <Suspense fallback={<DocumentPreviewSkeleton />}>
           <InboxTable clientIds={clientIds} clientNames={clientNames} statusFilter={payload.statusFilter} />
@@ -205,6 +219,37 @@ export function IntentRenderer({ message }: { message: Message }) {
     // D42's sole egress, nothing created from chat.
     case 'SHOW_EXPORTS':
       return <ExportsCard />;
+
+    // Chat reach (15 Oct 2026). The table is the server's (`display`); the
+    // card links to the screen. Drafts stage on a click; forms submit through
+    // the same endpoints their screens use.
+    case 'SHOW_SCREEN':
+      return (
+        <Suspense fallback={null}>
+          <ScreenLinkCard screen={payload.screen} businessId={payload.businessId} />
+        </Suspense>
+      );
+
+    case 'DRAFT_ACTION':
+      return payload.draft ? (
+        <Suspense fallback={<DocumentPreviewSkeleton />}>
+          <ChatDraftCard draft={payload.draft} businessName={payload.businessName} />
+        </Suspense>
+      ) : null;
+
+    case 'REQUEST_STATEMENT':
+      return (
+        <Suspense fallback={null}>
+          <RequestStatementCard businessId={payload.businessId} businessName={payload.businessName} />
+        </Suspense>
+      );
+
+    case 'INVITE_MEMBER':
+      return (
+        <Suspense fallback={<DocumentPreviewSkeleton />}>
+          <InviteMemberCard email={payload.email} />
+        </Suspense>
+      );
 
     case 'APPROVE_ITEMS':
       return (

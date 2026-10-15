@@ -2264,13 +2264,16 @@ export function InviteColleagueForm({
   clients,
   onClose,
   onInvited,
+  defaultEmail = '',
 }: {
   clients: { id: string; name: string }[];
   onClose: () => void;
   onInvited: () => void;
+  /** The chat's INVITE_MEMBER prefill — words the accountant said, editable here. */
+  defaultEmail?: string;
 }) {
   const intl = useIntl();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(defaultEmail);
   const [role, setRole] = useState<WorkspaceRole>('PRACTICE_STANDARD');
   const [businessIds, setBusinessIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);

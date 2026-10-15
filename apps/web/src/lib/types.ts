@@ -1090,7 +1090,15 @@ export type Intent =
   | 'LIVE_MISSING'
   | 'LIVE_CHASE'
   | 'LIVE_RULE'
-  | 'LIVE_PUBLISH';
+  | 'LIVE_PUBLISH'
+  // Chat reach (15 Oct 2026): every server SHOW_* / NAVIGATE turn lands on
+  // SHOW_SCREEN (server-composed table + an "Open …" link); every DRAFT_*
+  // turn lands on DRAFT_ACTION (the server-built proposal draft, staged by a
+  // click and approved in Review → Approve); the two forms the human submits.
+  | 'SHOW_SCREEN'
+  | 'DRAFT_ACTION'
+  | 'REQUEST_STATEMENT'
+  | 'INVITE_MEMBER';
 
 /** Read-only intents render instantly with no review step (PRD section 8). */
 export const READ_ONLY_INTENTS: Intent[] = [
@@ -1108,6 +1116,7 @@ export const READ_ONLY_INTENTS: Intent[] = [
   'SHOW_MISSING_TABLE',
   'SHOW_EXPORTS',
   'LIVE_MISSING',
+  'SHOW_SCREEN',
 ];
 
 /**
@@ -1162,6 +1171,12 @@ export interface MessagePayload {
         vatTreatment: string | undefined;
       }
     | undefined;
+  /** The server's `navigation.screen` — which screen the card offers to open. */
+  screen?: string | undefined;
+  /** A server-built proposal draft (DRAFT_ACTION), sent back verbatim on the click. */
+  draft?: import('@neoting/contracts/model').CreateActionProposalRequest | undefined;
+  /** INVITE_MEMBER's prefill. */
+  email?: string | undefined;
   /** Narrows the inbox table a navigation intent renders ("everything to review"). */
   statusFilter?: DocStatus | undefined;
   /**

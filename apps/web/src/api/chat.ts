@@ -143,6 +143,7 @@ const STATUS_FILTER_TO_APP: Record<string, DocStatus | undefined> = {
   ready: 'ready',
   processing: 'processing',
   failed: 'rejected',
+  published: 'published',
   unrouted: undefined,
 };
 
@@ -195,6 +196,11 @@ export function mapTurnToPayload(
     // is a draft, and a restored transcript carries text + intent only, so a
     // reopened conversation degrades to the sentence with no card — which is
     // correct, because the offer belonged to a moment.
+    // Chat reach (15 Oct 2026): the screen link, a non-rule draft (verbatim —
+    // POST /action-proposals re-parses it), and the invite prefill.
+    ...(turn.navigation?.screen === undefined ? {} : { screen: turn.navigation.screen }),
+    ...(turn.navigation?.email === undefined ? {} : { email: turn.navigation.email }),
+    ...(turn.draft === undefined || draft?.kind === 'rule.create' ? {} : { draft: turn.draft }),
     ...(turn.awaiting === undefined ? {} : { awaiting: turn.awaiting }),
     ...(turn.offer === undefined ? {} : { offer: turn.offer }),
   };
@@ -231,4 +237,19 @@ export const SERVER_INTENT_TO_APP = {
   SCOPE_REFUSAL: 'GENERAL',
   // Chat-first: renders ClientIntakeForm in the transcript (IntentRenderer).
   ADD_CLIENT: 'ADD_CLIENT',
+  // Chat reach (15 Oct 2026): the server's table rides `display`; the card is
+  // the link to the screen. Drafts are staged by a click, never on render.
+  SHOW_BANK: 'SHOW_SCREEN',
+  SHOW_SUPPLIER_STATEMENTS: 'SHOW_SCREEN',
+  SHOW_DUPLICATES: 'SHOW_SCREEN',
+  SHOW_TASKS: 'SHOW_SCREEN',
+  SHOW_TEAM: 'SHOW_SCREEN',
+  SHOW_ANALYTICS: 'SHOW_SCREEN',
+  SHOW_DEADLINES: 'SHOW_SCREEN',
+  NAVIGATE: 'SHOW_SCREEN',
+  DRAFT_CODING: 'DRAFT_ACTION',
+  DRAFT_REJECT: 'DRAFT_ACTION',
+  DRAFT_CONFIRM_MATCH: 'DRAFT_ACTION',
+  REQUEST_STATEMENT: 'REQUEST_STATEMENT',
+  INVITE_MEMBER: 'INVITE_MEMBER',
 } as const satisfies Record<ChatTurn['intent'], string>;
