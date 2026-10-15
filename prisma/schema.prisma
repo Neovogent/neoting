@@ -207,6 +207,9 @@ model Business {
   imports            Import[]
   auditEvents        AuditEvent[]
   documentLinks      DocumentLink[]
+  vatSettings        VatSettings?
+  vatSubmissions     VatSubmission[]
+  vatAdjustments     VatAdjustment[]
 
   @@index([practiceId])
   @@index([practiceId, isActive])
@@ -1999,4 +2002,83 @@ model FeatureFlag {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+// ── rush/vat-mtd ──
+// VAT return preparation and Making Tax Digital filing (owner decision,
+// 15 Oct 2026). Strings, not Postgres enums, for scheme/frequency: the API
+// parses them with Zod at the boundary and a new value needs no migration.
+
+/// One row per client business: how its VAT return is computed, and its
+/// HMRC MTD connection (sealed OAuth tokens, `common/oauth/token-vault.ts`).
+model VatSettings {
+  businessId          String    @id @map("business_id")
+  vrn                 String?
+  /// STANDARD (invoice/accrual) | CASH | FLAT_RATE
+  scheme              String    @default("STANDARD")
+  /// MONTHLY | QUARTERLY | ANNUAL
+  frequency           String    @default("QUARTERLY")
+  /// A month (1-12) in which a VAT period ends: the stagger.
+  periodEndMonth      Int       @default(3) @map("period_end_month")
+  /// Flat Rate Scheme percentage in basis points (1650 = 16.5%).
+  flatRateBasisPoints Int?      @map("flat_rate_basis_points")
+  hmrcTokenRef        String?   @map("hmrc_token_ref")
+  hmrcTokenExpiresAt  DateTime? @map("hmrc_token_expires_at")
+  hmrcConnectedAt     DateTime? @map("hmrc_connected_at")
+  hmrcConnectedBy     String?   @map("hmrc_connected_by")
+  hmrcLastError       String?   @map("hmrc_last_error")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("vat_settings")
+}
+
+/// A VAT return accepted by HMRC. IMMUTABLE: RLS grants no UPDATE/DELETE and a
+/// trigger refuses UPDATE. Written only by the `vat.submit-return` executor.
+model VatSubmission {
+  id               String   @id @default(cuid())
+  businessId       String   @map("business_id")
+  vrn              String
+  periodKey        String   @map("period_key")
+  periodStart      DateTime @map("period_start")
+  periodEnd        DateTime @map("period_end")
+  /// The nine boxes as submitted, integer pence (VatReturnBoxes).
+  boxes            Json
+  processingDate   DateTime @map("processing_date")
+  formBundleNumber String   @map("form_bundle_number")
+  chargeRefNumber  String?  @map("charge_ref_number")
+  paymentIndicator String?  @map("payment_indicator")
+  /// HMRC's receipt, as parsed.
+  receipt          Json
+  proposalId       String   @map("proposal_id")
+  submittedBy      String   @map("submitted_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, periodKey])
+  @@index([businessId, createdAt])
+  @@map("vat_submissions")
+}
+
+/// A manual adjustment to one box of a period's return, approved through
+/// `vat.adjust-return`.
+model VatAdjustment {
+  id          String   @id @default(cuid())
+  businessId  String   @map("business_id")
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  box         Int
+  amountPence Int      @map("amount_pence")
+  reason      String
+  proposalId  String   @map("proposal_id")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, periodStart, periodEnd])
+  @@map("vat_adjustments")
 }

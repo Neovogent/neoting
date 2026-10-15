@@ -134,7 +134,8 @@ DECLARE
     'integrations', 'reference_syncs', 'publishes',
     'vault_items', 'tasks', 'notifications', 'sms_log',
     'imports', 'exports', 'audit_events',
-    'document_links', 'chat_conversations', 'teams', 'team_members'
+    'document_links', 'chat_conversations', 'teams', 'team_members',
+    'vat_settings', 'vat_adjustments', 'vat_submissions'
   ];
 BEGIN
   FOREACH t IN ARRAY tenant_tables LOOP
@@ -169,7 +170,9 @@ DECLARE
     -- D51: one row per "copy my documents to my Drive" run. Single
     -- `business_id`, never null, so the loop's predicate is exactly right and
     -- it needs no hand-written policy beside it.
-    'vault_exports'
+    'vault_exports',
+    -- rush/vat-mtd: single non-null business_id.
+    'vat_settings', 'vat_adjustments'
   ];
 BEGIN
   FOREACH t IN ARRAY direct_tables LOOP
@@ -614,3 +617,26 @@ CREATE TRIGGER action_proposals_guard_trigger
 
 CREATE INDEX IF NOT EXISTS memberships_user_business_idx ON memberships (user_id, business_id);
 CREATE INDEX IF NOT EXISTS memberships_user_practice_idx ON memberships (user_id, practice_id);
+
+-- ===========================================================================
+-- rush/vat-mtd — submitted VAT returns are statutory records: read + insert
+-- only, and a trigger refuses UPDATE (an HMRC receipt is never edited).
+-- ===========================================================================
+DROP POLICY IF EXISTS vat_submissions_read ON vat_submissions;
+CREATE POLICY vat_submissions_read ON vat_submissions
+  FOR SELECT USING (app_can_access_business(business_id));
+DROP POLICY IF EXISTS vat_submissions_insert ON vat_submissions;
+CREATE POLICY vat_submissions_insert ON vat_submissions
+  FOR INSERT WITH CHECK (app_can_access_business(business_id));
+
+CREATE OR REPLACE FUNCTION vat_submissions_immutable() RETURNS trigger
+  LANGUAGE plpgsql AS
+$$
+BEGIN
+  RAISE EXCEPTION 'vat_submissions is immutable: an HMRC receipt is never edited';
+END $$;
+
+DROP TRIGGER IF EXISTS vat_submissions_no_update ON vat_submissions;
+CREATE TRIGGER vat_submissions_no_update
+  BEFORE UPDATE ON vat_submissions
+  FOR EACH ROW EXECUTE FUNCTION vat_submissions_immutable();
