@@ -61,6 +61,10 @@ const AccountSchema = z
   })
   .passthrough();
 
+const CompanyInfoSchema = z
+  .object({ CompanyInfo: z.object({ CompanyName: z.string().optional(), LegalName: z.string().optional() }).passthrough() })
+  .passthrough();
+
 const VendorSchema = z
   .object({ Id: z.string().min(1), DisplayName: z.string().optional(), CompanyName: z.string().optional(), Active: z.boolean().optional() })
   .passthrough();
@@ -136,12 +140,21 @@ const UploadSchema = z
   .passthrough();
 
 export const quickBooksLedger: VendorLedger = {
-  async resolveOrgRef(_api, callbackParams) {
-    // ⚠ Straight off the callback query string. There is nowhere else it exists.
-    // ⚠ And NO NAME — a realm id arrives with no company attached to it, so
-    // the connection screen falls back to the id for this vendor alone.
-    const realmId = callbackParams['realmId'];
-    return realmId !== undefined && realmId.trim() !== '' ? { ref: realmId.trim() } : null;
+  async resolveOrgRef(api, callbackParams) {
+    // ⚠ Straight off the callback query string (or, on Sync, the realm the
+    // connection was made with). There is nowhere else it exists.
+    const realmId = callbackParams['realmId']?.trim();
+    if (realmId === undefined || realmId === '') return null;
+    // The realm id carries no company name, so CompanyInfo is read for it —
+    // otherwise the connection screen shows a bare id under "Organisation". A
+    // failed read never fails the connection: the realm alone routes.
+    try {
+      const body = await api.get(CompanyInfoSchema, `/${realmId}/companyinfo/${realmId}`, { minorversion: MINOR_VERSION });
+      const name = body.CompanyInfo.CompanyName?.trim() || body.CompanyInfo.LegalName?.trim();
+      return name ? { ref: realmId, name } : { ref: realmId };
+    } catch {
+      return { ref: realmId };
+    }
   },
 
   async fetchLists(api, connection, since) {

@@ -358,13 +358,16 @@ export class LedgerConnectionsService {
     // Only when it is MISSING: a name that is already stored costs no second
     // vendor call, and the vendors meter reads. A failure here is logged and
     // dropped — the lists are what Sync is for, and refusing them over a label
-    // would be the tail wagging the dog. ⚠ QuickBooks answers null by design
-    // (its realm id arrives on a callback that no longer exists here), so this
-    // is a no-op for that vendor every time, cheaply.
+    // would be the tail wagging the dog. QuickBooks routes on the realm the
+    // connection was made with (its callback no longer exists here), so the
+    // stored realm is handed back as `realmId`; the other vendors ignore it.
     let orgName: string | null = null;
     if (state.needsName) {
       try {
-        const org = await LEDGERS[connection.vendor.slug].resolveOrgRef(new VendorApi(connection, this.fetchImpl), {});
+        const org = await LEDGERS[connection.vendor.slug].resolveOrgRef(
+          new VendorApi(connection, this.fetchImpl),
+          connection.orgRef === null ? {} : { realmId: connection.orgRef },
+        );
         orgName = org?.name ?? null;
       } catch (cause) {
         this.logger.warn(`${connection.vendor.label} synced but would not name the organisation — ${describe(cause)}`);
