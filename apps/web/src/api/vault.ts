@@ -53,6 +53,25 @@ export async function completeDriveConnection(token: string, code: string, state
   return body.connectedAccount ?? null;
 }
 
+/**
+ * Buy (or drop) the £2/month Vault add-on from the client's own portal. The
+ * business comes from the bearer's session, so none is sent. The vault switches
+ * on only when Stripe's webhook confirms the subscription change.
+ */
+export async function requestVaultAddOn(token: string, enabled: boolean): Promise<void> {
+  const response = await fetch(`${apiBase()}/billing/vault-add-on`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    credentials: 'include',
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) throw new Error(await readProblem(response));
+}
+
 export async function disconnectDrive(token: string, kind: string): Promise<void> {
   const response = await fetch(`${apiBase()}/portal/vault/connections/${encodeURIComponent(kind)}`, {
     method: 'DELETE',

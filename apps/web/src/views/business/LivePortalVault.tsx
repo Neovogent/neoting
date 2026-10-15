@@ -9,10 +9,12 @@ import {
   disconnectDrive,
   downloadVaultArchive,
   fetchVault,
+  requestVaultAddOn,
   startDriveConnection,
   startVaultExport,
 } from '../../api/vault';
 import { Panel } from './LivePortalHome';
+import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 
 /**
  * The Document Vault tab (D51) — the client's own paperwork, and the ways out
@@ -48,7 +50,18 @@ const m = defineMessages({
     defaultMessage:
       'For £2 a month you can search everything you have sent, download it all as a single ZIP, and copy it straight into your own Google Drive or OneDrive. Your documents stay exactly where they are either way — the add-on adds ways to get them out.',
   },
-  offerAction: { id: 'portal.vault.offer.action', defaultMessage: 'Ask your accountant to add it' },
+  offerAction: { id: 'portal.vault.offer.action', defaultMessage: 'Add Vault — £2/month + VAT' },
+  offerConfirmTitle: { id: 'portal.vault.offer.confirmTitle', defaultMessage: 'Add the Document Vault?' },
+  offerConfirmDetail: {
+    id: 'portal.vault.offer.confirmDetail',
+    defaultMessage:
+      '£2 a month plus VAT is added to your existing monthly bill, charged from today for the rest of this month. You can remove it at any time.',
+  },
+  offerConfirmLabel: { id: 'portal.vault.offer.confirmLabel', defaultMessage: 'Add Vault' },
+  offerRequested: {
+    id: 'portal.vault.offer.requested',
+    defaultMessage: 'Requested — it switches on as soon as the payment is confirmed.',
+  },
   offerNote: {
     id: 'portal.vault.offer.note',
     defaultMessage: 'It is added to your existing monthly bill. No new card, no second invoice.',
@@ -129,6 +142,8 @@ export function LivePortalVault({ token, search, onSearch, children }: Props): R
   const [vault, setVault] = useState<PortalVault | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [requested, setRequested] = useState(false);
+  const confirm = useConfirm();
 
   // `useCallback` so the two effects below can DEPEND on it rather than
   // silencing the linter. A fresh closure every render would re-run the poll
@@ -259,6 +274,32 @@ export function LivePortalVault({ token, search, onSearch, children }: Props): R
         <Panel title={intl.formatMessage(m.offerTitle)}>
           <p className="text-[14px] text-zinc-300">{intl.formatMessage(m.offerBody)}</p>
           <p className="mt-2 text-[12px] text-zinc-400">{intl.formatMessage(m.offerNote)}</p>
+          {requested ? (
+            <p role="status" className="mt-3 text-[13px] text-zinc-200">{intl.formatMessage(m.offerRequested)}</p>
+          ) : (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() =>
+                void (async () => {
+                  const ok = await confirm({
+                    title: intl.formatMessage(m.offerConfirmTitle),
+                    detail: intl.formatMessage(m.offerConfirmDetail),
+                    confirmLabel: intl.formatMessage(m.offerConfirmLabel),
+                  });
+                  if (!ok) return;
+                  await guard('addon', async () => {
+                    await requestVaultAddOn(token, true);
+                    setRequested(true);
+                  });
+                  await reload();
+                })()
+              }
+              className="mt-4 rounded-full bg-brand px-5 py-2.5 text-sm font-bold text-brand-on hover:bg-brand-hover disabled:opacity-40"
+            >
+              {intl.formatMessage(m.offerAction)}
+            </button>
+          )}
         </Panel>
       )}
 

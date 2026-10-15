@@ -38,6 +38,7 @@ vi.mock('../../api/vault', () => ({
   disconnectDrive: vi.fn(async () => undefined),
   downloadVaultArchive: vi.fn(async () => undefined),
   fetchVault: vi.fn(async () => GOOGLE_ONLY),
+  requestVaultAddOn: vi.fn(async () => undefined),
   startDriveConnection: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'),
   startVaultExport: vi.fn(async () => ({ id: 'vex_1', state: 'QUEUED' })),
 }));
@@ -126,4 +127,14 @@ test('registering the second drive needs no code change — the server says so a
 
   expect(await screen.findByRole('button', { name: /Connect OneDrive/i })).toBeEnabled();
   expect(screen.queryByText(/coming soon/i)).toBeNull();
+});
+
+test('a client without the add-on can buy it: the button asks the API, then says it is requested', async () => {
+  vi.mocked(api.fetchVault).mockResolvedValue({ ...GOOGLE_ONLY, active: false } as Awaited<ReturnType<typeof api.fetchVault>>);
+  renderAt('');
+
+  (await screen.findByRole('button', { name: /Add Vault — £2\/month \+ VAT/ })).click();
+
+  await waitFor(() => expect(api.requestVaultAddOn).toHaveBeenCalledWith('tok_1', true));
+  expect(await screen.findByText(/switches on as soon as the payment is confirmed/)).toBeTruthy();
 });
