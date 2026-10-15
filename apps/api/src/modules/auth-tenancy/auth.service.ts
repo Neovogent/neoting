@@ -2,7 +2,8 @@ import { HttpStatus } from '@nestjs/common';
 
 import type { Me } from '@neoting/contracts/model';
 
-import { unauthenticated } from '../../common/context/request-context.js';
+import { currentImpersonation, unauthenticated } from '../../common/context/request-context.js';
+import type { EvaluatedFlags } from '../../common/flags/feature-flags.js';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
@@ -10,6 +11,7 @@ import { AppException } from '../../common/problem/problem.js';
 import type { Env } from '../../config/env.js';
 import { type CredentialRow, findCredentialRow, verifyCredentials } from './credentials.js';
 import { documentIntakeAddress } from '../ingestion-routing/index.js';
+import { isPlatformAdminEmail } from './platform-admin-auth.js';
 import { normaliseEmail } from './practice-signup.service.js';
 import { SESSION_TTL_MS, signSessionToken } from './session-cookie.js';
 import { pickActingMembership } from './session-scope.js';
@@ -74,6 +76,8 @@ export class AuthService {
     private readonly prisma: PrismaClient,
     private readonly env: Env,
     private readonly throttle: SignInThrottle,
+    /** rush/admin — evaluated feature flags for `GET /me`. Optional so offline tests need not wire it. */
+    private readonly flags?: { evaluate(ctx: ScopeContext): Promise<EvaluatedFlags> },
   ) {}
 
   /**
@@ -197,14 +201,18 @@ export class AuthService {
    * is whatever RLS makes visible, never a hand-written tenancy filter.
    */
   async me(ctx: ScopeContext): Promise<Me> {
+    // Support "view as" (rush/admin): the scope's actor is the practice's
+    // SYSTEM user, which has no email; the person shown is the admin.
+    const impersonation = currentImpersonation();
+    const flags = this.flags === undefined ? undefined : await this.flags.evaluate(ctx);
     return scopedDb(this.prisma, ctx, async (db) => {
       const user = await db.user.findUnique({
-        where: { id: ctx.actorId },
+        where: { id: impersonation?.adminUserId ?? ctx.actorId },
         select: { id: true, email: true, firstName: true, lastName: true },
       });
       const memberships = await db.membership.findMany({
         where: { userId: ctx.actorId },
-        select: { practiceId: true, businessId: true, role: true, isOwner: true },
+        select: { practiceId: true, businessId: true, role: true, isOwner: true, hideFinancialFields: true },
         orderBy: { createdAt: 'asc' },
       });
       const acting = pickActingMembership(memberships);
@@ -255,6 +263,18 @@ export class AuthService {
         // comes off the ACTING membership, the same row the role does.
         isOwner: acting.isOwner,
         businesses,
+        hideFinancialFields: acting.hideFinancialFields,
+        platformAdmin: isPlatformAdminEmail(this.env.PLATFORM_ADMIN_EMAILS, user.email),
+        ...(flags === undefined ? {} : { flags: { ...flags } }),
+        ...(impersonation === undefined
+          ? {}
+          : {
+              impersonation: {
+                adminEmail: impersonation.adminEmail,
+                practiceId: impersonation.practiceId,
+                expiresAt: new Date(impersonation.expiresAtMs).toISOString(),
+              },
+            }),
       };
     });
   }

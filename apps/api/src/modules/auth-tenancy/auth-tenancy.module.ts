@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
+import { sharedFeatureFlags } from '../../common/flags/feature-flags.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
@@ -14,6 +16,7 @@ import {
   NotificationsModule,
 } from '../notifications/index.js';
 import { EmailVerificationService } from './email-verification.service.js';
+import { FinancialVisibilityInterceptor } from './financial-visibility.interceptor.js';
 import { InvitationAcceptanceService } from './invitation-acceptance.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { buildPasswordResetLink, NotificationsSignupMailer } from './notifications-signup-mailer.js';
@@ -72,6 +75,8 @@ import {
   controllers: [AuthController, BusinessesController, PracticesController, SignupChainController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
+    // rush/admin — `hide_financial_fields`, applied to every workspace response.
+    { provide: APP_INTERCEPTOR, useClass: FinancialVisibilityInterceptor },
     {
       // ⚠ ONE INSTANCE FOR THE PROCESS. Nest providers are singletons by
       // default and this one depends on it: a throttle rebuilt per request
@@ -83,7 +88,8 @@ import {
     },
     {
       provide: AUTH_SERVICE,
-      useFactory: (prisma: PrismaClient, env: Env, throttle: SignInThrottle) => new AuthService(prisma, env, throttle),
+      useFactory: (prisma: PrismaClient, env: Env, throttle: SignInThrottle) =>
+        new AuthService(prisma, env, throttle, sharedFeatureFlags()),
       inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
     },
     {

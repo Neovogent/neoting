@@ -81,7 +81,16 @@ export async function loadCategories(db: ScopedClient, businessId: string): Prom
  * recent window rather than a search: §9.5 caps token spend per session, and an
  * unbounded retrieval on a chat turn is the cost bug that ships quietly.
  */
-export async function retrieveRecords(db: ScopedClient, businessId: string): Promise<readonly GroundedRecord[]> {
+/**
+ * `hideFinancial` (rush/admin): a member flagged non-finance (SoT §3.3) is
+ * grounded on documents WITHOUT figures or coding, and on no bank line or
+ * statement at all — the model cannot repeat what it was never shown.
+ */
+export async function retrieveRecords(
+  db: ScopedClient,
+  businessId: string,
+  hideFinancial = false,
+): Promise<readonly GroundedRecord[]> {
   const [documents, transactions, statements, chases] = await Promise.all([
     // `notDeleted()` beside the existing `archivedAt: null` — two columns, two
     // clauses. This window IS the answer's evidence, so a deleted document here
@@ -164,6 +173,15 @@ export async function retrieveRecords(db: ScopedClient, businessId: string): Pro
 
   for (const doc of documents) {
     const supplier = doc.supplierName ?? 'unknown supplier';
+    if (hideFinancial) {
+      records.push({
+        id: doc.id,
+        type: 'document',
+        label: supplier,
+        line: `[${doc.id}] document · supplier ${wrapUntrusted(supplier)} · dated ${day(doc.documentDate)} · state ${doc.state}`,
+      });
+      continue;
+    }
     const items = itemsByDocument.get(doc.id) ?? '';
     records.push({
       id: doc.id,
@@ -173,7 +191,7 @@ export async function retrieveRecords(db: ScopedClient, businessId: string): Pro
     });
   }
 
-  for (const tx of transactions) {
+  for (const tx of hideFinancial ? [] : transactions) {
     const narrative = tx.merchantName ?? tx.descriptionRaw;
     records.push({
       id: tx.id,
@@ -183,7 +201,7 @@ export async function retrieveRecords(db: ScopedClient, businessId: string): Pro
     });
   }
 
-  for (const statement of statements) {
+  for (const statement of hideFinancial ? [] : statements) {
     const verdict = readVerdict(statement.gapAnalysis);
     const rows = statement.rowCount ?? 0;
     records.push({

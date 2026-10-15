@@ -20,6 +20,8 @@ import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module.js';
+import { ImpersonationMiddleware } from './modules/platform-admin/impersonation.middleware.js';
 import { PortalModule } from './modules/portal/portal.module.js';
 import { LedgerConnectionsModule } from './modules/publishing/ledger/ledger-connections.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
@@ -53,6 +55,8 @@ import { ValidationDedupeModule } from './modules/validation-dedupe/validation-d
     DocumentsModule,
     HealthModule,
     NotificationsModule,
+    // rush/admin — the platform support console (`/v1/admin`).
+    PlatformAdminModule,
     PortalModule,
     PublishingModule,
     // D50 — the connection surface. A separate module from PublishingModule on
@@ -73,5 +77,8 @@ export class AppModule implements NestModule {
     // request-context store — both open an AsyncLocalStorage scope per request
     // and leave resolution to the work that reads them (§13.1, #75).
     consumer.apply(TraceMiddleware, ContextMiddleware).forRoutes('*');
+    // Support "view as" is read-only: refuse writes and audit every request
+    // BEFORE any controller runs (rush/admin).
+    consumer.apply(ImpersonationMiddleware).forRoutes('*');
   }
 }

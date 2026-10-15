@@ -438,15 +438,15 @@ export class PracticeTeamService {
           // anti-pattern in reverse.
           // `?? false` because the contract marks it optional; the COLUMN is
           // `NOT NULL DEFAULT false`, so absent and false are the same fact.
-          hideFinancialFields: before.hideFinancialFields ?? false,
+          hideFinancialFields: request.hideFinancialFields ?? before.hideFinancialFields ?? false,
         }),
       });
 
       const after = await readFirmMember(db, practiceId, clientIds, userId);
       await this.audit(db, ctx, 'practice.member.updated', {
         userId,
-        from: { role: before.role, businessIds: before.businessIds },
-        to: { role: after.role, businessIds: after.businessIds },
+        from: { role: before.role, businessIds: before.businessIds, hideFinancialFields: before.hideFinancialFields ?? false },
+        to: { role: after.role, businessIds: after.businessIds, hideFinancialFields: after.hideFinancialFields ?? false },
       });
       return after;
     });

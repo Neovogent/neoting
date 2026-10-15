@@ -18,6 +18,7 @@ import {
   retrieveRecords,
   verifyCitations,
 } from './grounding.js';
+import { actorHidesFinancials } from '../../common/financial/financial-visibility.js';
 import { invokeStructured } from './invoke-structured.js';
 import { modelVersionOf } from './models.js';
 import { PROMPT_VERSION, SYSTEM_PROMPT } from './prompts/system-prompt.js';
@@ -348,9 +349,10 @@ export class ChatService {
     if (businessId === undefined) return { records: [], categories: [] };
 
     return scopedDb(this.prisma, context, async (db: ScopedClient) => {
+      const hideFinancial = await actorHidesFinancials(db, context.actorId);
       const [records, categories] = await Promise.all([
-        retrieveRecords(db, businessId),
-        loadCategories(db, businessId),
+        retrieveRecords(db, businessId, hideFinancial),
+        hideFinancial ? Promise.resolve([]) : loadCategories(db, businessId),
       ]);
       return { records, categories };
     });
