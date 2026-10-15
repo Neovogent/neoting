@@ -260,7 +260,7 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           : `Release ${count(ids.length, 'document')}${destination} — gross ${gross}, VAT ${vat}${refusalSuffix}`,
         [
         // ⚠ Checks lead the card — see entryChecksSection.
-        ...entryChecksSection(payload['entryPreview']),
+        ...entryChecksSection(payload['entryPreview'], context.release),
         {
           heading: 'Server-computed preview',
           entries: [
@@ -716,7 +716,9 @@ function entryPreviewSections(value: unknown, release?: RenderedRelease): Render
       { label: 'Document', value: text(document['documentId']) },
     ];
 
-    const fileName = typeof document['fileName'] === 'string' ? document['fileName'] : '';
+    // The file an export row lands in is meaningless on the ledger lane — the
+    // entry goes into the vendor's books, not a CSV.
+    const fileName = !toLedger && typeof document['fileName'] === 'string' ? document['fileName'] : '';
     if (fileName !== '') {
       const dataFormat = typeof document['dataFormat'] === 'string' ? document['dataFormat'] : '';
       entries.push({
@@ -745,7 +747,15 @@ function entryPreviewSections(value: unknown, release?: RenderedRelease): Render
     const warnings = Array.isArray(document['warnings']) ? document['warnings'] : [];
     for (const warning of warnings) {
       if (!isObject(warning)) continue;
-      entries.push({ label: `Check before you import — ${text(warning['code'])}`, value: text(warning['message']) });
+      // ⚠ The emitter's warnings are about the IMPORT FILE (an unprefixed
+      // analysis account VT cannot resolve, …) and can never be cleared on a
+      // ledger release, where the account is the vendor's own. Only the
+      // lane-neutral D46 flag survives there.
+      if (toLedger && !LANE_NEUTRAL_WARNINGS.has(text(warning['code']))) continue;
+      entries.push({
+        label: `${toLedger ? 'Check before you release' : 'Check before you import'} — ${text(warning['code'])}`,
+        value: text(warning['message']),
+      });
     }
 
     sections.push({
@@ -774,7 +784,10 @@ function entryPreviewSections(value: unknown, release?: RenderedRelease): Render
  * showed them. Advisory: approving still proceeds (D44); the section exists so
  * the release is an informed act.
  */
-function entryChecksSection(value: unknown): RenderedSection[] {
+const LANE_NEUTRAL_WARNINGS: ReadonlySet<string> = new Set(['not-a-financial-document']);
+
+function entryChecksSection(value: unknown, release?: RenderedRelease): RenderedSection[] {
+  const toLedger = release !== undefined && release.lane === 'ledger';
   if (!isObject(value)) return [];
   const documents = Array.isArray(value['documents']) ? value['documents'] : [];
   const refusals = Array.isArray(value['refusals']) ? value['refusals'] : [];
@@ -782,7 +795,10 @@ function entryChecksSection(value: unknown): RenderedSection[] {
   const entries: { label: string; value: string }[] = [];
   for (const refusal of refusals) {
     if (!isObject(refusal)) continue;
-    entries.push({ label: `Will not export — ${text(refusal['documentId'])}`, value: text(refusal['message']) });
+    entries.push({
+      label: `${toLedger ? 'Will not be released' : 'Will not export'} — ${text(refusal['documentId'])}`,
+      value: text(refusal['message']),
+    });
   }
   for (const document of documents) {
     if (!isObject(document)) continue;

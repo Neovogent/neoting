@@ -386,6 +386,11 @@ test('the publish review card SAYS the books will change on the ledger lane (D50
     /nothing here reaches accounting software/i,
     /you import it yourself/i,
     /Export screen/i,
+    // The VT file name and the emitter's file-only warning (unclearable here).
+    /Lands in/i,
+    /purchase-invoices\.csv/i,
+    /Check before you import/i,
+    /analysis-account-unprefixed/i,
   ]) {
     expect(rendered).not.toMatch(forbidden);
   }
