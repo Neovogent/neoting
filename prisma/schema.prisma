@@ -2000,3 +2000,28 @@ model FeatureFlag {
 
   @@map("feature_flags")
 }
+
+// ── rush/reports ──
+
+/// A manual journal or the opening balances for one client business — the
+/// only STORED input to the financial reports; everything else is derived on
+/// the fly from documents, bank lines and matches. Written ONLY by the
+/// approved `journal.post` proposal (Governance §10), never edited: a
+/// correction is a second, reversing journal. Lines are JSON `[{accountCode,
+/// debitPence, creditPence, memo?}]`, integer pence, balanced at write.
+/// No FK to `businesses` on purpose — kept additive with no edit to the
+/// Business model; RLS on `business_id` is the tenancy boundary.
+model ManualJournal {
+  id               String   @id @default(cuid())
+  businessId       String   @map("business_id")
+  journalDate      DateTime @map("journal_date")
+  journalKind      String   @map("journal_kind")
+  narrative        String
+  lines            Json
+  actionProposalId String   @unique @map("action_proposal_id")
+  createdByUserId  String?  @map("created_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, journalDate])
+  @@map("manual_journals")
+}

@@ -134,7 +134,8 @@ DECLARE
     'integrations', 'reference_syncs', 'publishes',
     'vault_items', 'tasks', 'notifications', 'sms_log',
     'imports', 'exports', 'audit_events',
-    'document_links', 'chat_conversations', 'teams', 'team_members'
+    'document_links', 'chat_conversations', 'teams', 'team_members',
+    'manual_journals'
   ];
 BEGIN
   FOREACH t IN ARRAY tenant_tables LOOP
@@ -169,7 +170,10 @@ DECLARE
     -- D51: one row per "copy my documents to my Drive" run. Single
     -- `business_id`, never null, so the loop's predicate is exactly right and
     -- it needs no hand-written policy beside it.
-    'vault_exports'
+    'vault_exports',
+    -- rush/reports: manual journals / opening balances. Single NOT NULL
+    -- `business_id`, same reasoning as vault_exports.
+    'manual_journals'
   ];
 BEGIN
   FOREACH t IN ARRAY direct_tables LOOP
