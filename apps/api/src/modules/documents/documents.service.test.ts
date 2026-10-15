@@ -119,6 +119,9 @@ function harness(
         return children;
       },
     },
+    // No live ledger connection: labels come from the catalogue alone.
+    integration: { findMany: async () => [] },
+    referenceSync: { findMany: async () => [] },
     extraction: {
       findMany: async (args: unknown) => {
         calls.childFindMany.push(args);

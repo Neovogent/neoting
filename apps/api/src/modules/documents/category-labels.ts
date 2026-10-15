@@ -1,5 +1,9 @@
+import { z } from 'zod';
+
+import { LEDGER_KINDS, LEDGER_LIST_KINDS } from '../publishing/index.js';
 import { accountCatalogue, analysisAccount } from '../rules-suggestions/index.js';
 
+import type { ScopedClient } from '../../common/db/scoped-db.js';
 import type { CategoryLabels } from '../../common/documents/document-response.js';
 
 /**
@@ -58,4 +62,56 @@ export function categoryLabels(): CategoryLabels {
   // would be 51 string concatenations on the hottest read in the product.
   cached ??= new Map(accountCatalogue().map((account) => [account.code, analysisAccount(account)]));
   return cached;
+}
+
+const LedgerAccountsPayload = z.object({
+  items: z.array(z.object({ id: z.string().min(1), code: z.string().nullable().optional(), name: z.string().min(1) })),
+});
+
+/**
+ * Per business, the catalogue labels plus the CONNECTED ledger's own account
+ * names. A connected client's `category_code` is the vendor's account code (or
+ * its id, where QuickBooks gives none — `chart-of-accounts.service.ts`'s
+ * `readLedgerAccounts` rule), which the catalogue cannot name, so the boards
+ * printed "42". The synced `ledger_accounts` list can. Read-only: two queries
+ * per page, no seeding.
+ */
+export async function labelsForBusinesses(
+  db: ScopedClient,
+  businessIds: readonly string[],
+): Promise<(businessId: string) => CategoryLabels> {
+  const base = categoryLabels();
+  const ids = [...new Set(businessIds)];
+  if (ids.length === 0) return () => base;
+
+  const live = await db.integration.findMany({
+    where: { businessId: { in: ids }, isActive: true, kind: { in: [...LEDGER_KINDS] }, tokenRef: { not: null } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, businessId: true },
+  });
+  // The first live connection per business — the one the release lane adopts.
+  const integrationFor = new Map<string, string>();
+  for (const row of live) if (!integrationFor.has(row.businessId)) integrationFor.set(row.businessId, row.id);
+  if (integrationFor.size === 0) return () => base;
+
+  const syncs = await db.referenceSync.findMany({
+    where: { integrationId: { in: [...integrationFor.values()] }, listKind: LEDGER_LIST_KINDS.accounts },
+    select: { integrationId: true, payload: true },
+  });
+  const byIntegration = new Map<string, CategoryLabels>();
+  for (const sync of syncs) {
+    const parsed = LedgerAccountsPayload.safeParse(sync.payload);
+    if (!parsed.success) continue;
+    const merged = new Map(base);
+    for (const item of parsed.data.items) {
+      merged.set(item.id, item.name);
+      const code = item.code?.trim();
+      if (code) merged.set(code, item.name);
+    }
+    byIntegration.set(sync.integrationId, merged);
+  }
+  return (businessId) => {
+    const integrationId = integrationFor.get(businessId);
+    return (integrationId === undefined ? undefined : byIntegration.get(integrationId)) ?? base;
+  };
 }

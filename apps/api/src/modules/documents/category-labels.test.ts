@@ -9,7 +9,7 @@ import {
   chartOfAccountsFor,
   toCategories,
 } from '../rules-suggestions/index.js';
-import { categoryLabels } from './category-labels.js';
+import { categoryLabels, labelsForBusinesses } from './category-labels.js';
 
 /**
  * **The whole warrant for looking a category label up in the catalogue rather
@@ -73,4 +73,24 @@ test('a code the catalogue does not carry resolves to nothing, never to a near m
   expect(categoryLabels().get('REPAIRS_AND_MAINTENANC')).toBeUndefined();
   expect(categoryLabels().get('jhngbhf')).toBeUndefined();
   expect(categoryLabels().get('')).toBeUndefined();
+});
+
+test("a connected client's vendor account code is named from its synced ledger accounts", async () => {
+  const db = {
+    integration: { findMany: async () => [{ id: 'int_qbo', businessId: 'biz_1' }] },
+    referenceSync: {
+      findMany: async () => [
+        {
+          integrationId: 'int_qbo',
+          payload: { version: 1, items: [{ id: '42', code: null, name: 'Office Expenses' }, { id: '7', code: '6400', name: 'Repairs' }] },
+        },
+      ],
+    },
+  } as unknown as Parameters<typeof labelsForBusinesses>[0];
+
+  const labelsFor = await labelsForBusinesses(db, ['biz_1', 'biz_2']);
+  expect(labelsFor('biz_1').get('42')).toBe('Office Expenses');
+  expect(labelsFor('biz_1').get('6400')).toBe('Repairs');
+  expect(labelsFor('biz_2').get('42')).toBeUndefined();
+  expect(labelsFor('biz_2')).toBe(categoryLabels());
 });

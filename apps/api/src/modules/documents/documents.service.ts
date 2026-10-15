@@ -40,7 +40,7 @@ import {
 } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
-import { categoryLabels } from './category-labels.js';
+import { labelsForBusinesses } from './category-labels.js';
 
 type ListQuery = z.infer<typeof listDocumentsQueryParams>;
 type EventsQuery = z.infer<typeof listDocumentEventsQueryParams>;
@@ -129,8 +129,8 @@ export class DocumentsService {
     const seek = pageQuery(request);
     const filters = buildFilters(query);
 
-    const rows = await scopedDb(this.prisma, ctx, async (db) =>
-      db.document.findMany({
+    const { rows, labelsFor } = await scopedDb(this.prisma, ctx, async (db) => {
+      const found = await db.document.findMany({
         where: seek.where === undefined ? filters : { AND: [filters, seek.where] },
         orderBy: seek.orderBy as Prisma.DocumentOrderByWithRelationInput[],
         take: seek.take,
@@ -139,15 +139,19 @@ export class DocumentsService {
         // forgotten include would not degrade — it would tell an accountant
         // nobody is owed for a receipt somebody paid for.
         include: { ...CLAIMANT_INCLUDE },
-      }),
-    );
+      });
+      // The chart crosses as DATA, the `analysis-account-chart.ts` rule —
+      // resolved ONCE for the page, plus each connected client's synced
+      // ledger account names (a connected client's code is the vendor's).
+      const businessIds = found.flatMap((row) => (row.businessId === null ? [] : [row.businessId]));
+      return { rows: found, labelsFor: await labelsForBusinesses(db, businessIds) };
+    });
 
     const page = toPage(rows, request);
-    // The chart crosses as DATA, the `analysis-account-chart.ts` rule — and it
-    // is resolved ONCE for the page rather than per row, because it is one
-    // process-wide map rather than a query.
-    const labels = categoryLabels();
-    return { data: page.data.map((row) => toDocumentSummary(row, labels)), pageInfo: page.pageInfo };
+    return {
+      data: page.data.map((row) => toDocumentSummary(row, labelsFor(row.businessId ?? ''))),
+      pageInfo: page.pageInfo,
+    };
   }
 
   /**
@@ -255,17 +259,18 @@ export class DocumentsService {
    * answer "what is there", not the ones that answer "show me this one".
    */
   async getDocument(ctx: ScopeContext, documentId: string): Promise<Document> {
-    const row = await scopedDb(this.prisma, ctx, async (db) =>
-      db.document.findUnique({
+    const { row, labelsFor } = await scopedDb(this.prisma, ctx, async (db) => {
+      const found = await db.document.findUnique({
         where: { id: documentId },
         include: { extractions: { where: { isAccepted: true }, take: 1 }, ...CLAIMANT_INCLUDE },
-      }),
-    );
+      });
+      return { row: found, labelsFor: await labelsForBusinesses(db, found?.businessId ? [found.businessId] : []) };
+    });
     if (row === null) throw notFound();
 
     const accepted = row.extractions[0];
     return {
-      ...toDocumentResponse(row, categoryLabels()),
+      ...toDocumentResponse(row, labelsFor(row.businessId ?? '')),
       acceptedExtraction: accepted === undefined ? null : toExtraction(accepted),
     };
   }
