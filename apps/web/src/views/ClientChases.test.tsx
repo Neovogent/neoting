@@ -53,6 +53,7 @@ const openChase = (id: string, txnIds: string[]): LiveChase => ({
   messages: [],
   createdAt: '01 Sep 2026',
   lastSentAt: '2 Sep, 10:15',
+  remindersSent: 0,
   closedAt: null,
   closedReason: null,
   closedByDocumentId: null,

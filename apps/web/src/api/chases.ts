@@ -59,6 +59,8 @@ export interface LiveChase {
   messages: LiveChaseMessage[];
   createdAt: string;
   lastSentAt: string | null;
+  /** Automatic reminders attempted under the practice's chasing schedule. */
+  remindersSent: number;
   closedAt: string | null;
   closedReason: string | null;
   closedByDocumentId: string | null;
@@ -114,6 +116,7 @@ export function toLiveChase(row: ApiChase): LiveChase {
     })),
     createdAt: fromIsoDate(row.createdAt),
     lastSentAt: fromIsoInstant(row.lastSentAt),
+    remindersSent: row.remindersSent ?? 0,
     closedAt: fromIsoInstant(row.closedAt),
     closedReason: row.closedReason ?? null,
     closedByDocumentId: row.closedByDocumentId ?? null,

@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient, ChasePolicy as ChasePolicyRow } from '@prisma/client';
+import type { Prisma, ChasePolicy as ChasePolicyRow } from '@prisma/client';
+import type { PrismaClient } from '../../common/db/prisma.js';
 
 import type { ChasePolicy, ChasePolicySettings } from '@neoting/contracts/model';
 

@@ -29,6 +29,10 @@ const m = defineMessages({
     id: 'shell.notificationsBell.chaseClosed',
     defaultMessage: 'A chased document arrived for {business}',
   },
+  chaseOverdue: {
+    id: 'shell.notificationsBell.chaseOverdue',
+    defaultMessage: '{business} — a document request is overdue. Follow it up.',
+  },
   // ⚠ "was assigned", not "you were assigned". The bell's list query carries
   // NO `recipientUserId` filter by item 12's own decision (*"the bell is a
   // practice-wide surface"*, `inbox.service.ts`), so this line is read by
@@ -92,6 +96,8 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
       return intl.formatMessage(m.documentReceived, { business: item.businessName });
     case 'chase.closed':
       return intl.formatMessage(m.chaseClosed, { business: item.businessName });
+    case 'chase.overdue':
+      return intl.formatMessage(m.chaseOverdue, { business: item.businessName });
     case 'task.assigned':
       return intl.formatMessage(m.taskAssigned, { business: item.businessName });
     case 'client.registered':

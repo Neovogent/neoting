@@ -64,7 +64,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   },
   'policy.activate': {
     id: 'proposals.kindLabel.policyActivate',
-    defaultMessage: 'Turn an approval workflow on or off',
+    defaultMessage: 'Turn an approval workflow or the chasing schedule on or off',
   },
 });
 

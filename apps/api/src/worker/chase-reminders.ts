@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../common/db/prisma.js';
 
 import { systemActorsByPractice } from '../common/db/resolve-system-actor.js';
 import { systemContext } from '../common/db/scope-context.js';

@@ -1,5 +1,5 @@
 import { TRASH_RETENTION_DAYS, TRASH_RETENTION_POLICY_ID } from '@neoting/contracts';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../common/db/prisma.js';
 
 import { resolveSystemActor } from '../common/db/resolve-system-actor.js';
 import { systemContext } from '../common/db/scope-context.js';

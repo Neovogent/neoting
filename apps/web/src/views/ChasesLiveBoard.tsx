@@ -10,6 +10,10 @@ import { currency } from '../lib/resolver';
 
 const m = defineMessages({
   heading: { id: 'chase.liveBoard.heading', defaultMessage: 'Missing Evidence' },
+  reminders: {
+    id: 'chase.liveBoard.reminders',
+    defaultMessage: ' · {count, plural, one {# automatic reminder} other {# automatic reminders}}',
+  },
   subheading: {
     id: 'chase.liveBoard.subheading',
     defaultMessage: 'Live chases — detection, sending and auto-close are the server’s.',
@@ -182,7 +186,7 @@ export function ChasesLiveBoard({
                         <div className="text-[12px] text-zinc-500 font-medium">
                           {chase.state === 'CLOSED_RECEIVED' && chase.closedReason
                             ? intl.formatMessage(m.autoClosed, { reason: chase.closedReason })
-                            : chase.lastSentAt ?? '—'}
+                            : `${chase.lastSentAt ?? '—'}${chase.remindersSent > 0 ? intl.formatMessage(m.reminders, { count: chase.remindersSent }) : ''}`}
                         </div>
                       </div>
                       <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide shrink-0 ${stateTone(chase.state)}`}>
@@ -253,7 +257,7 @@ export function ChasesLiveBoard({
                       <td className="px-4 py-5 text-zinc-500 font-medium">
                         {chase.state === 'CLOSED_RECEIVED' && chase.closedReason
                           ? intl.formatMessage(m.autoClosed, { reason: chase.closedReason })
-                          : chase.lastSentAt ?? '—'}
+                          : `${chase.lastSentAt ?? '—'}${chase.remindersSent > 0 ? intl.formatMessage(m.reminders, { count: chase.remindersSent }) : ''}`}
                       </td>
                       <td className="px-4 py-5 text-right">
                         <button

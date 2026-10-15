@@ -11,6 +11,12 @@ import { Field, Toggle } from '../components/DynamicComponents/FormControls';
 import { LinkTtlField } from '../components/DynamicComponents/LinkTtlField';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { OPTIONAL_MANDATORY } from '../lib/selectors';
+import { lazy, Suspense } from 'react';
+import { API_ENABLED } from '../api/config';
+
+// rush/chase-scheduler — the live chasing schedule. Lazy so its generated
+// client and the proposal card stay off this route's arrival.
+const ChaseSchedulePanel = lazy(() => import('../components/DynamicComponents/ChaseSchedulePanel'));
 
 const m = defineMessages({
   title: { id: 'settings.settingsView.title', defaultMessage: 'Settings' },
@@ -545,7 +551,13 @@ export function SettingsView() {
             </>
           )}
 
-          {section === 'Chasing' && (
+          {section === 'Chasing' && API_ENABLED && (
+            <Suspense fallback={null}>
+              <ChaseSchedulePanel />
+            </Suspense>
+          )}
+
+          {section === 'Chasing' && !API_ENABLED && (
             <Panel title={intl.formatMessage(m.chasePolicyTitle)} subtitle={intl.formatMessage(m.chasePolicySubtitle)}>
               <div className="grid grid-cols-2 gap-4">
                 <Num label={intl.formatMessage(m.firstChaseAfter)} value={chasePolicy.firstChaseAfterHours} onChange={(v) => setChasePolicy({ ...chasePolicy, firstChaseAfterHours: v })} />
