@@ -90,15 +90,20 @@ describe('the landing page at /', () => {
     unmount();
   });
 
-  it('says what the product does not do, in as many words', async () => {
+  it('says what the product does and does not do, in as many words', async () => {
     const { unmount } = renderAt('/');
 
-    // D42's most public surface: the pricing page must not imply a ledger
-    // write, a bank connection, a Xero sync or an HMRC filing.
-    expect(await screen.findByText('It does not post to a ledger')).toBeInTheDocument();
+    // D50: the ledgers are connected now, and the page must say so — while
+    // still refusing a bank connection or an HMRC filing.
+    expect(
+      await screen.findByText('Creates approved bills in Xero, QuickBooks Online, Sage or FreeAgent, with the receipt attached'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/does not (post to a ledger|sync with Xero)/)).not.toBeInTheDocument();
     expect(screen.getByText('It does not connect to your bank')).toBeInTheDocument();
-    expect(screen.getByText('It does not sync with Xero or any accounting software')).toBeInTheDocument();
     expect(screen.getByText('It does not file with HMRC')).toBeInTheDocument();
+    expect(screen.getByText('+ £2 + VAT per month per client business')).toBeInTheDocument();
+    // No VITE_VAT_NUMBER in the test build: the line is absent, not a placeholder.
+    expect(screen.queryByText(/VAT registration number/)).not.toBeInTheDocument();
 
     unmount();
   });

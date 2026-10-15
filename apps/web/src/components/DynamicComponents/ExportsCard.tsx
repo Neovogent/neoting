@@ -7,7 +7,7 @@ const m = defineMessages({
   body: {
     id: 'shell.exportsCard.body',
     defaultMessage:
-      'Exports are downloads from the Export screen: pick the client and the period, and you get the VT Transaction+ import file together with links back to every source document. An export carries Published documents only — nothing leaves the product on its own.',
+      'Exports are downloads from the Export screen: pick the client and the period, and you get the VT Transaction+ import file together with links back to every source document. An export carries Published documents only. A client whose accounting software is connected also has each approved entry created there when it is released; the export stays available either way.',
   },
   open: { id: 'shell.exportsCard.open', defaultMessage: 'Open the Export screen' },
 });

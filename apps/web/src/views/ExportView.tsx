@@ -79,7 +79,7 @@ const m = defineMessages({
   d42Note: {
     id: 'export.exportView.d42Note',
     defaultMessage:
-      'Published is an internal state meaning approved and released for export. Nothing leaves Neo Accounting on its own — this builds a file, you download it, and you import it into VT yourself.',
+      'This builds a file of the documents approved and released for export (Published). Nothing leaves Neo Accounting on its own — you download the file and import it into VT yourself. A client whose accounting software is connected also has each approved entry created there when it is released; this file stays available either way.',
   },
 
   clientLabel: { id: 'export.exportView.clientLabel', defaultMessage: 'Client' },

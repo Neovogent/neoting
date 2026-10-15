@@ -15,12 +15,12 @@ import { linkProps } from '../lib/router';
 
 /**
  * The public landing and pricing page at `/` (launch stage M3) — the app
- * lives at `/app`. This is the most public surface the product has, so D42
- * governs every sentence on it: the product produces a VT Transaction+ import
- * file the accountant imports themselves. It does not post to a ledger, does
- * not connect to a bank, does not sync with Xero and does not file with HMRC —
- * and this page says so out loud rather than leaving it to be inferred,
- * because a pricing page that implies otherwise is the worst place to lie.
+ * lives at `/app`. This is the most public surface the product has, so every
+ * sentence on it is a claim. Since D50 (the second release) an approved bill is
+ * created in a connected Xero, QuickBooks Online, Sage or FreeAgent ledger with
+ * the receipt attached; the import-file lane (VT Transaction+, CSV) stays for
+ * everyone else, because VT has no API. It still does not connect to a bank
+ * (D40) and does not file with HMRC — and this page says so out loud.
  *
  * The price renders as "£8.50 + VAT per month", never a bare figure — prices
  * are stored exclusive of VAT and shown exclusive of VAT, labelled as such.
@@ -28,11 +28,9 @@ import { linkProps } from '../lib/router';
  * The footer carries the company identity the Companies (Trading Disclosures)
  * Regulations require on the website: registered name, company number and
  * registered office, taken verbatim from Shakib's S6 drafts in `docs/legal/`.
- * There is no VAT line: NEOVOGENT AI SOLUTIONS UK LTD is not registered for UK
- * VAT (owner's answer, 11 Sep 2026, `Neo_Accounting_Legal_Information_Checklist`
- * item 2), and the Trading Disclosures Regulations ask for a VAT number only
- * from a company that has one. If registration happens, the number goes back
- * here AND in the four documents under `docs/legal/`.
+ * The VAT line renders only when the build sets `VITE_VAT_NUMBER`: the
+ * Trading Disclosures Regulations ask for a VAT number only from a company
+ * that has one, and a placeholder on the public page is worse than no line.
  */
 
 const m = defineMessages({
@@ -51,12 +49,12 @@ const m = defineMessages({
 
   heroTitle: {
     id: 'landing.landingView.heroTitle',
-    defaultMessage: 'Client paperwork in. A VT import file out. A human in between.',
+    defaultMessage: 'Client paperwork in. Coded entries in your books. A human in between.',
   },
   heroLede: {
     id: 'landing.landingView.heroLede',
     defaultMessage:
-      'UK accounting practices use Neo Accounting to collect their clients’ receipts and invoices, read and code them automatically, and chase the client for whatever is missing — then produce a VT Transaction+ import file with the original document reachable from every line. Nothing is booked until someone in your practice approves it.',
+      'UK accounting practices use Neo Accounting to collect their clients’ receipts and invoices, read and code them automatically, and chase the client for whatever is missing — then create each approved bill in Xero, QuickBooks Online, Sage or FreeAgent with the receipt attached, or produce an import file for VT Transaction+. Nothing is booked until someone in your practice approves it.',
   },
   /**
    * ⚠ THIS CTA POINTED AT `/app` UNTIL LAUNCH M9, AND HAD TO — there was no
@@ -86,7 +84,7 @@ const m = defineMessages({
   stepChaseBody: {
     id: 'landing.landingView.stepChaseBody',
     defaultMessage:
-      'When paperwork is missing, the client is chased by email with a secure upload link — so the asking, the reminding and the collecting stop being your team’s job.',
+      'When paperwork is missing, the client is chased by email or text message with a secure upload link — so the asking, the reminding and the collecting stop being your team’s job.',
   },
   stepApproveTitle: { id: 'landing.landingView.stepApproveTitle', defaultMessage: 'Approve' },
   stepApproveBody: {
@@ -94,18 +92,18 @@ const m = defineMessages({
     defaultMessage:
       'Your team reviews every extracted entry and corrects anything the reading got wrong. Nothing changes state without a named human approving it first.',
   },
-  stepExportTitle: { id: 'landing.landingView.stepExportTitle', defaultMessage: 'Export for VT' },
+  stepExportTitle: { id: 'landing.landingView.stepExportTitle', defaultMessage: 'Publish or export' },
   stepExportBody: {
     id: 'landing.landingView.stepExportBody',
     defaultMessage:
-      'Download a VT Transaction+ import file of the approved entries. Every line carries a working link back to the source document, so the evidence is one click from the books.',
+      'If the client’s Xero, QuickBooks Online, Sage or FreeAgent is connected, each approved entry is created in their books with the receipt attached. Otherwise download a VT Transaction+ or CSV import file, every line carrying a working link back to the source document.',
   },
 
   honestTitle: { id: 'landing.landingView.honestTitle', defaultMessage: 'Said plainly' },
   honestLede: {
     id: 'landing.landingView.honestLede',
     defaultMessage:
-      'Neo Accounting produces an import file for VT Transaction+ that you download and import yourself. We would rather you know exactly where its edges are before you trust it with a client.',
+      'Neo Accounting creates approved entries in Xero, QuickBooks Online, Sage or FreeAgent, and produces an import file for VT Transaction+ that you download and import yourself. We would rather you know exactly where its edges are before you trust it with a client.',
   },
   honestDoesLabel: { id: 'landing.landingView.honestDoesLabel', defaultMessage: 'What it does' },
   honestDoes1: {
@@ -114,18 +112,25 @@ const m = defineMessages({
   },
   honestDoes2: {
     id: 'landing.landingView.honestDoes2',
-    defaultMessage: 'Chases clients by email for missing paperwork',
+    defaultMessage: 'Chases clients by email or text message for missing paperwork',
   },
   honestDoes3: {
     id: 'landing.landingView.honestDoes3',
-    defaultMessage: 'Produces a VT Transaction+ import file, every line linked to its source document',
+    defaultMessage: 'Creates approved bills in Xero, QuickBooks Online, Sage or FreeAgent, with the receipt attached',
+  },
+  honestDoes4: {
+    id: 'landing.landingView.honestDoes4',
+    defaultMessage: 'Produces a VT Transaction+ or CSV import file, every line linked to its source document',
   },
   honestNotLabel: { id: 'landing.landingView.honestNotLabel', defaultMessage: 'What it does not do' },
-  honestNot1: { id: 'landing.landingView.honestNot1', defaultMessage: 'It does not post to a ledger' },
+  honestNot1: {
+    id: 'landing.landingView.honestNot1',
+    defaultMessage: 'It does not post anything to your books until someone in your practice approves it',
+  },
   honestNot2: { id: 'landing.landingView.honestNot2', defaultMessage: 'It does not connect to your bank' },
   honestNot3: {
     id: 'landing.landingView.honestNot3',
-    defaultMessage: 'It does not sync with Xero or any accounting software',
+    defaultMessage: 'It does not connect to VT Transaction+ — that is an import file you load yourself',
   },
   honestNot4: { id: 'landing.landingView.honestNot4', defaultMessage: 'It does not file with HMRC' },
 
@@ -138,7 +143,19 @@ const m = defineMessages({
   pricingUnit: { id: 'landing.landingView.pricingUnit', defaultMessage: 'per client business' },
   pricingOneTier: {
     id: 'landing.landingView.pricingOneTier',
-    defaultMessage: 'One plan. Billed monthly by card, with a VAT invoice for every charge. Cancel any time from the billing portal.',
+    defaultMessage:
+      'One plan, one optional add-on. Billed monthly by card, with a VAT invoice for every charge. Cancel any time from the billing portal.',
+  },
+  pricingVaultTitle: { id: 'landing.landingView.pricingVaultTitle', defaultMessage: 'Document Vault add-on' },
+  pricingVaultFigure: {
+    id: 'landing.landingView.pricingVaultFigure',
+    defaultMessage: '+ £2 + VAT per month per client business',
+    description: 'The add-on price, on top of the £8.50 plan. Always with "+ VAT" — never a bare figure.',
+  },
+  pricingVaultBody: {
+    id: 'landing.landingView.pricingVaultBody',
+    defaultMessage:
+      'The client’s own documents in their own portal: searchable, downloadable one at a time or as one ZIP, and copyable into a Google Drive or OneDrive they connect themselves.',
   },
   pricingIncludes1: {
     id: 'landing.landingView.pricingIncludes1',
@@ -150,7 +167,7 @@ const m = defineMessages({
   },
   pricingIncludes3: {
     id: 'landing.landingView.pricingIncludes3',
-    defaultMessage: 'Email chasing for missing paperwork',
+    defaultMessage: 'Email and text-message chasing for missing paperwork',
   },
   pricingIncludes4: {
     id: 'landing.landingView.pricingIncludes4',
@@ -158,7 +175,8 @@ const m = defineMessages({
   },
   pricingIncludes5: {
     id: 'landing.landingView.pricingIncludes5',
-    defaultMessage: 'VT Transaction+ export with a source link on every line',
+    defaultMessage:
+      'Publishing to Xero, QuickBooks Online, Sage or FreeAgent, or a VT Transaction+ / CSV export with a source link on every line',
   },
 
   supportTitle: { id: 'landing.landingView.supportTitle', defaultMessage: 'Support' },
@@ -187,9 +205,12 @@ const m = defineMessages({
     defaultMessage:
       'Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, United Kingdom',
   },
+  footerVatNumber: { id: 'landing.landingView.footerVatNumber', defaultMessage: 'VAT registration number: {number}' },
 });
 
 const SUPPORT_EMAIL = 'hello@neovogent.com';
+/** Build-time; empty hides the footer's VAT line entirely. */
+const VAT_NUMBER = String(import.meta.env.VITE_VAT_NUMBER ?? '').trim();
 
 const STEPS = [
   { icon: Inbox, title: m.stepCollectTitle, body: m.stepCollectBody },
@@ -199,7 +220,7 @@ const STEPS = [
   { icon: FileDown, title: m.stepExportTitle, body: m.stepExportBody },
 ] as const;
 
-const DOES = [m.honestDoes1, m.honestDoes2, m.honestDoes3] as const;
+const DOES = [m.honestDoes1, m.honestDoes2, m.honestDoes3, m.honestDoes4] as const;
 const DOES_NOT = [m.honestNot1, m.honestNot2, m.honestNot3, m.honestNot4] as const;
 const INCLUDES = [
   m.pricingIncludes1,
@@ -364,6 +385,11 @@ export function LandingView() {
                   </li>
                 ))}
               </ul>
+              <div className="mt-8 rounded-2xl border border-white/10 p-5">
+                <p className="text-[14px] font-bold text-white">{intl.formatMessage(m.pricingVaultTitle)}</p>
+                <p className="mt-1 text-[13px] font-bold text-brand">{intl.formatMessage(m.pricingVaultFigure)}</p>
+                <p className="mt-2 text-[13px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.pricingVaultBody)}</p>
+              </div>
               <p className="mt-8 text-[13px] text-zinc-500 leading-relaxed">
                 {intl.formatMessage(m.pricingOneTier)}
               </p>
@@ -422,6 +448,7 @@ export function LandingView() {
             <p>{intl.formatMessage(m.footerCompanyName)}</p>
             <p>{intl.formatMessage(m.footerCompanyNumber)}</p>
             <p>{intl.formatMessage(m.footerRegisteredOffice)}</p>
+            {VAT_NUMBER !== '' && <p>{intl.formatMessage(m.footerVatNumber, { number: VAT_NUMBER })}</p>}
           </div>
         </footer>
       </div>
