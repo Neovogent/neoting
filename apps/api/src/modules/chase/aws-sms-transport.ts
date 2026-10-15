@@ -41,6 +41,8 @@ export interface AwsSmsTransportConfig {
   readonly region: string;
   /** The dedicated number, pool id or ARN sends originate from. */
   readonly originationIdentity: string;
+  /** The configuration set whose event destination carries delivery receipts. Empty/absent: none. */
+  readonly configurationSetName?: string | undefined;
 }
 
 export function createAwsSmsTransport(config: AwsSmsTransportConfig): AwsSmsTransport {
@@ -57,6 +59,7 @@ export function createAwsSmsTransport(config: AwsSmsTransportConfig): AwsSmsTran
             OriginationIdentity: config.originationIdentity,
             MessageBody: body,
             MessageType: 'TRANSACTIONAL',
+            ...(config.configurationSetName ? { ConfigurationSetName: config.configurationSetName } : {}),
           }),
         );
         if (response.MessageId === undefined) {

@@ -87,3 +87,77 @@ export function isChaseSuppressed(
   const haystack = descriptionRaw.toLowerCase();
   return descriptors.some((keyword) => haystack.includes(keyword.toLowerCase()));
 }
+
+// ── Per-client suppression (rush/chase-detection) ───────────────────────────
+
+/**
+ * The list a client starts from: the SoT list, the found-live additions, and
+ * INTEREST / TRANSFER (owner's list). Editable per client — an accountant whose
+ * client pays suppliers by "TRANSFER" removes it on that client's Settings tab.
+ *
+ * ⚠ Ingest's stored `chaseSuppressed` flag still uses
+ * `ALL_SUPPRESSION_DESCRIPTORS`; this list is applied at detection and compose.
+ */
+export const DEFAULT_CLIENT_SUPPRESSION_KEYWORDS: readonly string[] = Object.freeze([
+  ...ALL_SUPPRESSION_DESCRIPTORS,
+  'INTEREST',
+  'TRANSFER',
+]);
+
+export interface ClientSuppression {
+  readonly keywords: readonly string[];
+  /** Normalised supplier keys (see {@link supplierKey}) the client said have no receipt. */
+  readonly noReceiptSuppliers: readonly string[];
+  /** True when the client has no row and is on {@link DEFAULT_CLIENT_SUPPRESSION_KEYWORDS}. */
+  readonly isDefault: boolean;
+}
+
+/**
+ * A supplier label reduced to what stays the same between two payments to it:
+ * lower case, punctuation and standalone numbers (store ids, card suffixes,
+ * dates) dropped. `CURRYS PC WORLD 1234` and `Currys PC World 5678` share a key.
+ */
+export function supplierKey(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * True when a line or finding is suppressed for THIS client: a descriptor
+ * keyword hit, or a supplier the client already said has no receipt.
+ * ponytail: learned match is whole-word containment of the stored key.
+ */
+export function isSuppressedForClient(
+  suppression: ClientSuppression,
+  text: { readonly descriptionRaw?: string | null; readonly supplierLabel?: string | null },
+): boolean {
+  const descriptor = text.descriptionRaw ?? text.supplierLabel ?? '';
+  if (descriptor !== '' && isChaseSuppressed(descriptor, suppression.keywords)) return true;
+  const padded = ` ${supplierKey([text.supplierLabel, text.descriptionRaw].filter(Boolean).join(' '))} `;
+  return suppression.noReceiptSuppliers.some((key) => key !== '' && padded.includes(` ${key} `));
+}
+
+/** Minimal read shape so this works on any `ScopedClient`. */
+interface SuppressionReader {
+  chaseSuppressionSetting: {
+    findUnique(args: {
+      where: { businessId: string };
+      select: { keywords: true; noReceiptSuppliers: true };
+    }): Promise<{ keywords: string[]; noReceiptSuppliers: string[] } | null>;
+  };
+}
+
+/** The client's effective suppression, through the caller's scoped transaction. */
+export async function loadClientSuppression(db: SuppressionReader, businessId: string): Promise<ClientSuppression> {
+  const row = await db.chaseSuppressionSetting.findUnique({
+    where: { businessId },
+    select: { keywords: true, noReceiptSuppliers: true },
+  });
+  return row === null
+    ? { keywords: DEFAULT_CLIENT_SUPPRESSION_KEYWORDS, noReceiptSuppliers: [], isDefault: true }
+    : { keywords: row.keywords, noReceiptSuppliers: row.noReceiptSuppliers, isDefault: false };
+}

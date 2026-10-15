@@ -45,7 +45,20 @@ export {
   detectUnmatchedChases,
   type UnmatchedTransaction,
 } from './detection.js';
-export { isChaseSuppressed, SUPPRESSION_DESCRIPTORS } from './suppression.js';
+export {
+  type ClientSuppression,
+  DEFAULT_CLIENT_SUPPRESSION_KEYWORDS,
+  isChaseSuppressed,
+  isSuppressedForClient,
+  loadClientSuppression,
+  SUPPRESSION_DESCRIPTORS,
+  supplierKey,
+} from './suppression.js';
+export {
+  type LedgerUnattachedReader,
+  MISSING_EVIDENCE_SWEEP_INTERVAL_MS,
+  runMissingEvidenceSweep,
+} from './missing-evidence.js';
 
 // Composition — the pure SoT-verbatim SMS copy and its money/date formatters.
 export {
@@ -106,7 +119,9 @@ export {
   type ChaseEmailTransportFactory,
   EmailChaseSender,
 } from './email-chase-sender.js';
-export { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
+export { type ChaseSenderEnv, selectEmailChaseSender, selectSmsSender } from './select-sms-sender.js';
+export { costPenceFor, parseDeliveryEvent, startSmsDeliveryConsumer } from './sms-delivery-events.js';
+export { SqsQueue } from './sqs-queue.js';
 export { type AwsSmsTransport, type AwsSmsTransportConfig, createAwsSmsTransport, OptedOutRecipientError } from './aws-sms-transport.js';
 
 // Auto-close on inbound match (SoT §4 Stage 8.5 / METH Stage 8): when an

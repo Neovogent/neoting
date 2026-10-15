@@ -35,6 +35,7 @@ import {
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { LEDGER_REFRESH_INTERVAL_MS, runLedgerRefreshSweep } from '../modules/publishing/ledger/refresh-scheduler.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
+import { startChaseDetectionRunners } from './chase-detection-runners.js';
 
 /**
  * The ingest worker — a SEPARATE process from the API (staging scales them
@@ -260,6 +261,9 @@ function bootstrap(): void {
     sweep();
     logger.log('ledger refresh sweep armed (every 12h)');
   }
+
+  // ── rush/chase-detection: missing-evidence engines + SMS delivery receipts ──
+  startChaseDetectionRunners(env, logger);
 }
 
 bootstrap();

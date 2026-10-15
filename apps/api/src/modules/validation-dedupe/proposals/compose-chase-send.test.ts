@@ -40,7 +40,7 @@ const txn = (id: string, over: Partial<TxnRow> = {}): TxnRow => ({
   ...over,
 });
 
-function fakeDb(txns: TxnRow[]): ScopedClient {
+function fakeDb(txns: TxnRow[], noReceipt: string[] = []): ScopedClient {
   return {
     bankTransaction: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
@@ -51,6 +51,9 @@ function fakeDb(txns: TxnRow[]): ScopedClient {
     },
     contact: {
       findFirst: async () => ({ id: 'contact_1', email: 'owner@example.test', mobileE164: '+447700900001' }),
+    },
+    chaseSuppressionSetting: {
+      findUnique: async () => (noReceipt.length === 0 ? null : { keywords: ['CHG'], noReceiptSuppliers: noReceipt }),
     },
   } as unknown as ScopedClient;
 }
@@ -124,4 +127,12 @@ test.each([
   await expect(computeChaseSendPayload(db, payloadFor(['txn_1', 'txn_2']), CONFIG)).rejects.toThrow(
     /cannot be chased/,
   );
+});
+
+test('refuses a line the client said has no receipt, or a default-list descriptor (per-client suppression)', async () => {
+  const learned = fakeDb([txn('txn_1')], ['currys']);
+  await expect(computeChaseSendPayload(learned, payloadFor(['txn_1']), CONFIG)).rejects.toThrow(/suppression list/);
+
+  const defaults = fakeDb([txn('txn_1', { descriptionRaw: 'TRANSFER TO SAVINGS', merchantName: null })]);
+  await expect(computeChaseSendPayload(defaults, payloadFor(['txn_1']), CONFIG)).rejects.toThrow(/suppression list/);
 });

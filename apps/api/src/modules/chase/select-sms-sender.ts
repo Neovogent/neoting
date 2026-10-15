@@ -49,6 +49,7 @@ export type ChaseSenderEnv = Pick<
   // Read only when SMS_SENDER=aws (Phase 3).
   | 'SMS_REGION'
   | 'SMS_ORIGINATION_IDENTITY'
+  | 'SMS_CONFIGURATION_SET'
 >;
 
 export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
@@ -71,6 +72,7 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
             transport: createAwsSmsTransport({
               region: env.SMS_REGION,
               originationIdentity: env.SMS_ORIGINATION_IDENTITY,
+              configurationSetName: env.SMS_CONFIGURATION_SET,
             }),
             limiter: selectEmailRateLimiter(env),
           };
@@ -110,6 +112,11 @@ export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
  * Shared by `email`, `email+sms` and `aws`'s no-mobile fallback so they cannot drift into two different
  * opinions about what a chase email is.
  */
+/** The email chase sender on its own — the SMS delivery-receipt consumer's fallback. */
+export function selectEmailChaseSender(env: ChaseSenderEnv): EmailChaseSender {
+  return makeEmailSender(env);
+}
+
 function makeEmailSender(env: ChaseSenderEnv): EmailChaseSender {
   return new EmailChaseSender(async () => {
     const { parseEmailAddress, renderEmailHtml, selectEmailRateLimiter, selectEmailSender } = await import(

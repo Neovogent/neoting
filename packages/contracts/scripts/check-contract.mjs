@@ -43,6 +43,7 @@ const MIRRORED_ENUMS = [
   // in prisma for it to drift from.
   'ChaseDetectionEngine',
   'ChaseState',
+  'MissingEvidenceState',
   'MatchState',
   'MatchKind',
   'PublishMode',

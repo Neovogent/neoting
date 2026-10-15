@@ -321,6 +321,14 @@ const EnvSchema = z.object({
   // which is the UPLOAD_URL_SECRET failure shape (healthy task, dead feature).
   SMS_REGION: z.string().default('eu-west-2'),
   SMS_ORIGINATION_IDENTITY: z.string().default(''),
+  // rush/chase-detection — SMS delivery receipts. The configuration set whose
+  // event destination publishes to SNS → SQS (empty: sends carry none and no
+  // events flow); the queue the worker drains (empty: no consumer runs); and
+  // GBP per USD × 1000 for `sms_log.cost_pence` (integer maths, 790 = £0.79/$1).
+  // Optional (no default) so the many hand-built Env fixtures need no change.
+  SMS_CONFIGURATION_SET: z.string().optional(),
+  SMS_EVENTS_QUEUE_URL: z.string().optional(),
+  SMS_COST_GBP_PER_USD_MILLI: z.coerce.number().int().positive().optional(),
 
   // The web app's public origin — where `/p/<token>` (the chase portal) and
   // `/app/setup` are served. Read by chase.send composition to build the full

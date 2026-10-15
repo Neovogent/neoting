@@ -207,6 +207,8 @@ model Business {
   imports            Import[]
   auditEvents        AuditEvent[]
   documentLinks      DocumentLink[]
+  missingEvidence    MissingEvidence[]
+  chaseSuppression   ChaseSuppressionSetting?
 
   @@index([practiceId])
   @@index([practiceId, isActive])
@@ -1999,4 +2001,70 @@ model FeatureFlag {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+// ── rush/chase-detection ──
+
+enum MissingEvidenceState {
+  OPEN
+  RESOLVED
+  SUPPRESSED
+}
+
+/// One piece of evidence a detection engine believes is missing (SoT §4
+/// Stage 8). Persisted so a finding is raised once: the sweep inserts with
+/// `skipDuplicates` on (business, engine, refKey), so a RESOLVED or SUPPRESSED
+/// row is never re-opened by the next run. Detection never sends anything —
+/// asking the client is still the accountant's reviewed `chase.send`.
+model MissingEvidence {
+  id         String @id @default(cuid())
+  businessId String @map("business_id")
+
+  engine ChaseDetectionEngine
+  /// Identity within (business, engine): a bank transaction id, a supplier
+  /// statement line id, `<vendor>:<kind>:<id>`, or `<supplierKey>:<period>`.
+  refKey String @map("ref_key")
+
+  transactionId           String?   @map("transaction_id")
+  supplierStatementLineId String?   @map("supplier_statement_line_id")
+  externalRef             String?   @map("external_ref")
+  supplierName            String?   @map("supplier_name")
+  /// Signed pence where the source has one. Integer, never a float.
+  amountPence             Int?      @map("amount_pence")
+  occurredAt              DateTime? @map("occurred_at")
+  /// `YYYY-MM` — the month engine (e) expected a recurring document in.
+  period                  String?
+  description             String?
+
+  state                MissingEvidenceState @default(OPEN)
+  resolvedAt           DateTime?            @map("resolved_at")
+  resolvedReason       String?              @map("resolved_reason")
+  resolvedByDocumentId String?              @map("resolved_by_document_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, engine, refKey])
+  @@index([businessId, state])
+  @@map("missing_evidence")
+}
+
+/// A client's chase-suppression settings (SoT §4 Stage 7: the descriptor list
+/// is "extensible per client"). No row means the default list.
+model ChaseSuppressionSetting {
+  businessId String @id @map("business_id")
+
+  /// The client's FULL descriptor keyword list (defaults included, editable).
+  keywords           String[]
+  /// Learned suppression: normalised supplier names the client said have no
+  /// receipt. A line or finding from one of these is never raised again.
+  noReceiptSuppliers String[] @map("no_receipt_suppliers")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("chase_suppression_settings")
 }

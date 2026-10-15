@@ -7,6 +7,8 @@ import {
   composeChaseSms,
   composeCustomChaseBody,
   composeStatementRequestSms,
+  isSuppressedForClient,
+  loadClientSuppression,
   signPortalLink,
   statementItemRef,
 } from '../../chase/index.js';
@@ -152,6 +154,20 @@ export async function computeChaseSendPayload(
         throw new ProposalExecutionRefused('chase.send', 'a grouped message must chase transactions from one client');
       }
       businessId = first;
+
+      // The client's OWN suppression list and the suppliers it said have no
+      // receipt (SoT §4 Stage 7, extensible per client) — the predicate
+      // detection uses, so the composer never asks for what detection skipped.
+      const suppression = await loadClientSuppression(db, businessId);
+      const onList = transactions.filter((t) =>
+        isSuppressedForClient(suppression, { descriptionRaw: t.descriptionRaw, supplierLabel: t.merchantName }),
+      );
+      if (onList.length > 0) {
+        throw new ProposalExecutionRefused(
+          'chase.send',
+          `${onList.length} of the ${transactions.length} lines cannot be chased: they are on this client's chase-suppression list (a charge with no paperwork, or a supplier the client said has no receipt)`,
+        );
+      }
 
       const business = await requireBusiness(db, businessId);
       body =

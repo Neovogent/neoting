@@ -22,7 +22,7 @@ import type { Chase as ChaseRow } from '@prisma/client';
 
 import type { ScopedClient } from '../../common/db/scoped-db.js';
 import { chaseItemRefs } from './chase-projection.js';
-import { isChaseSuppressed } from './suppression.js';
+import { type ClientSuppression, isChaseSuppressed, isSuppressedForClient } from './suppression.js';
 
 /**
  * One unmatched, chaseable transaction. Pence stays integer; the descriptor and
@@ -123,6 +123,8 @@ export function alreadyChasedTransactionIds(chases: readonly ChaseCoverageRow[])
 export async function detectUnmatchedChases(
   db: ScopedClient,
   businessId: string,
+  /** The client's own list + learned suppliers; omitted = the shared base list. */
+  suppression?: ClientSuppression,
 ): Promise<UnmatchedTransaction[]> {
   // Every chase this business has ever had, in any state — see
   // `alreadyChasedTransactionIds` for why the state is not filtered. Two
@@ -155,7 +157,11 @@ export async function detectUnmatchedChases(
   });
 
   return rows
-    .filter((row) => !isChaseSuppressed(row.descriptionRaw))
+    .filter((row) =>
+      suppression === undefined
+        ? !isChaseSuppressed(row.descriptionRaw)
+        : !isSuppressedForClient(suppression, { descriptionRaw: row.descriptionRaw, supplierLabel: row.merchantName }),
+    )
     .filter((row) => !alreadyChased.has(row.id))
     .map((row) => ({
       transactionId: row.id,

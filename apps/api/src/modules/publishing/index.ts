@@ -84,3 +84,9 @@ export { isLedgerKind, LEDGER_KINDS, VENDOR_SLUGS, type VendorSlug, vendorForKin
 export { LEDGER_LIST_KINDS, type ReferenceItem } from './ledger/reference-sync.js';
 export { LedgerConnectionsModule } from './ledger/ledger-connections.module.js';
 export { LEDGER_ADAPTER } from './tokens.js';
+/** Chase detection engine (d)'s read — composed in the worker, never imported by `chase`. */
+export {
+  readUnattachedLedgerTransactions,
+  type UnattachedLedgerTxn,
+  type UnattachedRead,
+} from './ledger/unattached.js';

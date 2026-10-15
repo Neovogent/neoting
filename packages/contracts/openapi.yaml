@@ -2579,6 +2579,178 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
 
   # ==========================================================================
+  # MISSING EVIDENCE + CHASE SUPPRESSION (rush/chase-detection, SoT §4 St 7/8)
+  # ==========================================================================
+
+  /missing-evidence:
+    get:
+      operationId: listMissingEvidence
+      summary: Missing evidence the detection engines found
+      description: |
+        Findings from the detection engines — a bank line with no document,
+        a supplier-statement line marked missing, a ledger transaction with
+        no receipt attached, an expected recurring document that has not
+        arrived. Newest first. A finding is raised once: resolving or
+        dismissing it is permanent, and the worker resolves it by itself when
+        the evidence arrives.
+
+        Nothing here sends anything. Asking the client is a `chase.send`
+        proposal, exactly as before.
+      tags: [chases]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: state
+          in: query
+          description: Repeat to widen. Omitted means OPEN only.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/MissingEvidenceState' }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of findings, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MissingEvidenceItem' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /missing-evidence/scans:
+    post:
+      operationId: scanMissingEvidence
+      summary: Run the detection engines for one client now
+      description: |
+        The same detection the worker runs every few hours, for one client,
+        on demand. Writes findings (never a chase, never a message); safe to
+        repeat — a finding already raised is not raised twice.
+      tags: [chases]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MissingEvidenceScanRequest' }
+      responses:
+        '200':
+          description: What the run found and settled.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MissingEvidenceScanResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /missing-evidence/{itemId}/dismissal:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: dismissMissingEvidence
+      summary: Dismiss a finding — "no receipt exists" or "not needed"
+      description: |
+        Marks the finding SUPPRESSED. With `reason: no-receipt` and
+        `rememberSupplier` (default true) the supplier is remembered for this
+        client, so neither detection nor the chase composer raises it again —
+        re-asking an answered question is the biggest cause of chase fatigue
+        (SoT §24.2.3). Idempotent.
+      tags: [chases]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MissingEvidenceDismissalRequest' }
+      responses:
+        '204':
+          description: Dismissed.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /businesses/{businessId}/chase-suppression:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+    get:
+      operationId: getChaseSuppression
+      summary: The client's chase-suppression list
+      description: |
+        Bank descriptors that never generate a chase (SoT §4 Stage 7, "extensible
+        per client"), plus the suppliers this client said have no receipt.
+      tags: [chases]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The settings.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChaseSuppressionSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      operationId: replaceChaseSuppression
+      summary: Replace the client's chase-suppression list
+      description: |
+        Replace-not-merge. `keywords: null` puts the client back on the default
+        list. Settings, not accounting state: it changes which lines are
+        offered for chasing, never a figure, and every chase is still reviewed.
+      tags: [chases]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChaseSuppressionWriteRequest' }
+      responses:
+        '200':
+          description: The settings now in force.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChaseSuppressionSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
   # OTP PORTAL (SoT Stage 8.3 — the no-app client journey; METH Stage 2 #120)
   # ==========================================================================
 
@@ -9804,6 +9976,97 @@ components:
             can make it tappable. Demo affordance — a real phone taps the text
             itself.
         sentAt: { type: string, format: date-time }
+
+    # ---- missing evidence + chase suppression (rush/chase-detection) -------
+
+    MissingEvidenceState:
+      type: string
+      description: Mirrors the Prisma `MissingEvidenceState` enum exactly.
+      enum: [OPEN, RESOLVED, SUPPRESSED]
+
+    MissingEvidenceItem:
+      type: object
+      required: [id, businessId, engine, state, supplierName, amountPence, occurredAt, period, description, transactionId, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        engine: { $ref: '#/components/schemas/ChaseDetectionEngine' }
+        state: { $ref: '#/components/schemas/MissingEvidenceState' }
+        supplierName: { type: [string, 'null'] }
+        amountPence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Signed pence where the source carries one (negative is money out).
+        occurredAt: { type: [string, 'null'], format: date-time }
+        period:
+          type: [string, 'null']
+          description: '`YYYY-MM` — the month an expected recurring document was due.'
+        description: { type: [string, 'null'] }
+        transactionId:
+          type: [string, 'null']
+          description: The bank line, for engine (a) — what a `chase.send` names.
+        resolvedReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    MissingEvidenceScanRequest:
+      type: object
+      additionalProperties: false
+      required: [businessId]
+      properties:
+        businessId: { type: string, minLength: 1 }
+
+    MissingEvidenceScanResult:
+      type: object
+      required: [created, resolved, suppressed]
+      properties:
+        created: { type: integer, minimum: 0 }
+        resolved: { type: integer, minimum: 0 }
+        suppressed: { type: integer, minimum: 0 }
+
+    MissingEvidenceDismissalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [no-receipt, not-needed]
+        rememberSupplier:
+          type: boolean
+          description: With `no-receipt`, remember the supplier for this client. Default true.
+
+    ChaseSuppressionSettings:
+      type: object
+      required: [businessId, keywords, defaultKeywords, isDefault, noReceiptSuppliers]
+      properties:
+        businessId: { type: string }
+        keywords:
+          type: array
+          items: { type: string }
+          description: The descriptor keywords in force for this client (case-insensitive substring match).
+        defaultKeywords:
+          type: array
+          items: { type: string }
+        isDefault: { type: boolean }
+        noReceiptSuppliers:
+          type: array
+          items: { type: string }
+          description: Normalised supplier names the client said have no receipt.
+
+    ChaseSuppressionWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [keywords, noReceiptSuppliers]
+      properties:
+        keywords:
+          type: [array, 'null']
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 60 }
+          description: '`null` means the default list.'
+        noReceiptSuppliers:
+          type: array
+          maxItems: 500
+          items: { type: string, minLength: 1, maxLength: 120 }
 
     # ---- portal (SoT Stage 8.3 — METH Stage 2, issue #120) ------------------
 

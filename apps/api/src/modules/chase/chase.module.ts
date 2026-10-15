@@ -5,8 +5,10 @@ import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { ChasesController } from './chases.controller.js';
 import { ChasesService } from './chases.service.js';
+import { MissingEvidenceController } from './missing-evidence.controller.js';
+import { MissingEvidenceService } from './missing-evidence.service.js';
 import { selectSmsSender } from './select-sms-sender.js';
-import { CHASES_SERVICE, PRISMA, SMS_SENDER } from './tokens.js';
+import { CHASES_SERVICE, MISSING_EVIDENCE_SERVICE, PRISMA, SMS_SENDER } from './tokens.js';
 
 /**
  * The chase domain module (SoT §4 Stage 8, METH Stage 8).
@@ -38,7 +40,7 @@ import { CHASES_SERVICE, PRISMA, SMS_SENDER } from './tokens.js';
  * must stay unreachable from a controller).
  */
 @Module({
-  controllers: [ChasesController],
+  controllers: [ChasesController, MissingEvidenceController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     { provide: SMS_SENDER, useFactory: (env: Env) => selectSmsSender(env), inject: [ENV] },
@@ -46,6 +48,20 @@ import { CHASES_SERVICE, PRISMA, SMS_SENDER } from './tokens.js';
       provide: CHASES_SERVICE,
       useFactory: (prisma: PrismaClient) => new ChasesService(prisma),
       inject: [PRISMA],
+    },
+    {
+      provide: MISSING_EVIDENCE_SERVICE,
+      // Engine (d)'s ledger read is publishing's; a DYNAMIC import keeps the two
+      // public seams from forming a static cycle (the select-sms-sender pattern).
+      useFactory: (prisma: PrismaClient, env: Env) =>
+        new MissingEvidenceService(
+          prisma,
+          env.LEDGER_ADAPTER === 'http'
+            ? async (ctx, businessId, since) =>
+                (await import('../publishing/index.js')).readUnattachedLedgerTransactions(prisma, ctx, env, businessId, since)
+            : undefined,
+        ),
+      inject: [PRISMA, ENV],
     },
   ],
   exports: [SMS_SENDER],
