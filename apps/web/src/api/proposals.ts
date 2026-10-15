@@ -65,7 +65,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'policy.activate': {
     id: 'proposals.kindLabel.policyActivate',
     defaultMessage: 'Turn an approval workflow on or off',
-  },
+  },  'document.import': { id: 'proposals.kindLabel.documentImport', defaultMessage: 'Import documents' },
 });
 
 /**
@@ -114,6 +114,7 @@ export const NEEDS_RELEASE_AUTHORITY: Readonly<Record<ProposalKind, boolean>> = 
   'bank.confirm-match': false,
   'document.revoke-link': false,
   'document.resolve-duplicate': false,
+  'document.import': false,
 };
 
 /**
@@ -150,6 +151,11 @@ export const KIND_NOTE: Partial<Record<ProposalKind, MessageDescriptor>> = defin
     id: 'proposals.kindNote.bankRemoveStatement',
     defaultMessage:
       'Once approved, the imported transactions are removed with the statement. The uploaded file is kept — re-uploading it imports the lines again, with completeness re-proven.',
+  },
+  'document.import': {
+    id: 'proposals.kindNote.documentImport',
+    defaultMessage:
+      'Once approved, each row of the imported export becomes a document waiting for review, with its fields filled in and its image attached.',
   },
   'document.purge': {
     id: 'proposals.kindNote.documentPurge',
