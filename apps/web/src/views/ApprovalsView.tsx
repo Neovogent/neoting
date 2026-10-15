@@ -15,6 +15,7 @@ import { usePendingProposals } from '../api/proposals';
 import { sliceStatus } from '../api/slices';
 import { DataSourceBadge, SliceLoadError } from '../components/DataSourceBadge';
 import { ApprovalsLiveQueue } from './ApprovalsLiveQueue';
+import { ApprovalsLiveHistory } from './ApprovalsLiveHistory';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
@@ -517,7 +518,9 @@ export function ApprovalsView() {
             </div>
           )}
 
-          {tab === 'History' && (
+          {tab === 'History' && liveOn && <ApprovalsLiveHistory />}
+
+          {tab === 'History' && !liveOn && (
             <DataTable<ApprovalItem>
               className="max-w-none"
               columns={[

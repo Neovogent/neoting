@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import { defineMessages, type MessageDescriptor } from 'react-intl';
 import { z } from 'zod';
 import { NtProblemError } from '@neoting/contracts';
@@ -12,7 +12,7 @@ import {
   reviewActionProposal,
 } from '@neoting/contracts/client';
 import { getActionProposalResponse, listActionProposalsResponse, reviewActionProposalResponse } from '@neoting/contracts/zod';
-import type { ActionProposal, CreateActionProposalRequest, ProposalKind } from '@neoting/contracts/model';
+import type { ActionProposal, CreateActionProposalRequest, ProposalKind, ProposalState } from '@neoting/contracts/model';
 import { unwrapBody } from './envelope';
 
 /**
@@ -239,6 +239,42 @@ export function usePendingProposals({ enabled }: UsePendingProposalsOptions) {
     isFetching: query.isFetching,
     error: query.error,
     refetch: query.refetch,
+  };
+}
+
+const HISTORY_QUERY_KEY = ['action-proposals', 'history'] as const;
+const HISTORY_STATES: ProposalState[] = ['EXECUTED', 'DENIED', 'CANCELLED', 'EXPIRED'];
+
+/**
+ * The decided proposals — the Approvals History tab. Cursor-paged off the same
+ * list the queue reads, filtered to the terminal states, newest first. A body
+ * that drifts from the contract throws into `error`, never renders.
+ */
+export function useProposalHistory({ enabled }: { enabled: boolean }) {
+  const query = useInfiniteQuery({
+    queryKey: HISTORY_QUERY_KEY,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
+      const body = await listActionProposals({
+        state: HISTORY_STATES,
+        limit: 50,
+        ...(pageParam === undefined ? {} : { cursor: pageParam }),
+      });
+      const parsed = listActionProposalsResponse.parse(unwrapBody(body));
+      return { proposals: parsed.data as ActionProposal[], pageInfo: parsed.pageInfo };
+    },
+    getNextPageParam: (last) => (last.pageInfo.hasMore ? (last.pageInfo.nextCursor ?? undefined) : undefined),
+    enabled,
+  });
+  const proposals = useMemo(() => query.data?.pages.flatMap((p) => p.proposals) ?? [], [query.data]);
+  return {
+    proposals,
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    hasNextPage: query.hasNextPage,
+    fetchNextPage: query.fetchNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
   };
 }
 
@@ -509,4 +545,5 @@ export async function requestRemoveStatementsProposal(statementIds: readonly str
 /** Nudge every queue reader to refetch now rather than on the next poll. */
 export async function refreshProposals(queryClient: QueryClient): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+  await queryClient.invalidateQueries({ queryKey: HISTORY_QUERY_KEY });
 }
