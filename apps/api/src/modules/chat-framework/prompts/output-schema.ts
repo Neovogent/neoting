@@ -103,7 +103,9 @@ export const ChatScreenSchema = z.enum([
 
 export type ChatScreen = z.infer<typeof ChatScreenSchema>;
 
-const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+// `.date()`, not a regex: the contract parses `navigation.from/to` as a real
+// calendar date, so 2026-02-31 must fail HERE (the §9.2 retry) and not in the browser.
+const IsoDate = z.string().date();
 
 /** The DRAFT_* intents' words — never an id, never a figure. */
 const ActionSchema = z
