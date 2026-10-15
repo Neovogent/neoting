@@ -241,6 +241,12 @@ tags:
       dunning and the card-update flow; these two operations mint the hosted
       URLs and nothing else. There is no plan-change UI and no invoice renderer
       in this contract on purpose.
+  - name: reports
+    description: |
+      Financial reports per client business (rush/reports, owner decision
+      15 Oct 2026, overriding D1). Derived on the fly from Neoting's own data —
+      coded documents, bank lines and their matches, and approved manual
+      journals. Prepared from documents in Neoting; never the ledger of record.
   - name: tasks
     description: |
       The practice's own checklist (review item 54). Client-scoped work a
@@ -4042,6 +4048,111 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /businesses/{businessId}/reports/{report}:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+      - name: report
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ReportKind' }
+    get:
+      operationId: getFinancialReport
+      summary: A financial report for one client business
+      description: |
+        Profit & Loss, Balance Sheet, Trial Balance, Aged Creditors or Aged
+        Debtors, derived from the documents, bank lines, matches and approved
+        manual journals Neoting holds for this client. Every figure carries
+        the source records behind it. Not the client's ledger of record.
+      tags: [reports]
+      x-nt-side-effect: none
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: compareFrom
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: compareTo
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: states
+          in: query
+          required: false
+          description: Which document states count. Default READY and PUBLISHED.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/DocumentState' }
+      responses:
+        '200':
+          description: The report.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinancialReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /businesses/{businessId}/reports/{report}/csv:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+      - name: report
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ReportKind' }
+    get:
+      operationId: exportFinancialReportCsv
+      summary: The same report as a CSV download
+      tags: [reports]
+      x-nt-side-effect: none
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: compareFrom
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: compareTo
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: states
+          in: query
+          required: false
+          description: Which document states count. Default READY and PUBLISHED.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/DocumentState' }
+      responses:
+        '200':
+          description: The report as CSV, one row per line.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -8501,6 +8612,7 @@ components:
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
         - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
+        - journal.post            # post a balanced manual journal or opening balances to a client's derived books
 
     CreateActionProposalRequest:
       description: |
@@ -8527,6 +8639,7 @@ components:
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
         - $ref: '#/components/schemas/PolicyActivateProposalRequest'
+        - $ref: '#/components/schemas/JournalPostProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -8548,6 +8661,7 @@ components:
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
           policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
+          journal.post: '#/components/schemas/JournalPostProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -8800,6 +8914,218 @@ components:
             True arms it, false disarms it. Idempotent at execution — a
             workflow already in the requested state is `alreadyApplied`, not a
             second effect.
+
+    JournalPostProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: journal.post }
+            payload: { $ref: '#/components/schemas/JournalPostPayload' }
+
+    JournalPostPayload:
+      type: object
+      required: [journalDate, journalKind, narrative, lines]
+      description: |
+        A manual journal or the opening balances for one client business,
+        posted into the derived books the financial reports read. It must
+        balance — total debits equal total credits, in integer pence — and the
+        server refuses one that does not, at creation and again at execution.
+        The business is the proposal's own `businessId`.
+      properties:
+        journalDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The accounting date of the journal (UK calendar date, `YYYY-MM-DD`).
+        journalKind:
+          type: string
+          enum: [opening-balance, manual]
+        narrative:
+          type: string
+          minLength: 1
+          maxLength: 500
+        lines:
+          type: array
+          minItems: 2
+          maxItems: 100
+          items: { $ref: '#/components/schemas/JournalLine' }
+
+    JournalLine:
+      type: object
+      required: [accountCode, debitPence, creditPence]
+      description: One side of a journal. Exactly one of `debitPence` and `creditPence` is non-zero.
+      properties:
+        accountCode:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: |
+            A report account code — a chart-of-accounts category code, a
+            system account (`TRADE_CREDITORS`, `TRADE_DEBTORS`, `VAT_INPUT`,
+            `VAT_OUTPUT`, `SUSPENSE`, `CAPITAL`, `RETAINED_EARNINGS`,
+            `DRAWINGS`, `EXPENSE_CLAIMS`, `LOANS`) or `BANK:<bankAccountId>`.
+        debitPence:
+          type: integer
+          minimum: 0
+          x-nt-money: true
+        creditPence:
+          type: integer
+          minimum: 0
+          x-nt-money: true
+        memo:
+          type: string
+          maxLength: 200
+
+    ReportKind:
+      type: string
+      enum: [profit-and-loss, balance-sheet, trial-balance, aged-creditors, aged-debtors]
+
+    ReportClass:
+      type: string
+      description: Where an account lands on the reports.
+      enum: [income, cost-of-sales, overhead, fixed-asset, current-asset, bank, current-liability, equity]
+
+    ReportAccount:
+      type: object
+      required: [code, name, reportClass]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        reportClass: { $ref: '#/components/schemas/ReportClass' }
+
+    ReportSource:
+      type: object
+      required: [kind, id, label, date, amountPence]
+      description: One source record behind a figure — the drill-down.
+      properties:
+        kind:
+          type: string
+          enum: [document, bank-transaction, journal]
+        id: { type: string }
+        label: { type: string }
+        date:
+          type: [string, 'null']
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        amountPence:
+          type: integer
+          description: Signed — positive increases the figure it sits under.
+          x-nt-money: true
+
+    ReportLine:
+      type: object
+      required: [key, label, lineKind, amountPence, sources]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        lineKind:
+          type: string
+          enum: [line, subtotal, total]
+        accountCode: { type: [string, 'null'] }
+        amountPence:
+          type: integer
+          description: This period (P&L), the balance at `to` (balance sheet), net debit (trial balance) or total outstanding (aged).
+          x-nt-money: true
+        comparePence:
+          type: [integer, 'null']
+          description: The same figure for the comparison period, when one was asked for.
+          x-nt-money: true
+        debitPence:
+          type: [integer, 'null']
+          x-nt-money: true
+        creditPence:
+          type: [integer, 'null']
+          x-nt-money: true
+        currentPence:
+          type: [integer, 'null']
+          x-nt-money: true
+        days30Pence:
+          type: [integer, 'null']
+          description: 1–30 days past due.
+          x-nt-money: true
+        days60Pence:
+          type: [integer, 'null']
+          description: 31–60 days past due.
+          x-nt-money: true
+        days90Pence:
+          type: [integer, 'null']
+          description: 61–90 days past due.
+          x-nt-money: true
+        over90Pence:
+          type: [integer, 'null']
+          description: More than 90 days past due.
+          x-nt-money: true
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSource' }
+
+    ReportSection:
+      type: object
+      required: [key, title, lines]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ReportLine' }
+
+    ReportCompleteness:
+      type: object
+      required:
+        - documentsCounted
+        - documentsNotCounted
+        - uncategorisedDocuments
+        - unmatchedBankLines
+        - suspenseBalancePence
+        - foreignCurrencyDocuments
+        - unmappedAccounts
+        - balanced
+      properties:
+        documentsCounted: { type: integer }
+        documentsNotCounted:
+          type: integer
+          description: Documents for this client in a state the report does not count (still to review, failed, rejected).
+        uncategorisedDocuments: { type: integer }
+        unmatchedBankLines: { type: integer }
+        suspenseBalancePence:
+          type: integer
+          x-nt-money: true
+        foreignCurrencyDocuments:
+          type: integer
+          description: Counted documents not in GBP — included at face value, unconverted.
+        unmappedAccounts:
+          type: array
+          items: { type: string }
+        balanced:
+          type: boolean
+          description: Total debits equal total credits across the derived journal.
+
+    FinancialReport:
+      type: object
+      required: [report, businessId, title, from, to, compareFrom, compareTo, generatedAt, notice, statesCounted, sections, completeness, accounts]
+      properties:
+        report: { $ref: '#/components/schemas/ReportKind' }
+        businessId: { type: string }
+        title: { type: string }
+        from: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        to: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        compareFrom: { type: [string, 'null'], pattern: '^\d{4}-\d{2}-\d{2}$' }
+        compareTo: { type: [string, 'null'], pattern: '^\d{4}-\d{2}-\d{2}$' }
+        generatedAt: { type: string, format: date-time }
+        notice:
+          type: string
+          description: Always "Prepared from documents in Neoting — not your ledger of record".
+        statesCounted:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentState' }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSection' }
+        completeness: { $ref: '#/components/schemas/ReportCompleteness' }
+        accounts:
+          type: array
+          description: Every account a manual journal for this business may post to.
+          items: { $ref: '#/components/schemas/ReportAccount' }
 
     ResolveDuplicateProposalRequest:
       allOf:
