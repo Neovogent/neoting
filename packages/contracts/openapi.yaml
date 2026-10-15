@@ -8501,6 +8501,8 @@ components:
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
         - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
+        - vat.submit-return       # submit a VAT return to HMRC (MTD), finalised and irreversible; review shows all nine boxes verbatim
+        - vat.adjust-return       # a manual adjustment to one box of a computed VAT return, with a reason
 
     CreateActionProposalRequest:
       description: |
@@ -8527,6 +8529,8 @@ components:
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
         - $ref: '#/components/schemas/PolicyActivateProposalRequest'
+        - $ref: '#/components/schemas/VatSubmitReturnProposalRequest'
+        - $ref: '#/components/schemas/VatAdjustReturnProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -8548,6 +8552,8 @@ components:
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
           policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
+          vat.submit-return: '#/components/schemas/VatSubmitReturnProposalRequest'
+          vat.adjust-return: '#/components/schemas/VatAdjustReturnProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -8800,6 +8806,146 @@ components:
             True arms it, false disarms it. Idempotent at execution — a
             workflow already in the requested state is `alreadyApplied`, not a
             second effect.
+
+    VatSubmitReturnProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: vat.submit-return }
+            payload: { $ref: '#/components/schemas/VatSubmitReturnPayload' }
+
+    VatAdjustReturnProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: vat.adjust-return }
+            payload: { $ref: '#/components/schemas/VatAdjustReturnPayload' }
+
+    VatReturnBoxes:
+      type: object
+      description: |
+        The nine boxes of a UK VAT return, in integer pence. Converted to
+        HMRC's pounds-and-pence (boxes 1–5) and whole pounds (boxes 6–9) only
+        at the HMRC boundary, with integer maths.
+      required:
+        - vatDueSalesPence
+        - vatDueAcquisitionsPence
+        - totalVatDuePence
+        - vatReclaimedCurrPeriodPence
+        - netVatDuePence
+        - totalValueSalesExVatPence
+        - totalValuePurchasesExVatPence
+        - totalValueGoodsSuppliedExVatPence
+        - totalAcquisitionsExVatPence
+      properties:
+        vatDueSalesPence:
+          type: integer
+          x-nt-money: true
+          description: Box 1 — VAT due on sales and other outputs. Signed pence.
+        vatDueAcquisitionsPence:
+          type: integer
+          x-nt-money: true
+          description: Box 2 — VAT due on acquisitions (NI/EU movements of goods). Signed pence.
+        totalVatDuePence:
+          type: integer
+          x-nt-money: true
+          description: Box 3 — box 1 + box 2. Signed pence.
+        vatReclaimedCurrPeriodPence:
+          type: integer
+          x-nt-money: true
+          description: Box 4 — VAT reclaimed on purchases. Signed pence.
+        netVatDuePence:
+          type: integer
+          x-nt-money: true
+          description: Box 5 — the absolute difference between box 3 and box 4. Never negative.
+        totalValueSalesExVatPence:
+          type: integer
+          x-nt-money: true
+          description: Box 6 — total sales ex VAT. Whole pounds, held in pence (always a multiple of 100).
+        totalValuePurchasesExVatPence:
+          type: integer
+          x-nt-money: true
+          description: Box 7 — total purchases ex VAT. Whole pounds, held in pence.
+        totalValueGoodsSuppliedExVatPence:
+          type: integer
+          x-nt-money: true
+          description: Box 8 — goods supplied to the EU (NI). Whole pounds, held in pence.
+        totalAcquisitionsExVatPence:
+          type: integer
+          x-nt-money: true
+          description: Box 9 — acquisitions from the EU (NI). Whole pounds, held in pence.
+
+    VatSubmitReturnPayload:
+      type: object
+      description: |
+        Submit one VAT return to HMRC under Making Tax Digital, with
+        `finalised: true`. **Irreversible**: HMRC accepts one return per
+        period and it cannot be withdrawn. The boxes are COMPUTED BY THE
+        SERVER at proposal creation from the client's coded documents and
+        approved adjustments — whatever the caller sent is discarded — and
+        Read review renders all nine verbatim. The executor re-checks the
+        period against HMRC's open obligations and sends exactly the approved
+        boxes. Release authority: the practice's super admin.
+      required: [businessId, vrn, periodKey, periodStart, periodEnd, scheme, boxes, documentCount, warnings]
+      properties:
+        businessId: { type: string }
+        vrn:
+          type: string
+          description: The client's VAT registration number, nine digits.
+        periodKey:
+          type: string
+          minLength: 1
+          maxLength: 4
+          description: HMRC's key for the obligation being met.
+        # `YYYY-MM-DD`; deliberately not `format: date` (the orval msw gap
+        # recorded on `BankRemoveStatementPayload`).
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        scheme:
+          type: string
+          enum: [STANDARD, CASH, FLAT_RATE]
+        flatRateBasisPoints:
+          type: [integer, 'null']
+          description: The flat-rate percentage in basis points (1650 = 16.5%), for FLAT_RATE only.
+        boxes: { $ref: '#/components/schemas/VatReturnBoxes' }
+        documentCount:
+          type: integer
+          minimum: 0
+          description: How many documents the boxes were computed from. A COUNT, not money.
+        warnings:
+          type: array
+          maxItems: 50
+          items: { type: string }
+          description: What the reviewer should know before releasing — uncategorised items, suspicious zero-VAT lines, documents still in review.
+
+    VatAdjustReturnPayload:
+      type: object
+      description: |
+        A manual adjustment to one box of a VAT return (errors under the
+        HMRC threshold, a capital-asset claim under the Flat Rate Scheme, an
+        EC/NI movement the documents cannot show). Recorded against the
+        period's dates, applied to every later computation of that period.
+        Boxes 3 and 5 are derived and cannot be adjusted.
+      required: [businessId, periodStart, periodEnd, box, amountPence, reason]
+      properties:
+        businessId: { type: string }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        box:
+          type: integer
+          enum: [1, 2, 4, 6, 7, 8, 9]
+        amountPence:
+          type: integer
+          x-nt-money: true
+          description: Signed pence added to the box.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
 
     ResolveDuplicateProposalRequest:
       allOf:
