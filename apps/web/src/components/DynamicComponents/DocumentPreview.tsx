@@ -139,6 +139,7 @@ const m = defineMessages({
   },
   originalAlt: { id: 'documents.documentPreview.originalAlt', defaultMessage: 'The original document as received' },
   openOriginal: { id: 'documents.documentPreview.openOriginal', defaultMessage: 'Open the original file' },
+  pdfTitle: { id: 'documents.documentPreview.pdfTitle', defaultMessage: 'The original document, as a PDF' },
   loadingDetail: { id: 'documents.documentPreview.loadingDetail', defaultMessage: 'Loading the extraction…' },
   detailError: {
     id: 'documents.documentPreview.detailError',
@@ -688,9 +689,32 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   />
                 )}
               </div>
+            ) : live && detail.image && detail.image.mimeType === 'application/pdf' ? (
+              // A PDF previews inline (the presigned URL is served
+              // `Content-Disposition: inline`), with the link kept beneath it
+              // for browsers that will not frame one. No provenance band: a
+              // box cannot be placed over a frame the browser lays out.
+              <div className="flex flex-col gap-2">
+                <iframe
+                  title={intl.formatMessage(m.pdfTitle)}
+                  src={detail.image.url}
+                  // The frame equivalent of `rel="noreferrer"` — the URL is bearer authority.
+                  referrerPolicy="no-referrer"
+                  className="w-full aspect-[3/4] rounded-2xl border border-white/10 bg-raised"
+                />
+                <a
+                  href={detail.image.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="self-start inline-flex items-center gap-1.5 text-[12px] font-bold text-zinc-400 hover:text-white transition-colors"
+                >
+                  <ExternalLink size={12} />
+                  {intl.formatMessage(m.openOriginal)}
+                </a>
+              </div>
             ) : live && detail.image ? (
-              // A PDF or anything else a plain <img> cannot show: hand over the
-              // short-lived link rather than pretending.
+              // Anything else neither an <img> nor a PDF frame can show: hand
+              // over the short-lived link rather than pretending.
               <a
                 href={detail.image.url}
                 target="_blank"
