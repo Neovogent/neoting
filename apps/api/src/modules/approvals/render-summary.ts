@@ -143,6 +143,7 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'document.purge': 'Delete documents permanently',
   'document.resolve-duplicate': 'Resolve a suspected duplicate',
   'policy.activate': 'Turn an approval workflow on or off',
+  'document.import': 'Import documents from another capture tool',
 };
 
 export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
@@ -617,6 +618,27 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           },
         ],
       );
+    }
+    case 'document.import': {
+      // rush/documents: itemised — one entry per row the approval will create.
+      const rows = Array.isArray(payload['rows']) ? (payload['rows'] as unknown[]).filter(isObject) : [];
+      const withImage = rows.filter((row) => row['hasImage'] === true).length;
+      return summary(`Import ${count(rows.length, 'document')} from ${text(payload['source'])}`, [
+        {
+          heading: 'What approving does',
+          entries: [
+            { label: 'Creates', value: `${count(rows.length, 'document')} in To Review, fields pre-filled from the export` },
+            { label: 'Originals', value: `${withImage} matched to their image; ${rows.length - withImage} keep the CSV as their source` },
+          ],
+        },
+        {
+          heading: 'Rows',
+          entries: rows.map((row) => ({
+            label: `Row ${text(row['rowNumber'])}: ${text(row['supplierName'])}`,
+            value: `${text(row['documentDate'])} · ${penceToMoney(row['totalPence'], typeof row['currency'] === 'string' ? row['currency'] : 'GBP')}${row['hasImage'] === true ? ' · image' : ''}`,
+          })),
+        },
+      ]);
     }
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a

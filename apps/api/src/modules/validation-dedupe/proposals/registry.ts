@@ -2,6 +2,7 @@ import type { ProposalKind } from '@neoting/contracts/model';
 
 import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
 import { activatePolicyExecutor } from './activate-policy.js';
+import { importDocumentsExecutor } from './import-documents.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
 import { confirmMatchExecutor } from './confirm-match.js';
@@ -144,6 +145,8 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // package H). The workflow itself is written by ingest-class operations;
     // what needs a signature is the GATE, in both directions.
     'policy.activate': activatePolicyExecutor,
+    // rush/documents: one itemised proposal per Dext/Hubdoc/AutoEntry bundle.
+    'document.import': importDocumentsExecutor,
   };
 }
 

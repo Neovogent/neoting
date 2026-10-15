@@ -125,6 +125,7 @@ const IDENTITY: Readonly<Record<ProposalKind, (payload: StoredPayload) => string
     return documentIds === null ? null : `${documentIds}:${p['archived'] === true ? 'on' : 'off'}`;
   },
   'document.purge': (p) => ids(p['documentIds']),
+  'document.import': (p) => str(p['importId']),
   // `documentLinkIds`, not documents — this kind revokes LINKS, and two
   // different links on one document are two different acts.
   'document.revoke-link': (p) => ids(p['documentLinkIds']),

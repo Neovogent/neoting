@@ -298,6 +298,8 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // This says whose reading that has to be.
   'rule.create': true,
   'document.revoke-link': false,
+  // rush/documents: creates TO_REVIEW documents from an export bundle — nothing leaves the product.
+  'document.import': false,
   // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — overturning the argument written
   // here.** It read `false` because offboarding is soft and entirely internal:
   // it flips `businesses.is_active`, sends nothing, and lets no figure leave

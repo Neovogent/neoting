@@ -50,6 +50,11 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   'document.purge': { documentIds: ['doc_1'], reason: 'Duplicate scan, already in Trash' },
   'document.resolve-duplicate': { documentKeepId: 'doc_1', documentCopyId: 'doc_2', resolution: 'delete-copy' },
   'policy.activate': { workflowId: 'wfl_1', active: true },
+  'document.import': {
+    importId: 'imp_1',
+    source: 'dext',
+    rows: [{ rowNumber: 1, s3Key: 'w/biz_1/documents/abc', originalFilename: 'r.jpg', mimeType: 'image/jpeg', byteSize: 10, byteHash: 'abc', hasImage: true, totalPence: 1200 }],
+  },
 };
 
 test('every kind parses its own valid example — the index ↔ kind pin', () => {

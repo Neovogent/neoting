@@ -6,6 +6,7 @@ import type {
   BankConfirmMatchPayload,
   BankRemoveStatementPayload,
   ChaseSendPayload,
+  DocumentImportPayload,
   DocumentPurgePayload,
   DuplicateResolvePayload,
   PolicyActivatePayload,
@@ -57,6 +58,7 @@ export interface ProposalPayloadMap {
   'document.purge': DocumentPurgePayload;
   'document.resolve-duplicate': DuplicateResolvePayload;
   'policy.activate': PolicyActivatePayload;
+  'document.import': DocumentImportPayload;
 }
 
 export interface ExecutionInput<P> {
