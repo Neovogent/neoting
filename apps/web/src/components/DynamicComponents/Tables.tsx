@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useConfirm } from './ConfirmProvider';
 import { describeMissing, partitionByReadiness } from '../../lib/readiness';
 import { currency } from '../../lib/resolver';
+import { failureOf, reasonText } from '../../lib/failures';
 import { DataTable, Pill } from './DataTable';
 import type { ApprovalItem, AuditEntry, DocStatus, Document, MissingItem } from '../../lib/types';
 import { EXPORT_HINT } from '../../lib/exportRules';
@@ -48,7 +49,14 @@ function scopeLabel(intl: IntlShape, names: string[]) {
 
 const inbox = defineMessages({
   title: { id: 'shell.inboxTable.title', defaultMessage: 'Inbox' },
-  subtitle: { id: 'shell.inboxTable.subtitle', defaultMessage: '{scope} • processing / to review / ready' },
+  // The subtitle names what the table is actually filtered to — a "failed"
+  // ask used to wear "processing / to review / ready" above failed rows.
+  subtitle: {
+    id: 'shell.inboxTable.subtitle',
+    defaultMessage:
+      '{scope} • {filter, select, processing {processing} review {to review} ready {ready} rejected {failed} published {published} other {processing / to review / ready / published}}',
+  },
+  statusFailed: { id: 'shell.inboxTable.statusFailed', defaultMessage: 'Failed' },
   statusReady: { id: 'shell.inboxTable.statusReady', defaultMessage: 'Ready' },
   statusReview: { id: 'shell.inboxTable.statusReview', defaultMessage: 'To review' },
   statusPublished: { id: 'shell.inboxTable.statusPublished', defaultMessage: 'Published' },
@@ -94,6 +102,19 @@ const inbox = defineMessages({
 });
 
 /** Costs / Sales inbox with the three-state model (PRD stage 5). */
+/** A REJECTED/FAILED row says so, with the reason — never "Processing". */
+function FailedCell({ doc }: { doc: Document }) {
+  const intl = useIntl();
+  const failure = failureOf(doc);
+  const reason = failure ? reasonText(failure, intl) : doc.statusNote;
+  return (
+    <span className="inline-flex flex-col items-start gap-1 max-w-[240px]">
+      <Pill tone="red" title={reason}>{intl.formatMessage(inbox.statusFailed)}</Pill>
+      {reason && <span className="text-[11px] text-red-400/90 leading-snug line-clamp-2" title={reason}>{reason}</span>}
+    </span>
+  );
+}
+
 export function InboxTable({
   clientIds,
   clientNames,
@@ -116,7 +137,7 @@ export function InboxTable({
   return (
     <DataTable<Document>
       title={intl.formatMessage(inbox.title)}
-      subtitle={intl.formatMessage(inbox.subtitle, { scope: scopeLabel(intl, clientNames) })}
+      subtitle={intl.formatMessage(inbox.subtitle, { scope: scopeLabel(intl, clientNames), filter: statusFilter ?? 'all' })}
       rows={rows}
       rowId={(d) => d.id}
       selectable
@@ -146,6 +167,8 @@ export function InboxTable({
               <Pill tone="amber">{d.statusNote ?? intl.formatMessage(inbox.statusReview)}</Pill>
             ) : d.status === 'published' ? (
               <Pill tone="blue">{intl.formatMessage(inbox.statusPublished)}</Pill>
+            ) : d.status === 'rejected' ? (
+              <FailedCell doc={d} />
             ) : (
               <Pill>{intl.formatMessage(inbox.statusProcessing)}</Pill>
             ),
