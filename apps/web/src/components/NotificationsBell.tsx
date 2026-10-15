@@ -61,6 +61,7 @@ const m = defineMessages({
     id: 'shell.notificationsBell.publishRecalculatedPlain',
     defaultMessage: '{business} — the accounting software changed the figures on a release. Check it against the receipt.',
   },
+  vaultExpiring: { id: 'shell.notificationsBell.vaultExpiring', defaultMessage: 'A vault document is expiring for {business}' },
   genericEvent: { id: 'shell.notificationsBell.genericEvent', defaultMessage: '{event} — {business}' },
   badgeOverflow: {
     id: 'shell.notificationsBell.badgeOverflow',
@@ -104,6 +105,8 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
         ? intl.formatMessage(m.publishRecalculatedPlain, { business: item.businessName })
         : intl.formatMessage(m.publishRecalculated, { business: item.businessName, detail });
     }
+    case 'vault.expiring':
+      return detailOf(item) ?? intl.formatMessage(m.vaultExpiring, { business: item.businessName });
     default:
       return intl.formatMessage(m.genericEvent, { event: item.event, business: item.businessName });
   }
