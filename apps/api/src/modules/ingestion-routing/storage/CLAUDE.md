@@ -140,6 +140,31 @@ Same fixture caveat as `presignPut`: `InMemoryDocumentStore` returns a
 signature works**. Only a real MinIO round-trip can, and there is not one for the
 GET path yet (see TODO).
 
+## Quarantine (14 Oct 2026) — write-only, by construction and by policy
+
+`s3-quarantine.ts` + `select-quarantine.ts` (`QUARANTINE_BUCKET`, empty = the
+`noQuarantine` fixture from `lib/sanitisation/quarantine.ts`). Sanitisation
+step 4 hands it the ORIGINAL bytes of a virus-scan hit; it does ONE `PutObject`
+into `nt-<env>-quarantine-<acct>` and that is the whole class.
+
+- **Key `<channel>/<sha256>`** — content-addressed, and deliberately carrying
+  NO tenant, document or sender identifier. The bucket is incident evidence,
+  not a document store; "whose was it" is answered by the document's `sanitise`
+  event, which records the same sha256. `quarantineKey` refuses a non-hex hash
+  so nothing path-like can become a key. Pinned by test.
+- **Not under `w/`, and that is correct.** The `w/` rule above is the DOCUMENT
+  buckets' IAM shape. The quarantine bucket has its own grant
+  (`aws_iam_role_policy.app_quarantine` in clamav.tf: `s3:PutObject` on
+  `<bucket>/*`) and its own policy, which DENIES this role `GetObject`. So the
+  class has no `get`/`list` (a test asserts it) and must never grow one —
+  malware moves in one direction and the way back out is a human.
+- `ContentType: application/octet-stream` + `attachment`, never the sniffed
+  type; metadata (`av-signature`, `channel`, `sha256`, `quarantined-at`) is
+  reduced to printable ASCII first because it travels as an HTTP header. Same
+  no-client-side-KMS rule as `S3DocumentStore`.
+- **Every write here is an operator alert** (the bucket's EventBridge rule), so
+  only a scanner hit may ever go through this class.
+
 ## TODO
 
 - [x] MinIO integration test — run by Shakib 14 Aug 2026, object confirmed in the

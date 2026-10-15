@@ -38,6 +38,7 @@ import {
   sanitise,
   type SanitisationDeps,
   sniff,
+  type Quarantine,
   type VirusScanner,
 } from '../lib/sanitisation/index.js';
 
@@ -109,6 +110,8 @@ export interface UploadSanitisationDeps {
    */
   readonly perceptualHasher?: PerceptualHasher;
   readonly scanner?: VirusScanner;
+  /** Where a scanner hit's original bytes go. Absent → kept nowhere (offline). */
+  readonly quarantine?: Quarantine;
   readonly imageNormaliser?: ImageNormaliser;
   readonly documentGuard?: DocumentGuard;
 }
@@ -172,6 +175,7 @@ export async function sanitiseUploadBytes(
 ): Promise<SanitisedBytesResult> {
   const sanitisationDeps: Partial<SanitisationDeps> = {
     ...(deps.scanner ? { scanner: deps.scanner } : {}),
+    ...(deps.quarantine ? { quarantine: deps.quarantine } : {}),
     ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
     ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
   };

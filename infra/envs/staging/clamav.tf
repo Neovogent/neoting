@@ -43,6 +43,59 @@
 # THE OTHER HALF OF STEP 8 IS APPLICATION CODE, NOT INFRASTRUCTURE — see the
 # WORKER-SIDE CONTRACT block near the foot of this file. Infrastructure that
 # tags objects is worthless if the worker reads them anyway.
+#
+# ==========================================================================
+# ⚠ AMENDMENT, 14 Oct 2026 — THE SCANNER IS DRIVEN BY THE WORKER, NOT BY SQS.
+#
+# The application half landed in a different shape from the one sketched
+# above, and this file now serves it. Read this before the banner above, and
+# read the banner as history.
+#
+#   WHAT CHANGED: `apps/api/src/modules/ingestion-routing/lib/sanitisation/
+#   clamd-virus-scanner.ts` is a zero-dependency clamd INSTREAM client, and
+#   it IS step 4 of the Governance §11.4 pipeline. Every channel — web and
+#   portal upload, email, WhatsApp — already funnels its bytes through that
+#   pipeline in the workers, in memory, BEFORE anything is stored as a
+#   document. So the worker streams the bytes to clamd synchronously, gets
+#   OK or FOUND, and on FOUND refuses the document with a visible reason AND
+#   writes the original bytes to the quarantine bucket below. An unreachable
+#   clamd fails CLOSED: the job throws, BullMQ retries, the ingest DLQ pages.
+#
+#   WHY NOT THE SQS CONSUMER: the pipeline runs on bytes in hand, at the
+#   position §11.4 fixes, and it has done so since PR #3. An asynchronous
+#   tag-the-object scanner would scan AFTER sanitisation had already stored
+#   the sanitised object (step 4 would still be the fixture), would need every
+#   read path in five modules to check a tag, and would race the ingest worker
+#   for the web-upload original. Dialling clamd from the step that already
+#   exists is the smaller, correct change. The upstream `clamav/clamav` image
+#   is now the right base for exactly the reason the banner says it was not a
+#   substitute before: our container IS just clamd now, plus signature
+#   distribution (infra/clamav/Dockerfile).
+#
+#   WHAT THIS FILE NOW DOES FOR THAT:
+#     * the scanner task EXPOSES 3310, the clamav security group admits the
+#       app security group on it, and the service registers in Cloud Map as
+#       `clamav.<env>.nt.internal` so the workers can dial it by name
+#       (CLAMD_HOST in services.tf);
+#     * the APP task role may PutObject into the quarantine bucket (write-only;
+#       the bucket policy still denies it reads) — `aws_iam_role_policy.app_quarantine`.
+#
+#   WHAT IS NOW REDUNDANT AND DELIBERATELY LEFT IN PLACE: the S3 → EventBridge
+#   → SQS path (§3–4), the scanner role's SQS/S3-tagging grants, and the
+#   queue-age / DLQ alarms built on that queue. Nothing consumes the queue, so
+#   `nt-<env>-av-queue-age` WILL alarm when objects land in docs/receipts —
+#   exactly as it would have before this amendment. Removing them is the
+#   owner's call (it deletes resources, and the alarms are wired to the alerts
+#   topic); docs/runbooks/virus-scanning.md lists it as a follow-up decision.
+#   Until then, treat that alarm as "the old design's queue is filling", not
+#   as "uploads are unscanned" — the worker's boot log and VIRUS_SCANNER are
+#   the truth about that.
+#
+#   SWITCH-ON IS STILL AN EXPLICIT, ORDERED SET OF STEPS, none of which this
+#   amendment performs: build+push the image, run freshclam-publish once, raise
+#   desired_count, flip VIRUS_SCANNER=clamd in services.tf, apply, then gate
+#   `fixture` out of production in env.ts. docs/runbooks/virus-scanning.md.
+# ==========================================================================
 # --------------------------------------------------------------------------
 
 locals {
@@ -707,17 +760,29 @@ resource "aws_cloudwatch_log_group" "clamav" {
 
 # A dedicated security group rather than reusing module.network's app group.
 #
-# The app SG carries an ingress rule from the ALB on 3000. The scanner listens
-# on nothing and must never be addressable — putting it in the app SG would
-# make it reachable from the load balancer's SG the moment anything in the
-# image did bind a port. Egress-only, no ingress rule at all, and the absence
-# is the security property.
+# The app SG carries an ingress rule from the ALB on 3000. Putting clamd in
+# the app SG would make port 3310 reachable from the load balancer's SG. Here
+# the ONLY ingress is the one rule below — 3310 from the app SG — so the
+# daemon is addressable by the workers and by nothing else in the VPC, and by
+# nothing outside it (the task has a public IP for egress; no public ingress
+# rule exists).
 resource "aws_security_group" "clamav" {
   name        = "nt-${local.env}-clamav"
-  description = "ClamAV scanner and freshclam publisher. Egress only - nothing ever connects in."
+  description = "ClamAV daemon and freshclam publisher. Ingress: 3310 from the app SG only."
   vpc_id      = module.network.vpc_id
 
   tags = { Name = "nt-${local.env}-clamav" }
+}
+
+# The workers dial clamd (14 Oct 2026 amendment). Referenced-SG, not CIDR, so a
+# subnet change cannot widen it, and a single port.
+resource "aws_vpc_security_group_ingress_rule" "clamav_from_app" {
+  security_group_id            = aws_security_group.clamav.id
+  description                  = "clamd INSTREAM from the api/workers tasks"
+  referenced_security_group_id = module.network.app_security_group_id
+  from_port                    = 3310
+  to_port                      = 3310
+  ip_protocol                  = "tcp"
 }
 
 # Outbound to SQS, ECR, CloudWatch and (freshclam only) database.clamav.net.
@@ -921,31 +986,33 @@ resource "aws_ecs_task_definition" "clamav" {
       image     = "${aws_ecr_repository.clamav.repository_url}:${local.clamav_image_tag}"
       essential = true
 
-      # No portMappings. The scanner pulls from SQS; nothing dials in, and the
-      # security group above has no ingress rule that would let it.
+      # clamd's TCP port (14 Oct 2026 amendment). The workers stream bytes here
+      # over the INSTREAM protocol; the security group admits only the app SG.
+      portMappings = [
+        {
+          containerPort = 3310
+          protocol      = "tcp"
+        }
+      ]
 
       environment = [
-        { name = "NODE_ENV", value = "production" },
         { name = "NEOTING_ENV", value = local.env },
         { name = "SERVICE_NAME", value = "clamav" },
         { name = "AWS_REGION", value = local.region },
         { name = "TZ", value = "UTC" }, # storage is UTC, full stop (CLAUDE.md invariant)
 
-        { name = "AV_QUEUE_URL", value = aws_sqs_queue.av_scan.url },
-
-        # The handler must renew its lease before this expires, not after.
-        { name = "AV_VISIBILITY_TIMEOUT_SECONDS", value = tostring(local.av_visibility_timeout) },
-
-        { name = "AV_QUARANTINE_BUCKET", value = local.quarantine_bucket },
+        # Signature distribution — infra/clamav/entrypoint.sh pulls from here
+        # on start and every AV_SIGNATURE_REFRESH_SECONDS, then asks clamd to
+        # RELOAD. Hourly against S3, NOT against clamav.net — the container
+        # must never run freshclam against the public mirrors itself. See the
+        # signature bucket banner.
         { name = "AV_SIGNATURE_BUCKET", value = local.avdefs_bucket },
         { name = "AV_SIGNATURE_PREFIX", value = local.av_signature_prefix },
-
-        # Runbook Step 8: "pull on start and refresh hourly". Hourly against
-        # S3, NOT against clamav.net — the container must never run freshclam
-        # against the public mirrors itself. See the signature bucket banner.
         { name = "AV_SIGNATURE_REFRESH_SECONDS", value = "3600" },
 
-        { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
+        # No AV_QUEUE_URL, AV_QUARANTINE_BUCKET or KMS_KEY_ARN any more: this
+        # container is clamd. It consumes no queue and writes no object — the
+        # WORKER quarantines a hit (QUARANTINE_BUCKET in services.tf).
       ]
 
       # No `secrets` block: the scanner holds no credentials. It reads S3,
@@ -1058,10 +1125,16 @@ resource "aws_ecs_service" "clamav" {
     security_groups = [aws_security_group.clamav.id]
 
     # No NAT in staging (network.tf, Appendix B.3). The public IP is how the
-    # task reaches SQS, ECR and CloudWatch at all; S3 goes via the free gateway
-    # endpoint. Nothing can reach in — the SG has no ingress rule.
-    # ~$3.60/task/month.
+    # task reaches ECR and CloudWatch at all; S3 goes via the free gateway
+    # endpoint. Nothing public can reach in — the SG's only ingress is 3310
+    # from the app SG, by SG reference. ~$3.60/task/month.
     assign_public_ip = true
+  }
+
+  # How the workers find it (14 Oct 2026 amendment): an A record per running
+  # task in the private DNS namespace below, kept in step with ECS task health.
+  service_registries {
+    registry_arn = aws_service_discovery_service.clamav.arn
   }
 
   enable_ecs_managed_tags = true
@@ -1082,6 +1155,81 @@ resource "aws_ecs_service" "clamav" {
   lifecycle {
     ignore_changes = [desired_count, task_definition]
   }
+}
+
+# --------------------------------------------------------------------------
+# Service discovery (14 Oct 2026 amendment).
+#
+# Cloud Map private DNS, not ECS Service Connect: Connect needs a proxy
+# sidecar in EVERY task that talks to the service — the workers' task would
+# grow an Envoy for one TCP connection to one daemon — and this cluster has
+# neither a Connect namespace nor a reason to pay the per-task memory. A
+# private hosted zone with an A record per healthy task is the whole
+# requirement. ~$0.50/month for the zone.
+#
+# The name the workers dial is `clamav.<env>.nt.internal` — services.tf
+# builds CLAMD_HOST from these two resources rather than restating the string.
+# --------------------------------------------------------------------------
+resource "aws_service_discovery_private_dns_namespace" "internal" {
+  name        = "${local.env}.nt.internal"
+  description = "Private DNS for service-to-service calls inside the Neoting ${local.env} VPC"
+  vpc         = module.network.vpc_id
+
+  tags = { Component = "clamav" }
+}
+
+resource "aws_service_discovery_service" "clamav" {
+  name = "clamav"
+
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.internal.id
+    routing_policy = "MULTIVALUE"
+
+    dns_records {
+      type = "A"
+      # Short, deliberately: a Spot reclaim replaces the task's IP, and a
+      # worker holding a stale answer for longer than this fails closed on
+      # every scan until it expires.
+      ttl = 10
+    }
+  }
+
+  # ECS updates the instance's health from the container health check (the
+  # `clamdscan --ping`), so a task whose clamd is still loading its database
+  # is not handed out as an answer.
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = { Component = "clamav" }
+}
+
+# --------------------------------------------------------------------------
+# The APP task role may write a scanner hit to quarantine (14 Oct 2026
+# amendment). Write-only, like the scanner role's grant above and for the same
+# reason: the bucket policy denies this role GetObject, so the worker can put
+# evidence in and never read it back. KMS GenerateDataKey on the docs CMK —
+# which the bucket's default encryption uses — is already in
+# compute.tf's EnvelopeEncryption statement.
+#
+# A separate policy rather than a line in compute.tf's nt-runtime: that file
+# is another lane's, and this grant exists only because of this component.
+# --------------------------------------------------------------------------
+resource "aws_iam_role_policy" "app_quarantine" {
+  name = "nt-app-quarantine-put"
+  role = aws_iam_role.app.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "QuarantineInfectedUploads"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "arn:aws:s3:::${local.quarantine_bucket}/*"
+      }
+    ]
+  })
 }
 
 # ==========================================================================

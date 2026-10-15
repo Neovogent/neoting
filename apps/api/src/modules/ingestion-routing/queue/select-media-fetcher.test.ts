@@ -23,7 +23,7 @@ function env(overrides: Partial<Env> = {}): Env {
     MAILHOG_API_URL: 'http://localhost:8025',
     S3_BUCKET_RECEIPTS: 'nt-local-receipts',
     IMAGE_NORMALISER: 'fixture',
-    DOCUMENT_GUARD: 'fixture',
+    DOCUMENT_GUARD: 'fixture', VIRUS_SCANNER: 'fixture', CLAMD_HOST: '127.0.0.1', CLAMD_PORT: 3310, CLAMD_TIMEOUT_MS: 180_000, QUARANTINE_BUCKET: '',
     EXTRACTOR: 'demo',
     BEDROCK_REGION: 'eu-west-2',
     SMS_SENDER: 'demo',

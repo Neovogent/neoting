@@ -668,7 +668,9 @@ Implemented and unit-tested (24 tests green):
   brands and ZIP-container refinement (docx/odt/zip), with extension-spoof
   detection. Extensions are never trusted.
 - Extension allowlist, per-channel size caps (`channels.ts`, SoT §4 Stage 1).
-- Virus-scan **interface** + offline `fixtureVirusScanner` (flags EICAR).
+- Virus-scan **interface** + offline `fixtureVirusScanner` (flags EICAR) — and,
+  since 14 Oct 2026, the REAL scanner behind it. See "The virus scan is real"
+  below.
 - ZIP-bomb caps (`zip-safety.ts`): file-count / total-uncompressed / ratio /
   nesting-depth, read from the central directory without inflating. Zero-dep.
 - Orchestrator (`pipeline.ts`) enforces the fixed §11.4 order and returns a
@@ -725,6 +727,73 @@ Still shimmed: **encrypted Office detection**. qpdf knows nothing about OOXML,
 and a guard that reports clean because it never looked is worse than one that
 admits the gap.
 
+**The virus scan is real** (14 Oct 2026, `feat/real-virus-scan`) — in code.
+⚠ **It is NOT switched on anywhere yet**: every deployed task runs
+`VIRUS_SCANNER=fixture`, which recognises the EICAR test string and nothing
+else. `docs/runbooks/virus-scanning.md` is the ordered switch-on, and the
+honest state table.
+
+- **`clamd-virus-scanner.ts`** — a zero-dependency clamd client over `node:net`
+  speaking INSTREAM (`zINSTREAM\0`, u32-BE-length frames, zero terminator;
+  `stream: OK` / `stream: <sig> FOUND`). Adding a clamd package would have been
+  a stop-and-ask dependency for ~150 lines; the protocol is four rules long.
+  Selected by `VIRUS_SCANNER=fixture|clamd` (`select-virus-scanner.ts`), config
+  not import, the same shape as the normaliser and the guard. The test suite
+  runs a FAKE CLAMD ON A REAL TCP SOCKET (`clamd-virus-scanner.test.ts`) — the
+  thing under test is the wire protocol, so the test speaks it from the other
+  end and asserts the frames reassemble byte-for-byte.
+- **It FAILS CLOSED, and that is the whole point.** Anything that is not an
+  unambiguous `OK` or `FOUND` — refused connection, deadline (`CLAMD_TIMEOUT_MS`,
+  180 s), `INSTREAM size limit exceeded. ERROR`, a close with no reply — THROWS
+  `VirusScanUnavailableError`. `pipeline.ts` deliberately does not catch it: an
+  outage is a fact about US, not about the file, so it must become neither a
+  pass nor a `virus_detected` rejection the submitter reads. The job fails,
+  BullMQ retries, the ingest DLQ pages (Gov §7). Pinned by tests at both the
+  client and the pipeline.
+- **A hit is QUARANTINED** (`quarantine.ts` interface + `recordingQuarantine`
+  fixture; `storage/s3-quarantine.ts` real; `storage/select-quarantine.ts` on
+  `QUARANTINE_BUCKET`). Step 4 hands the ORIGINAL bytes — pre-normalisation —
+  to `deps.quarantine.put` as `<channel>/<sha256>` with the signature in
+  metadata, into `nt-<env>-quarantine-<acct>`, whose EventBridge write rule is
+  SoT Stage 1's operator alert and whose policy denies the app role reads.
+  The rejection's `detail` carries `sha256` and `quarantine: stored | failed: …`
+  so the document's `sanitise` event says whether the evidence landed; a
+  quarantine failure never hides the refusal. `S3Quarantine` has no `get` and
+  must never grow one.
+- **Wired once, for every lane.** `worker/virus-scanning.ts`'s
+  `composeVirusScanning(env, logger)` builds ONE scanner + ONE quarantine and
+  both composition roots hand them to the WhatsApp intake, the upload step and
+  the email runner (all three lane dep interfaces gained `quarantine?` next to
+  the `scanner?` they already had). It logs the mode at boot: `fixture` is a
+  WARN every start — "NOTHING IS BEING SCANNED" — and `clamd` pings the daemon
+  (unreachable = warn, not crash: clamd takes 2–3 min to load; scans fail
+  closed and retry meanwhile).
+- ⚠ **`VIRUS_SCANNER=fixture` is NOT refused under `NODE_ENV=production` yet,
+  on purpose.** Staging runs NODE_ENV=production and CI deploys by
+  re-registering the LIVE task definition, so the DOCUMENT_GUARD-style gate
+  would crash-loop the next workers deploy until the switch-on has put `clamd`
+  on the task definition and the daemon is actually running. The gate is step 6
+  of the runbook, and `env.test.ts` pins the deferral so flipping it is a
+  visible change. What IS refused: `clamd` with an empty `QUARANTINE_BUCKET` in
+  production — a scanner whose hits vanish is half the control.
+- **Infra (`infra/clamav/`, `clamav.tf`, `services.tf`).** The design is
+  AMENDED, not the one clamav.tf's banner describes: the worker dials clamd
+  synchronously at step 4 instead of an SQS consumer tagging objects after the
+  fact (the amendment block at the top of clamav.tf has the argument). The
+  `nt-staging-clamav` task now exposes 3310, its SG admits the app SG on it,
+  Cloud Map gives it `clamav.<env>.nt.internal`, and the app role may PutObject
+  to quarantine. `infra/clamav/Dockerfile` = official `clamav/clamav:1.4_base-debian13-slim`
+  (⚠ the Debian variant — the default Alpine tags are amd64-only, checked
+  against the registry; the task definition is ARM64) + aws-cli + our entrypoint (pull signatures from the private S3 prefix, hourly
+  RELOAD; `freshclam-publish` command for the scheduled task — same image). The
+  old SQS/EventBridge/alarm resources are left in place and named as a removal
+  decision for the owner.
+- **Proven offline only.** No Docker and no Postgres on the authoring machine:
+  unit tests (fake clamd), typecheck, lint, build, `terraform fmt`/`validate`
+  all green; `*.integration.test.ts` not run; the image never built; no real
+  clamd ever answered this client. Step 5 of the runbook (the EICAR upload in
+  staging) is the only thing that proves the whole path.
+
 Toolchain: **stood up in issue #9** — real `typecheck` (tsc, Bundler
 resolution), `lint` (eslint, `no-explicit-any`), `test` (Vitest). The 24
 sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
@@ -737,6 +806,14 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       (no Dockerfile yet). sharp picks its binary via optional dependencies at
       INSTALL time, so building on x64 and copying node_modules into an ARM64
       image ships the wrong one and fails at runtime, not at build.
+- [x] The virus scan is real in code (`clamd-virus-scanner.ts`, quarantine,
+      `VIRUS_SCANNER=fixture|clamd`) — 14 Oct 2026. **Not switched on**: image
+      unbuilt, signatures unpublished, service at 0, task defs at `fixture`.
+      `docs/runbooks/virus-scanning.md` steps 1–6, in order; step 6 is the
+      production boot gate on `fixture`.
+- [ ] Decide the fate of the old SQS scanner path in clamav.tf (rule, queues,
+      alarms, scanner-role SQS grants) — nothing consumes it and the queue-age
+      alarm will fire; removal is a deletion, so the owner's call.
 - [ ] Encrypted Office (OOXML) detection — qpdf does not cover it
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
 - [x] #76: the ingestion endpoints exist (`web-upload/`), and the **upload-time**

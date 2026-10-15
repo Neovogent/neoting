@@ -1,6 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { expect, test } from 'vitest';
 
+import { VirusScanUnavailableError } from './clamd-virus-scanner.js';
 import { sanitise } from './pipeline.js';
+import { recordingQuarantine } from './quarantine.js';
 import { EICAR_TEST_STRING, type VirusScanner } from './virus-scan.js';
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -88,6 +92,67 @@ test('the EICAR test string is caught through the virus-scan interface (NT-ING-0
     expect(r.rejection.code).toBe('NT-ING-004');
     expect(r.rejection.detail?.signature).toBe('EICAR-Test-Signature');
   }
+});
+
+// ---------------------------------------------------------------------------
+// Step 4 with a REAL-shaped scanner behind it: a hit is quarantined (the
+// original bytes, hashed), an outage is a throw (never a pass, never a
+// rejection the submitter reads), and a quarantine failure never hides the
+// refusal.
+// ---------------------------------------------------------------------------
+
+test('a scanner hit sends the ORIGINAL bytes to quarantine and says so on the rejection', async () => {
+  const bytes = Buffer.from(`%PDF-1.4\n${EICAR_TEST_STRING}\n`);
+  const quarantine = recordingQuarantine();
+  const r = await sanitise({ bytes, filename: '', channel: 'email' }, { quarantine });
+
+  expect(r.ok).toBe(false);
+  expect(quarantine.samples).toHaveLength(1);
+  const sample = quarantine.samples[0]!;
+  expect(sample.bytes.equals(bytes)).toBe(true);
+  expect(sample.channel).toBe('email');
+  expect(sample.signature).toBe('EICAR-Test-Signature');
+  expect(sample.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+  if (!r.ok) {
+    expect(r.rejection.detail?.quarantine).toBe('stored');
+    expect(r.rejection.detail?.sha256).toBe(sample.sha256);
+  }
+});
+
+test('a clean file is never quarantined', async () => {
+  const quarantine = recordingQuarantine();
+  const r = await sanitise({ bytes: png(), filename: 'receipt.png', channel: 'client' }, { quarantine });
+  expect(r.ok).toBe(true);
+  expect(quarantine.samples).toHaveLength(0);
+});
+
+test('a quarantine write failing does NOT hide the refusal — it is recorded on the rejection', async () => {
+  const bytes = Buffer.from(`%PDF-1.4\n${EICAR_TEST_STRING}\n`);
+  const failing = {
+    async put() {
+      throw new Error('AccessDenied: s3:PutObject');
+    },
+  };
+  const r = await sanitise({ bytes, filename: '', channel: 'client' }, { quarantine: failing });
+  expect(r.ok).toBe(false);
+  if (!r.ok) {
+    expect(r.rejection.kind).toBe('virus_detected');
+    expect(r.rejection.detail?.quarantine).toBe('failed: AccessDenied: s3:PutObject');
+  }
+});
+
+test('a scanner that cannot answer THROWS out of the pipeline — never a pass, never a rejection', async () => {
+  const down: VirusScanner = {
+    async scan() {
+      throw new VirusScanUnavailableError('ECONNREFUSED');
+    },
+  };
+  const quarantine = recordingQuarantine();
+  await expect(sanitise({ bytes: png(), filename: 'receipt.png', channel: 'client' }, { scanner: down, quarantine })).rejects.toBeInstanceOf(
+    VirusScanUnavailableError,
+  );
+  // Nothing was stored, nothing was decided about the file.
+  expect(quarantine.samples).toHaveLength(0);
 });
 
 test('a password-protected PDF is rejected with a visible reason, not swallowed', async () => {

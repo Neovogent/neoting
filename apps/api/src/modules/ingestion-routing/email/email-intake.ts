@@ -3,7 +3,7 @@ import { wrapUntrusted } from '../../../common/untrusted-content.js';
 // offline-testable. The sharp-backed hasher is injected on the real path.
 import type { PerceptualHasher } from '../lib/dedupe/perceptual-hash.js';
 import { safeBasename } from '../lib/safe-basename.js';
-import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
+import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, type Quarantine, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
 import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { decideRouting, type RoutingDecision } from '../webhooks/whatsapp/routing.js';
@@ -67,6 +67,8 @@ export interface EmailIntakeDeps {
   readonly receivedAtSeconds?: number;
   /** Injected for the sanitisation virus-scan step; defaults to the fixture. */
   readonly scanner?: VirusScanner;
+  /** Where a scanner hit's original bytes go. Absent → kept nowhere (offline). */
+  readonly quarantine?: Quarantine;
   /**
    * The image normaliser (#23). Threaded through rather than selected inside
    * `sanitise`, because this lane must stay pure and offline-testable — and
@@ -161,6 +163,7 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
     const filename = safeBasename(attachment.filename);
     const sanitisationDeps: Partial<SanitisationDeps> = {
       ...(deps.scanner ? { scanner: deps.scanner } : {}),
+      ...(deps.quarantine ? { quarantine: deps.quarantine } : {}),
       ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
       ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
     };
