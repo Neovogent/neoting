@@ -255,6 +255,9 @@ export class AuthService {
         // comes off the ACTING membership, the same row the role does.
         isOwner: acting.isOwner,
         businesses,
+        // Only `aws` puts SMS on the wire (`email+sms` writes a preview row and
+        // emails); under it a contact with no mobile is emailed instead.
+        chaseChannels: this.env.SMS_SENDER === 'aws' ? ['sms', 'email'] : ['email'],
       };
     });
   }

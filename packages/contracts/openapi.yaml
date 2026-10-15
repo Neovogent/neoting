@@ -7331,6 +7331,16 @@ components:
             properties:
               id: { type: string }
               name: { type: string }
+        chaseChannels:
+          type: array
+          items: { type: string, enum: [email, sms] }
+          description: |
+            How a chase or document request can actually reach a client on
+            THIS deployment (`SMS_SENDER`): `sms` only when the real text wire
+            is on — a contact with a mobile is texted, one without is emailed.
+            For display only; the server decides the wire per contact.
+            Optional, so an older server omits it and the screen keeps its
+            email-only wording.
 
     # ---- documents --------------------------------------------------------
 

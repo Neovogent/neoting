@@ -38,6 +38,10 @@ const m = defineMessages({
     id: 'chases.requestStatement.sendBySmsWhy',
     defaultMessage: 'Not available yet — this release sends document requests by email.',
   },
+  sendBySmsLive: {
+    id: 'chases.requestStatement.sendBySmsLive',
+    defaultMessage: 'Sent by text message to the client’s registered mobile, or by email if they have none.',
+  },
   title: { id: 'bank.requestStatement.title', defaultMessage: 'Request a bank statement' },
   detail: {
     id: 'bank.requestStatement.detail',
@@ -115,6 +119,9 @@ export default function RequestStatementDialog({
   // siblings cannot make different claims about the same person.
   const { session } = useAppContext();
   const canRelease = holdsReleaseAuthority(session);
+  // The SERVER says which wires are on (`Me.chaseChannels`, from SMS_SENDER);
+  // the transport picks per contact, so this is a statement, not a choice.
+  const smsLive = session.status === 'authenticated' && (session.me.chaseChannels ?? []).includes('sms');
   const [mode, setMode] = useState<'month' | 'range'>('month');
   const [month, setMonth] = useState('');
   const [from, setFrom] = useState('');
@@ -255,15 +262,21 @@ export default function RequestStatementDialog({
             <span className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-brand/10 text-brand border border-brand/25">
               {intl.formatMessage(m.sendByEmail)}
             </span>
-            <span
-              title={intl.formatMessage(m.sendBySmsWhy)}
-              aria-disabled="true"
-              className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-600 border border-white/5 opacity-50 cursor-not-allowed"
-            >
-              {intl.formatMessage(m.sendBySms)}
-            </span>
+            {smsLive ? (
+              <span className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-brand/10 text-brand border border-brand/25">
+                {intl.formatMessage(m.sendBySms)}
+              </span>
+            ) : (
+              <span
+                title={intl.formatMessage(m.sendBySmsWhy)}
+                aria-disabled="true"
+                className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-600 border border-white/5 opacity-50 cursor-not-allowed"
+              >
+                {intl.formatMessage(m.sendBySms)}
+              </span>
+            )}
           </div>
-          <p className="text-[12px] text-zinc-500">{intl.formatMessage(m.sendBySmsWhy)}</p>
+          <p className="text-[12px] text-zinc-500">{intl.formatMessage(smsLive ? m.sendBySmsLive : m.sendBySmsWhy)}</p>
         </div>
 
         {queued ? (
