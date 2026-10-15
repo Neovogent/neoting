@@ -118,6 +118,11 @@ model Business {
 
   isActive Boolean @default(true) @map("is_active")
 
+  /// rush/matching — SoT §4 Stage 7 "configurable date windows and lookback".
+  /// Null means the parity defaults (30-day window, 183-day lookback).
+  matchDateWindowDays Int? @map("match_date_window_days")
+  matchLookbackDays   Int? @map("match_lookback_days")
+
   /// ---- Offboarding (review item 67, 7 Sep 2026) ---------------------------
   ///
   /// `isActive` alone says a client is removed; it cannot say WHEN, and the
@@ -191,6 +196,7 @@ model Business {
   bankConnections    BankConnection[]
   bankAccounts       BankAccount[]
   bankTransactions   BankTransaction[]
+  periodLocks        PeriodLock[]
   statements         Statement[]
   supplierStatements SupplierStatement[]
   chases             Chase[]
@@ -1155,6 +1161,11 @@ model Match {
   matchedBy       String?   @map("matched_by")
   createdAt       DateTime  @default(now()) @map("created_at")
   unmatchedAt     DateTime? @map("unmatched_at")
+  /// rush/matching — the part of the bank line this document accounts for,
+  /// signed integer pence in the LINE's direction. Null on a legacy one-to-one
+  /// match, meaning "the whole line". Allocations on one line sum exactly to
+  /// its amount (partial and batch payments, credit-note netting).
+  allocatedPence  Int?      @map("allocated_pence")
 
   document    Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
   transaction BankTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
@@ -1999,4 +2010,27 @@ model FeatureFlag {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+// ── rush/matching ──
+
+/// A closed month for one client (SoT §4 Stage 7 period close). While a row
+/// exists, matches, unmatches, coding edits, cash coding and releases dated
+/// inside [periodStart, periodEnd) refuse. Written ONLY by the `period.close`
+/// executor and deleted ONLY by `period.reopen` — both on Review → Approve.
+model PeriodLock {
+  id               String   @id @default(cuid())
+  businessId       String   @map("business_id")
+  /// UTC midnight on the first day of the month.
+  periodStart      DateTime @map("period_start")
+  /// Exclusive: UTC midnight on the first day of the following month.
+  periodEnd        DateTime @map("period_end")
+  closedAt         DateTime @default(now()) @map("closed_at")
+  closedByUserId   String?  @map("closed_by_user_id")
+  actionProposalId String?  @map("action_proposal_id")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, periodStart])
+  @@map("period_locks")
 }

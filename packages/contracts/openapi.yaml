@@ -3860,6 +3860,125 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # rush/matching (15 Oct 2026) — SoT §4 Stage 7 matching extensions. Every
+  # write here is a proposal; these three reads feed the dialogs that stage
+  # them, plus the one ingest-class settings write.
+  /bank-transactions/{transactionId}/allocation-candidates:
+    get:
+      operationId: getAllocationCandidates
+      summary: Documents that could explain one bank line, with suggested combinations
+      description: |
+        The open documents of this line's client that could account for it —
+        same supplier first, within the client's date window — each with what
+        is already allocated to it, plus the combinations whose amounts sum
+        EXACTLY to the line's unallocated remainder (a bounded subset-sum, so
+        one £1,900 payment can settle four invoices). Integer pence
+        throughout. Confirming is a `bank.confirm-match` proposal carrying
+        `allocations`; nothing here mutates.
+      tags: [banking]
+      x-nt-side-effect: none
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The candidates.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationCandidates' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /bank-reconciliation:
+    get:
+      operationId: getBankReconciliation
+      summary: Per-month reconciliation summary for one client
+      description: |
+        One row per calendar month that holds a bank line: counts by match
+        state, money in and out, the statement closing balance and the last
+        running balance the feed recorded, and whether the month is closed.
+        Months are UTC calendar months over `bookedAt`.
+      tags: [banking]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The months, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankReconciliation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /bank-match-settings:
+    get:
+      operationId: getBankMatchSettings
+      summary: One client's matching date window and lookback
+      tags: [banking]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The settings, defaults filled in.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankMatchSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      operationId: replaceBankMatchSettings
+      summary: Set one client's matching date window and lookback
+      description: |
+        Matching configuration only — it decides what the suggester and the
+        allocation dialog OFFER, never what is confirmed, so it is the
+        accountant's own tool setting (ingest-class, the tasks precedent).
+        Null resets a value to the parity default.
+      tags: [banking]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankMatchSettings' }
+      responses:
+        '200':
+          description: The stored settings.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankMatchSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # BUSINESSES (METH Stage 2, issue #120)
   # ==========================================================================
@@ -8501,6 +8620,11 @@ components:
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
         - policy.activate         # arm or disarm an approval workflow; the gate itself is the state being changed
+        - bank.unmatch            # break every live match on these bank lines; the lines go back to unmatched
+        - bank.confirm-suggested  # confirm every suggested match for a client (optionally one month) as ONE itemised proposal
+        - bank.cash-code          # an unmatched line becomes a keyed cost item (a Document with no file) matched to it
+        - period.close            # close a client's month; edits, matches and releases dated inside it refuse
+        - period.reopen           # reopen a closed month
 
     CreateActionProposalRequest:
       description: |
@@ -8527,6 +8651,11 @@ components:
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
         - $ref: '#/components/schemas/PolicyActivateProposalRequest'
+        - $ref: '#/components/schemas/BankUnmatchProposalRequest'
+        - $ref: '#/components/schemas/BankConfirmSuggestedProposalRequest'
+        - $ref: '#/components/schemas/BankCashCodeProposalRequest'
+        - $ref: '#/components/schemas/PeriodCloseProposalRequest'
+        - $ref: '#/components/schemas/PeriodReopenProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -8548,6 +8677,11 @@ components:
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
           policy.activate: '#/components/schemas/PolicyActivateProposalRequest'
+          bank.unmatch: '#/components/schemas/BankUnmatchProposalRequest'
+          bank.confirm-suggested: '#/components/schemas/BankConfirmSuggestedProposalRequest'
+          bank.cash-code: '#/components/schemas/BankCashCodeProposalRequest'
+          period.close: '#/components/schemas/PeriodCloseProposalRequest'
+          period.reopen: '#/components/schemas/PeriodReopenProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -8716,6 +8850,282 @@ components:
           properties:
             kind: { const: bank.confirm-match }
             payload: { $ref: '#/components/schemas/BankConfirmMatchPayload' }
+
+    # ---- rush/matching proposal kinds (15 Oct 2026) --------------------------
+
+    BankUnmatchProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: bank.unmatch }
+            payload: { $ref: '#/components/schemas/BankUnmatchPayload' }
+
+    BankUnmatchPayload:
+      type: object
+      description: |
+        One-click unmatch. Every live match on each named line — confirmed
+        allocations and pending suggestions alike — is stamped `unmatchedAt`
+        and the line returns to `UNMATCHED`, so it re-enters chase detection.
+        A document paid by several lines keeps its other allocations. Refuses
+        a line inside a closed month.
+      required: [transactionIds]
+      properties:
+        transactionIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string }
+        reason: { type: [string, 'null'], maxLength: 500 }
+
+    BankConfirmSuggestedProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: bank.confirm-suggested }
+            payload: { $ref: '#/components/schemas/BankConfirmSuggestedPayload' }
+
+    BankConfirmSuggestedPayload:
+      type: object
+      description: |
+        "Confirm all suggested matches" for one client, optionally one month,
+        as ONE proposal. `items` is computed by the SERVER at creation from the
+        live SUGGESTED rows (the caller's list is discarded) so Read review is
+        itemised; execution refuses the whole batch if any item drifted.
+      required: [businessId, items]
+      properties:
+        businessId: { type: string }
+        period:
+          type: [string, 'null']
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required: [matchId, transactionId, documentId, amountPence, label]
+            properties:
+              matchId: { type: string }
+              transactionId: { type: string }
+              documentId: { type: string }
+              amountPence:
+                type: integer
+                x-nt-money: true
+                description: The bank line's signed amount.
+              allocatedPence:
+                type: [integer, 'null']
+                x-nt-money: true
+                description: The suggested allocation, when the suggestion is part of a batch.
+              kind: { $ref: '#/components/schemas/MatchKind' }
+              confidence: { type: [number, 'null'], minimum: 0, maximum: 1 }
+              label: { type: string, maxLength: 300 }
+
+    BankCashCodeProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: bank.cash-code }
+            payload: { $ref: '#/components/schemas/BankCashCodePayload' }
+
+    BankCashCodePayload:
+      type: object
+      description: |
+        Cash coding (SoT §4 Stage 7): an unmatched bank line becomes a cost
+        item — a Document with no file, keyed by the accountant, totalled at
+        the line's amount and dated on its booked date — that enters the normal
+        pipeline (READY when the publish minimum is met, else TO_REVIEW) and is
+        matched to the line in the same transaction. Money out lands in Costs,
+        money in in Sales.
+      required: [transactionId, supplierName, categoryCode]
+      properties:
+        transactionId: { type: string }
+        supplierName: { type: string, minLength: 1, maxLength: 200 }
+        categoryCode: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        taxPence:
+          type: [integer, 'null']
+          x-nt-money: true
+          minimum: 0
+
+    PeriodCloseProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: period.close }
+            payload: { $ref: '#/components/schemas/PeriodClosePayload' }
+
+    PeriodClosePayload:
+      type: object
+      description: |
+        Close one client's calendar month. While closed, matches, unmatches,
+        coding edits, cash coding and releases dated inside it refuse.
+        `summary` is computed by the SERVER at creation so the review card
+        shows what is being locked, unmatched lines included.
+      required: [businessId, period]
+      properties:
+        businessId: { type: string }
+        period:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+        summary:
+          type: object
+          required: [transactionCount, confirmedCount, suggestedCount, unmatchedCount]
+          properties:
+            transactionCount: { type: integer, minimum: 0 }
+            confirmedCount: { type: integer, minimum: 0 }
+            suggestedCount: { type: integer, minimum: 0 }
+            unmatchedCount: { type: integer, minimum: 0 }
+
+    PeriodReopenProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: period.reopen }
+            payload: { $ref: '#/components/schemas/PeriodReopenPayload' }
+
+    PeriodReopenPayload:
+      type: object
+      required: [businessId, period]
+      properties:
+        businessId: { type: string }
+        period:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+        reason: { type: [string, 'null'], maxLength: 500 }
+
+    MatchAllocation:
+      type: object
+      description: |
+        One document's share of one bank line, signed integer pence in the
+        LINE's direction (negative is money out). Allocations on one line
+        must sum exactly to its amount.
+      required: [transactionId, documentId, amountPence]
+      properties:
+        transactionId: { type: string }
+        documentId: { type: string }
+        amountPence:
+          type: integer
+          x-nt-money: true
+
+    BankTransactionLink:
+      type: object
+      description: A live match on a bank line — confirmed allocation or pending suggestion.
+      required: [matchId, documentId, state, kind, confidence, allocatedPence]
+      properties:
+        matchId: { type: string }
+        documentId: { type: string }
+        state: { $ref: '#/components/schemas/MatchState' }
+        kind: { $ref: '#/components/schemas/MatchKind' }
+        confidence: { type: [number, 'null'] }
+        allocatedPence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Null on a legacy one-to-one match, meaning the whole line.
+
+    AllocationCandidates:
+      type: object
+      required: [transactionId, businessId, amountPence, remainingPence, dateWindowDays, documents, combinations]
+      properties:
+        transactionId: { type: string }
+        businessId: { type: string }
+        amountPence: { type: integer, x-nt-money: true }
+        remainingPence:
+          type: integer
+          x-nt-money: true
+          description: The line's amount less its CONFIRMED allocations, signed.
+        dateWindowDays: { type: integer }
+        documents:
+          type: array
+          items:
+            type: object
+            required: [documentId, supplierName, documentDate, docType, totalPence, expectedPence, paidPence, outstandingPence, sameSupplier, merchantScore]
+            properties:
+              documentId: { type: string }
+              supplierName: { type: [string, 'null'] }
+              documentDate: { type: [string, 'null'] }
+              docType: { type: [string, 'null'] }
+              totalPence: { type: integer, x-nt-money: true }
+              expectedPence:
+                type: integer
+                x-nt-money: true
+                description: What this document should do to the bank, signed (a purchase is negative, a credit note positive).
+              paidPence:
+                type: integer
+                x-nt-money: true
+                description: Confirmed allocations in the expected direction, unsigned.
+              outstandingPence:
+                type: integer
+                x-nt-money: true
+                description: Signed remainder still to settle — the natural allocation for this document.
+              sameSupplier: { type: boolean }
+              merchantScore: { type: number }
+        combinations:
+          type: array
+          items:
+            type: object
+            required: [kind, confidence, allocations]
+            properties:
+              kind: { $ref: '#/components/schemas/MatchKind' }
+              confidence: { type: number }
+              allocations:
+                type: array
+                items:
+                  type: object
+                  required: [documentId, amountPence]
+                  properties:
+                    documentId: { type: string }
+                    amountPence: { type: integer, x-nt-money: true }
+
+    BankReconciliation:
+      type: object
+      required: [businessId, months]
+      properties:
+        businessId: { type: string }
+        months:
+          type: array
+          items:
+            type: object
+            required: [period, transactionCount, confirmedCount, suggestedCount, unmatchedCount, suppressedCount, moneyInPence, moneyOutPence, statementClosingBalancePence, lastBalancePence, closed, closedAt]
+            properties:
+              period: { type: string }
+              transactionCount: { type: integer }
+              confirmedCount: { type: integer }
+              suggestedCount: { type: integer }
+              unmatchedCount: { type: integer }
+              suppressedCount: { type: integer }
+              moneyInPence: { type: integer, x-nt-money: true }
+              moneyOutPence: { type: integer, x-nt-money: true }
+              statementClosingBalancePence: { type: [integer, 'null'], x-nt-money: true }
+              lastBalancePence: { type: [integer, 'null'], x-nt-money: true }
+              closed: { type: boolean }
+              closedAt: { type: [string, 'null'] }
+
+    BankMatchSettings:
+      type: object
+      required: [businessId, dateWindowDays, lookbackDays]
+      properties:
+        businessId: { type: string }
+        dateWindowDays:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 365
+          description: Days either side of the document date a payment may fall. Null means the parity default (30).
+        lookbackDays:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 1095
+          description: How far back an open document is still offered. Null means the default (183).
 
     RuleCreateProposalRequest:
       allOf:
@@ -9524,6 +9934,18 @@ components:
             The suggesting engine's score, recorded for display and triage.
             It never gates execution — the human's approval is the decision
             (Governance §9.5).
+        allocations:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: |
+            rush/matching — many-to-many confirmation with amounts (partial
+            payments, batch payments, credit-note netting). When present, the
+            executor writes one CONFIRMED match per allocation, and for every
+            named line the confirmed allocations must sum EXACTLY to its
+            signed amount; a document may not be allocated past its gross.
+            `transactionId`/`documentId` must be one of the pairs.
+          items: { $ref: '#/components/schemas/MatchAllocation' }
 
     RuleCreatePayload:
       type: object
@@ -11435,6 +11857,13 @@ components:
             STRIPE PAYOUT (SoT Stage 7). Suppressed lines never enter chase
             detection; the flag is visible so "why isn't this chased" has an
             answer on the screen.
+        links:
+          type: array
+          description: |
+            rush/matching — every live match on this line (confirmed
+            allocations and pending suggestions), so a batch payment shows its
+            documents and a probabilistic suggestion shows its tier.
+          items: { $ref: '#/components/schemas/BankTransactionLink' }
 
     # ---- businesses (METH Stage 2, issue #120) ------------------------------
 
