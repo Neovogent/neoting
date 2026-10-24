@@ -112,6 +112,17 @@ function classify(text: string): unknown {
   if (/\b(to|for|needs?|awaiting)\s+review\b/.test(text)) {
     return { intent: 'SHOW_INBOX', reply: 'Here is everything waiting for review.', navigation: { statusFilter: 'review' } };
   }
+  // #233: D40 makes the uploaded statement the ONLY bank input, so a statements
+  // ask is navigation to the Bank tab's Statements list — never a referral off
+  // the product. The stand-in says so for the same reason it classifies
+  // SHOW_EXPORTS: "the local" and staging must not disagree about what the
+  // product's own data is.
+  if (/\bbank statements?\b|\bstatements?\s+(?:list|uploaded|sent)\b|\b(?:show|open|list)\b.*\bstatements?\b/.test(text)) {
+    return {
+      intent: 'SHOW_STATEMENTS',
+      reply: "Here are this client's uploaded bank statements — each period, how many lines came off it, and whether completeness was proven.",
+    };
+  }
   // Review item 9 (5 Sep 2026): the two navigation intents the enum grew. The
   // export ask is ALSO caught downstream by the deterministic override in
   // chat.service.ts, so the demo branch mainly keeps the stand-in honest about

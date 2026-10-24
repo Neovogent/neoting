@@ -73,7 +73,37 @@ const RETRY_INPUT: StructuredCallInput<ModelTurn> = {
   ],
 };
 
+/**
+ * A grounded answer that asks for a PICTURE (#231 + #233): the model returns
+ * `display: {kind, subject}` and nothing else about the data — `display.ts`
+ * fills the cells from RLS-scoped rows after the fact. Replayed so the strict
+ * parse of the display request (including the `statements` subject) runs
+ * through the real provider path, not only through a unit test of the schema.
+ * The grounding window is empty here, so the honest citation list is empty too.
+ */
+const DISPLAY_INPUT: StructuredCallInput<ModelTurn> = {
+  ...HAPPY_INPUT,
+  messages: [{ role: 'user', content: "The accountant says: which of this client's bank statements were proven complete?" }],
+};
+
 export const CHAT_REPLAY_CASES: readonly ChatReplayCase[] = [
+  {
+    name: 'display-turn',
+    description: 'chat · a grounded answer requesting a statements table (display shape only — the server fills it)',
+    input: DISPLAY_INPUT,
+    syntheticResponses: [
+      respondWith(
+        {
+          intent: 'GROUNDED_ANSWER',
+          reply: 'No statement records were supplied for this client, so I cannot say which were proven complete.',
+          grounded: { citedRecordIds: [] },
+          display: { kind: 'table', subject: 'statements' },
+        },
+        2733,
+        71,
+      ),
+    ],
+  },
   {
     name: 'happy-turn',
     description: 'chat · one turn, valid on the first answer',

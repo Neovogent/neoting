@@ -100,7 +100,9 @@ const DisplayRequestSchema = z
      * (no figures).
      */
     kind: z.enum(['table', 'barChart']),
-    subject: z.enum(['documents', 'bankTransactions', 'chases']),
+    // `statements` (14 Oct 2026) closes #233 and #231 together: a statements
+    // question answered as a table of period, lines imported and D41's verdict.
+    subject: z.enum(['documents', 'bankTransactions', 'chases', 'statements']),
   })
   .strict();
 
@@ -262,10 +264,10 @@ export const RESPOND_TOOL_SCHEMA = {
       required: ['kind', 'subject'],
       properties: {
         kind: { type: 'string', enum: ['table', 'barChart'] },
-        subject: { type: 'string', enum: ['documents', 'bankTransactions', 'chases'] },
+        subject: { type: 'string', enum: ['documents', 'bankTransactions', 'chases', 'statements'] },
       },
       description:
-        'Only with intent GROUNDED_ANSWER: ask the system to render this client’s records as a table or bar chart beside your reply. You choose the shape; the system fills the data from real records. Use it when the accountant asks to SEE records — a list, a breakdown, "show me".',
+        'Only with intent GROUNDED_ANSWER: ask the system to render this client’s records as a table or bar chart beside your reply. You choose the shape; the system fills the data from real records. Use it when the accountant asks a QUESTION whose answer is several records — a breakdown, a comparison, "which ones", "how many of each".',
     },
   },
 } as const;

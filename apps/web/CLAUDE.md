@@ -3114,6 +3114,33 @@ test clicks the TEXT node, which belongs only to the dialog's own button. ⚠
 name**, so the test selects a row by attribute; that is its own a11y defect,
 noted rather than fixed.
 
+## The chat draws tables and bar charts, lazily (14 Oct 2026 — #231, with #233's statements)
+
+`DynamicComponents/ChatDisplayBlocks.tsx` renders a grounded answer's `display`
+blocks — a table or a bar chart the SERVER composed from the client's own rows
+(`chat-framework/display.ts`; the model picks only a kind and a subject). Three
+things that are decisions:
+
+- **It is `lazy()` from `ChatArea`, with the `Suspense` at the block.** It was a
+  static import, so the renderer rode the chat route's opening download for a
+  picture that can only appear after a model turn returns. Paired A/B
+  (`route-bundle-closure.mjs`, both sides in one sitting): `AIWorkspaceView`
+  246,395 → **245,957 B (−438 B, 4,043 B headroom)**; the renderer is its own
+  **1.13 kB gzip** chunk. ⚠ The chat route is UNDER budget on `main` as of this
+  measurement — the "55 kB OVER" this file records above is history (#284).
+  `BankView` (278,688), `ClientInbox` (274,573) and `SyntheticBusinessPortal`
+  (269,265) are over on `main` and unchanged here.
+- **The bar chart is inline SVG, no library.** Fills are `currentColor` under
+  Tailwind theme classes (`text-brand`, `text-white/5`) — no literal colour, so
+  both themes resolve it and `check-colors.mjs` has nothing to find. Every bar
+  carries its count as text; the picture never says more than the number.
+- **Cells render by declared type and nothing else.** `pence` is the one money
+  boundary on this surface (integer pence in → `currency()` out, true minus
+  sign); `count` and `text` print verbatim, so a digits-only supplier can never
+  print as money; `date` goes through `fromIsoDate`; an empty cell is an em
+  dash. `ChatDisplayBlocks.test.tsx` pins each, plus the D42 copy test over the
+  rendered DOM.
+
 ## The HEIC door, and three screens that stated what nobody had read (9 Sep 2026)
 
 Found by pushing a 612-document synthetic corpus through the DEPLOYED product as
