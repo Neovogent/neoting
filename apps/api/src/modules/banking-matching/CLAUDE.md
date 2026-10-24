@@ -654,6 +654,76 @@ deletes another suite's fixtures. API test files run in parallel workers, so
 that collision surfaces as an intermittent foreign-key violation in the *other*
 file's `beforeAll`.
 
+## `GET /v1/supplier-statements` — reconciliation computed here, not in the browser (14 Oct 2026, issue #318) — `supplier-statements/`
+
+**⚠ Until this the Supplier Statements tab was a reconciliation nobody did.**
+`supplier_statements` / `supplier_statement_lines` have been in prisma since the
+init migration and NOTHING in this API read or wrote them (`purge-document.ts`
+counted them, that is all). The accountant's tab computed its "on file / no
+document" marks in the browser out of whatever documents happened to be loaded,
+and added one invented missing line (£418.60) to every upload.
+
+| File | What it is |
+|---|---|
+| `supplier-statements/reconcile.ts` | the PURE half — `reconcileSupplierStatement(supplierName, lines, documents)` → outcomes + totals, and the adapter `statementLineMatchesDocument` |
+| `supplier-statements/supplier-statements.service.ts` | one read method, every query in ONE `scopedDb` transaction |
+| `supplier-statements/supplier-statements.controller.ts` | `GET /supplier-statements?businessId=` → `{ items }`, the `statements.controller.ts` shape |
+
+Five things that are decisions, not details:
+
+- **One ruler, through the seam.** The compare is `chaseMatchesDocument` from
+  `../chase/index.js` — the predicate auto-close closes on and the match
+  suggester writes with. A statement line plays the chased transaction (its
+  amount, its date, the statement's supplier as the merchant label). No second
+  tolerance exists here; if the product's idea of "this document answers that
+  line" changes, it changes in `auto-close.ts` and this follows. A line with no
+  date skips the date gate the way an undated document does, expressed by
+  NULLING the candidate's date — the ruler owns that gate.
+- **Deterministic and explainable.** Lines walk oldest-first (undated last,
+  then reference, then id). One document answers AT MOST ONE line; when several
+  fit, a matching printed reference wins, then the closest amount, then the
+  closest date, then the id. Two identical lines against one document yield
+  one `MATCHED` and one `MISSING` — the truth. A credit line (negative pence)
+  answers only to a `CREDIT_NOTE`, because the ruler compares magnitudes and a
+  £50 credit note would otherwise "answer" a £50 invoice.
+- **Three outcomes, none of them the stored enum.** `MATCHED` / `MISSING` /
+  `UNREADABLE` (no amount — a person has to read the statement). The prisma
+  `SupplierStatementLineStatus` is ledger-aware (`IN_LEDGER_ONLY`…) and this
+  release reads no ledger, so it is neither served nor WRITTEN: this is
+  `x-nt-side-effect: none` and a GET that wrote would be a side-effect path
+  outside Review → Approve. Persisting the verdict is a later write lane.
+- **The candidate set is the honest minimum**, one query per read for every
+  business in the result: not in the Trash, carries a supplier AND a total, not
+  `REJECTED`/`FAILED`, not a `STATEMENT` (⚠ written as `OR: [{docType: null},
+  {docType: {not: 'STATEMENT'}}]` because Prisma's `not` on a nullable column
+  drops NULL rows), and never the statement's own source document — a summary
+  of invoices is not one of them. ARCHIVED stays in: processed evidence still
+  proves the invoice exists. Sales invoices fall out on `supplierName: null`.
+- **`businessId` NARROWS, RLS enforces** — the `GET /statements` rule. A
+  document RLS withholds is simply absent from the candidate set and its line
+  reads `MISSING`, which is what that caller is entitled to see.
+
+⚠ **Nothing in this API CREATES a supplier statement yet.** No upload intent
+reaches these tables, no extraction step writes lines, and an emailed statement
+lands as a plain document. The live tab is therefore honest and EMPTY until
+that write lane exists (its own contract-change — upload intent → extraction →
+rows, the bank statement step's shape). `prisma/seed.ts` seeds one
+(`sst_001`, Ananda's Brakes statement: two lines answered, one missing) so
+local and seeded-staging screens have honest rows. Not reported yet, cheap to
+add to the same response: documents we hold for the supplier that the
+statement did NOT list (`NOT_ON_STATEMENT`), and the engine-(b) chase from a
+`MISSING` line (SoT §24.2 keeps that out of ID).
+
+Tests: `reconcile.test.ts` (the ruler's shared constants read off the seam, the
+pick order, one-document-one-line, credit vs invoice, order-independence) and
+`supplier-statements.service.test.ts` (recording fake Prisma: one transaction,
+the candidate `where`, the source file never answering its own line, the
+response parsed by the contract's OWN `listSupplierStatementsResponse`, and the
+method-list pin — one method, and it reads). ⚠ No integration suite yet: the
+machine this was built on had no Postgres. The RLS behaviour is the same
+`scopedDb` every other read here uses, but it has not been proven against a
+real database for THESE tables.
+
 ## Boundaries
 
 `index.ts` is the seam, created when the worker composition root became this
