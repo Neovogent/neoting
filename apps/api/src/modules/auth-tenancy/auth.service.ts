@@ -220,7 +220,10 @@ export class AuthService {
       const practiceRow =
         ctx.practiceId === undefined
           ? null
-          : await db.practice.findUnique({ where: { id: ctx.practiceId }, select: { id: true, name: true } });
+          : await db.practice.findUnique({
+              where: { id: ctx.practiceId },
+              select: { id: true, name: true, countryCode: true, baseCurrency: true },
+            });
 
       // The address this practice's clients forward paperwork to — composed
       // from the domain the API SENDS from, because that is the domain whose MX

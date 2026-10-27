@@ -856,3 +856,19 @@ server whose response would stop parsing.
 their subscription, and `vault.service.ts` says so at the field: `active` is
 what gates whether the add-on may be used, and folding the two together would
 tell a lapsed client that Google Drive does not exist.
+
+## `PracticeSignupRequest.countryCode` (27 Oct 2026) — one sign-up page for UK and AU
+
+One optional field, `enum: [GB, AU]`, **no default in the schema**: the server
+owns the default (omitted → GB), so a caller that never sends it — every caller
+before this — creates exactly the practice it always did, and the generated
+Zod does not inject a key the request never had. It sets `practices.country_code`,
+`base_currency` and `language` at creation; the columns already existed with GB
+defaults, so there is no migration for it. ⚠ It records where a practice is and
+nothing more yet: tax, statement formats and chasing are still UK-shaped.
+
+The same change added an optional `mobile` (the existing `mobileE164` pattern) to
+the request — stored on `users.mobile`, the one additive migration — and two
+optional strings to `Me.practice`, `countryCode` and `baseCurrency`. Plain strings
+rather than the sign-up enum, so a code this build does not know still parses
+under the browser's strict `/me` schema.

@@ -686,6 +686,9 @@ const EMPTY_PIPELINE: ReturnType<typeof buildInitialPipeline> = {
   missing: [],
 };
 
+/** Display names for the practice country codes the API sends. */
+const COUNTRY_NAMES: Record<string, string> = { GB: 'United Kingdom', AU: 'Australia' };
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // `AppIntlProvider` sits above this in `main.tsx`, so messages are available
   // to the seed pipeline and to every derivation below it.
@@ -1014,7 +1017,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(() => {
     const base = SYNTHETIC
       ? DEFAULT_SETTINGS
-      : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' };
+      : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '', country: '', baseCurrency: '' };
     return { ...base, theme: resolveInitialTheme() };
   });
 
@@ -1036,14 +1039,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const practice = session.status === 'authenticated' ? session.me.practice : null;
   const practiceName = practice?.name ?? '';
   const docEmail = practice?.documentEmail ?? '';
+  // The practice's country and currency are the server's (chosen at sign-up);
+  // an older server that omits them means the UK, which is what every practice
+  // was before AU existed. Australia's financial year ends on 30 June.
+  const countryCode = practice === null ? '' : (practice.countryCode ?? 'GB');
+  const baseCurrency = practice === null ? '' : (practice.baseCurrency ?? 'GBP');
   useEffect(() => {
-    if (practiceName === '' && docEmail === '') return;
+    if (practiceName === '' && docEmail === '' && countryCode === '') return;
+    const country = COUNTRY_NAMES[countryCode] ?? countryCode;
     setSettings((current) => ({
       ...current,
       ...(current.practiceName === '' && practiceName !== '' ? { practiceName } : {}),
       ...(current.docEmail === '' && docEmail !== '' ? { docEmail } : {}),
+      ...(current.country === '' && country !== '' ? { country } : {}),
+      ...(current.baseCurrency === '' && baseCurrency !== '' ? { baseCurrency } : {}),
+      ...(countryCode === 'AU' && current.yearEnd === DEFAULT_SETTINGS.yearEnd ? { yearEnd: '30 June' } : {}),
     }));
-  }, [practiceName, docEmail]);
+  }, [practiceName, docEmail, countryCode, baseCurrency]);
 
   /**
    * Duplicates are derived, never stored: a flag is a live opinion about the

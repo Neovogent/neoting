@@ -457,6 +457,22 @@ Six things about it that are decisions, not details:
 
 ⚠ **The verification email is not actually sent yet, and this journey cannot complete end to end until it is.** `auth-tenancy.module.ts` still registers `RecordingSignupMailer` (its own comment calls it "the one line S2 changes"), so under `NODE_ENV=production` `POST /practices` refuses with `NT-SRV-001` rather than creating an account nobody could verify, and in development the token is only readable out of the API process. Nothing anywhere builds the verification **link** either — `signup-mailer.ts` says in as many words that "the link is S2's to build". Whoever wires it: the address these screens serve is **`<web origin>/signup/verify?token=<token>`**. That is a server-side gap outside M9's fence and it blocks S7's walkthrough; raised on the PR.
 
+#### Country at sign-up (27 Oct 2026)
+
+The form has an optional Mobile number and a Country field (United Kingdom /
+Australia) under the practice name. `views/signup/country.ts` picks the country
+in the order bhai asked for: **the visitor's own pick, then the mobile's country
+code** (+61 / 04… → AU, +44 / 07… → GB), **then location** (an `Australia/*`
+time zone or an `en-AU` language). The hint under the field says which signal
+chose it, so it is never a silent decision. The mobile is normalised to E.164
+(`toE164`, reading a national number in the chosen country) and refused on the
+form if it cannot be one. `countryCode` and `mobile` travel to the server, which
+decides what they set.
+
+Settings → Profile now shows the practice's real country and currency from
+`/me` (`AppContext` fills `country`/`baseCurrency` from `me.practice`, and an AU
+practice's year-end default becomes 30 June) instead of the seeded UK defaults.
+
 #### The QR encoder is ours, and that is a decision for review
 
 `views/signup/qr.ts` is a hand-written QR encoder — byte mode, error-correction level M, versions 1–14. Every alternative was worse: adding a dependency is on the root `CLAUDE.md`'s stop-and-ask list and no contract-change issue covers this stage; a server-rendered image would put a TOTP seed in a URL, an access log and a CDN; a third-party chart URL is that same disclosure to somebody else. The repo's own precedent is the router, the ESLint literal rule, the legal-markdown transform and the i18n checker. **If Shakib would rather take `qrcode`, this is one import and one component call — swap it and delete the file.**

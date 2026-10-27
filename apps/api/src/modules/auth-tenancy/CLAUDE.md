@@ -35,6 +35,23 @@ pnpm --filter @neoting/api test -- auth-tenancy
 
 ## Current state
 
+### A practice has a country from its first second (27 Oct 2026)
+
+`POST /v1/practices` takes an optional `countryCode` (`GB` | `AU`) and an
+optional E.164 `mobile`, and `provisionPractice` writes the country with the
+currency and language it implies (`PRACTICE_COUNTRY` in
+`practice-signup.service.ts`) and the mobile onto `users.mobile` (migration
+`20261027060000_user_mobile`, additive). The country is the caller's choice,
+else the mobile's country code (`countryFromMobile`, the form's own order),
+else GB — so the practices that existed before are unchanged and no backfill is
+needed. `GET /v1/me` now carries `practice.countryCode` / `baseCurrency`, and
+`client-intake.service.ts` gives a new client its practice's country and
+currency.
+`assertAcceptableSignup` re-checks the value for direct callers, the file's
+existing rule. Only currency and language follow the country today — the rest
+of AU (GST, BAS, AU statement formats, chasing, data residency) is the
+CountryProfile work and is not here.
+
 ### The signup chain — verification and enrolment (launch stage A14)
 
 Contract-change issue **#195**, approved. Three operations, no migration:

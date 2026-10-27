@@ -39,7 +39,9 @@ const SENT: SendOutcome = { sent: true, kind: 'client-invite', providerMessageId
  * every send. The assertions are on what reaches the database and the email —
  * not on Prisma or SES working.
  */
-function harness(options: { outcome?: SendOutcome; practiceName?: string | null; sms?: 'records' | 'throws' } = {}) {
+function harness(
+  options: { outcome?: SendOutcome; practiceName?: string | null; sms?: 'records' | 'throws'; practiceCountry?: 'GB' | 'AU' } = {},
+) {
   const writes: { model: string; data: Record<string, unknown> }[] = [];
   const emails: SendClientInviteInput[] = [];
   let sequence = 0;
@@ -75,7 +77,13 @@ function harness(options: { outcome?: SendOutcome; practiceName?: string | null;
     $executeRaw: async () => 0,
     practice: {
       findUnique: async () =>
-        options.practiceName === null ? null : { name: options.practiceName ?? 'Mercer & Co' },
+        options.practiceName === null
+          ? null
+          : {
+              name: options.practiceName ?? 'Mercer & Co',
+              countryCode: options.practiceCountry ?? 'GB',
+              baseCurrency: options.practiceCountry === 'AU' ? 'AUD' : 'GBP',
+            },
     },
     business: { create: record('business'), findUnique: async () => null },
     contact: { create: record('contact') },
@@ -165,6 +173,16 @@ test('the business-type profile lands on the business row — the whole point of
   });
   // The practice comes from the caller's context, never from the body.
   expect(of('business')[0]?.['practiceId']).toBe(PRACTICE);
+});
+
+test('a new client starts in its practice’s country and currency — an AU practice’s clients are AU, AUD', async () => {
+  const au = harness({ practiceCountry: 'AU' });
+  await au.service.createClient(CTX, request(), 'key-au');
+  expect(au.of('business')[0]).toMatchObject({ countryCode: 'AU', baseCurrency: 'AUD' });
+
+  const gb = harness();
+  await gb.service.createClient(CTX, request(), 'key-gb');
+  expect(gb.of('business')[0]).toMatchObject({ countryCode: 'GB', baseCurrency: 'GBP' });
 });
 
 test('the primary contact is stored lower-cased, which is what makes their email routable (D45)', async () => {

@@ -176,7 +176,10 @@ export class ClientIntakeService {
       // widening. A missing row means the context names a practice that does not
       // exist, which the business insert's foreign key would refuse a moment
       // later with an opaque error; refusing here says what actually happened.
-      const practice = await db.practice.findUnique({ where: { id: practiceId }, select: { name: true } });
+      const practice = await db.practice.findUnique({
+        where: { id: practiceId },
+        select: { name: true, countryCode: true, baseCurrency: true },
+      });
       if (practice === null) {
         throw new AppException('NT-SRV-001', HttpStatus.INTERNAL_SERVER_ERROR, 'Practice not found for this session');
       }
@@ -185,6 +188,10 @@ export class ClientIntakeService {
         data: {
           practiceId,
           name: request.name,
+          // A client starts in its practice's country and currency (an AU
+          // practice's clients are AU, AUD) — same domain, one product.
+          countryCode: practice.countryCode,
+          baseCurrency: practice.baseCurrency,
           // `?? null` rather than a conditional spread: the columns are
           // nullable, `exactOptionalPropertyTypes` is on, and an explicit
           // `undefined` is not assignable to Prisma's optional input.

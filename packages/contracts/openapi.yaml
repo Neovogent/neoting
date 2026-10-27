@@ -7288,6 +7288,16 @@ components:
               properties:
                 id: { type: string }
                 name: { type: string }
+                countryCode:
+                  type: string
+                  description: |
+                    Where the practice is (`GB`, `AU`), as chosen at sign-up.
+                    A plain string rather than the sign-up enum so a value this
+                    build does not know still parses. Optional: an older server
+                    omits it.
+                baseCurrency:
+                  type: string
+                  description: The practice's currency code (`GBP`, `AUD`), set from its country at sign-up. Optional.
                 documentEmail:
                   type: string
                   description: |
@@ -10597,6 +10607,30 @@ components:
       required: [practiceName, firstName, lastName, email, password, acceptedTermsVersion]
       properties:
         practiceName: { type: string, minLength: 1, maxLength: 200 }
+        countryCode:
+          type: string
+          enum: [GB, AU]
+          description: |
+            Where the practice is, so one sign-up page serves both countries. It
+            sets the practice's `countryCode`, base currency (GBP / AUD) and
+            language (en-GB / en-AU) at creation. Omitted means GB — every
+            practice created before this field existed, and every caller that
+            does not send it. The sign-up form guesses it from the visitor's
+            location and the visitor confirms it.
+
+            ⚠ It does not yet make the product Australian: tax, statement
+            formats and chasing are still UK-shaped. It records the fact the
+            rest of that work will key off.
+        mobile:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: |
+            The signing-up person's mobile, E.164 (the `mobileE164` pattern used
+            elsewhere in this contract). Optional. Stored on the user. Its
+            country code is the first signal the sign-up form reads to pick
+            `countryCode` (+61 → AU, +44 → GB), location the second; and when a
+            caller sends a mobile but no `countryCode`, the server makes the same
+            inference, so the two signals cannot disagree by caller.
         firstName: { type: string, minLength: 1, maxLength: 100 }
         lastName: { type: string, minLength: 1, maxLength: 100 }
         email:

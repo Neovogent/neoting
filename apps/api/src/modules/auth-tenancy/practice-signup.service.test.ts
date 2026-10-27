@@ -33,7 +33,7 @@ const INPUT: PracticeSignupInput = {
 const META = { idempotencyKey: '11111111-1111-4111-8111-111111111111', traceId: 'trace-1' };
 
 interface Written {
-  practices: { name: string }[];
+  practices: { name: string; countryCode?: string; baseCurrency?: string; language?: string }[];
   users: {
     id: string;
     kind?: string;
@@ -81,7 +81,7 @@ function fakePrisma(options: { existingEmails?: readonly string[]; failUserCreat
           },
         },
         practice: {
-          create: async ({ data }: { data: { name: string } }) => {
+          create: async ({ data }: { data: Written['practices'][number] }) => {
             staged.practices.push(data);
             return { id: `prac_${(ids += 1)}` };
           },
@@ -126,12 +126,44 @@ function build(options: Parameters<typeof fakePrisma>[0] = {}, overrides: { env?
   return { service, written, mailer: mailer as RecordingSignupMailer };
 }
 
+test('an Australian practice is created in AUD and en-AU; an unknown country is refused before anything is written', async () => {
+  const { service, written } = build();
+  await service.signUp({ ...INPUT, countryCode: 'AU' }, META);
+  expect(written.practices).toEqual([
+    { name: 'Ledgerline Accounting LLP', countryCode: 'AU', baseCurrency: 'AUD', language: 'en-AU' },
+  ]);
+
+  const refused = build();
+  await expect(
+    refused.service.signUp({ ...INPUT, countryCode: 'US' as unknown as 'GB' }, { ...META, idempotencyKey: 'another-key' }),
+  ).rejects.toMatchObject({ code: 'NT-VAL-001' });
+  expect(refused.written.transactions).toBe(0);
+});
+
+test('a +61 mobile with no country makes an AU practice and is stored; an explicit country still wins; a malformed one is refused', async () => {
+  const fromMobile = build();
+  await fromMobile.service.signUp({ ...INPUT, mobile: '+61412345678' }, META);
+  expect(fromMobile.written.practices[0]).toMatchObject({ countryCode: 'AU', baseCurrency: 'AUD' });
+  expect(fromMobile.written.users.find((u) => u.kind !== 'SYSTEM')).toMatchObject({ mobile: '+61412345678' });
+
+  const chosen = build();
+  await chosen.service.signUp({ ...INPUT, countryCode: 'GB', mobile: '+61412345678' }, META);
+  expect(chosen.written.practices[0]).toMatchObject({ countryCode: 'GB', baseCurrency: 'GBP' });
+
+  const refused = build();
+  await expect(refused.service.signUp({ ...INPUT, mobile: '0412 345 678' }, META)).rejects.toMatchObject({ code: 'NT-VAL-001' });
+  expect(refused.written.transactions).toBe(0);
+});
+
 test('the happy path writes practice + human + SYSTEM actor in ONE transaction, and nothing else', async () => {
   const { service, written } = build();
   await service.signUp(INPUT, META);
 
   expect(written.transactions).toBe(1);
-  expect(written.practices).toEqual([{ name: 'Ledgerline Accounting LLP' }]);
+  // No country sent: the practice is created exactly as it was before AU existed.
+  expect(written.practices).toEqual([
+    { name: 'Ledgerline Accounting LLP', countryCode: 'GB', baseCurrency: 'GBP', language: 'en-GB' },
+  ]);
   // TWO of each: the person signing up, and the practice's machine actor.
   expect(written.users).toHaveLength(2);
   expect(written.memberships).toHaveLength(2);
