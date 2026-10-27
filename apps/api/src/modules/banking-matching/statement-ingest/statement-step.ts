@@ -9,6 +9,7 @@ import {
   type StatementScopedClient,
 } from './statement-ingest.js';
 import type { DocumentOcr } from '../../../common/ocr/document-ocr.js';
+import type { BusinessMatchBackfill } from '../suggestion/match-suggester.js';
 
 /**
  * The ingest job's statement step.
@@ -88,12 +89,15 @@ export const NO_STATEMENT_STEP: StatementStep = { async run() {} };
 export class PrismaStatementStep implements StatementStep {
   private readonly logger: StatementStepLogger;
 
+  private readonly matchBackfill: BusinessMatchBackfill | undefined;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: StatementBytesSource,
-    options: { logger?: StatementStepLogger } = {},
+    options: { logger?: StatementStepLogger; matchBackfill?: BusinessMatchBackfill } = {},
   ) {
     this.logger = options.logger ?? NOOP_LOGGER;
+    this.matchBackfill = options.matchBackfill;
   }
 
 
@@ -206,12 +210,33 @@ export class PrismaStatementStep implements StatementStep {
             `of ${outcome.parsedRowCount} read (${outcome.duplicateRowCount} already present), ` +
             `assurance=${outcome.report.assurance} (trace=${input.traceId})`,
         );
+        if (outcome.rowCount > 0) await this.backfillMatches(businessId, input);
       }
     } catch (error) {
       // Swallowed on purpose — see the header. The document survives; the
       // statement simply is not imported, and that is visible on the screen.
       this.logger.warn(
         `statement-step: ${input.documentId} threw and was skipped — ` +
+          `${error instanceof Error ? error.message : String(error)} (trace=${input.traceId})`,
+      );
+    }
+  }
+
+  /** New lines may answer documents read before them. Never fails the import. */
+  private async backfillMatches(businessId: string, input: StatementStepInput): Promise<void> {
+    if (this.matchBackfill === undefined) return;
+    try {
+      const suggested = await this.matchBackfill.suggestForBusiness({
+        businessId,
+        practiceId: input.practiceId,
+        traceId: input.traceId,
+      });
+      if (suggested > 0) {
+        this.logger.log(`statement-step: ${input.documentId} — ${suggested} earlier document(s) now suggested against its lines (trace=${input.traceId})`);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `statement-step: ${input.documentId} imported, but suggesting matches for earlier documents failed — ` +
           `${error instanceof Error ? error.message : String(error)} (trace=${input.traceId})`,
       );
     }

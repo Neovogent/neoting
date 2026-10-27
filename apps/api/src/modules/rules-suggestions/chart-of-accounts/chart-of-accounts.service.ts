@@ -196,7 +196,7 @@ export class ChartOfAccountsService {
    * so `supplier-coding.service.ts` can resolve a chart and a rule ladder in
    * one transaction rather than two reads that could see different worlds.
    */
-  async resolve(db: ScopedClient, businessId: string): Promise<ClientChartOfAccounts> {
+  async resolve(db: ScopedClient, businessId: string, options: { seed?: boolean } = {}): Promise<ClientChartOfAccounts> {
     const business = await db.business.findUnique({
       where: { id: businessId },
       select: { id: true, contextQuestionnaire: true },
@@ -257,6 +257,8 @@ export class ChartOfAccountsService {
       // anything that reads the table directly, which today means chat.
       return { ...derived, source: 'UNSTORED' };
     }
+    // `seed: false` is the pure read (a picklist): the same chart, never stored.
+    if (options.seed === false) return { ...derived, source: 'UNSTORED' };
 
     try {
       await db.referenceSync.create({

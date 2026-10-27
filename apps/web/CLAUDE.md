@@ -3230,3 +3230,13 @@ and it is Shakib's own explicit decision — commit `70ac8c1`: *"Restored, with 
 reasoning written down so it is not 'simplified' again."* The real fix was on the
 server and is in `apps/api/src/modules/ingestion-routing/CLAUDE.md`: those
 documents no longer exist to be shown.
+
+## Fixes from the walkthrough recordings (27 Oct 2026)
+
+- **Category is a dropdown** in `DocumentPreview` when the client's chart loads
+  (`useChartCategories` → `GET /v1/chart-categories`): the name is shown, the
+  code is staged. An empty or unreadable chart keeps the old text box.
+- **Escape closes** the document panel (Inboxes) and the approval panel; the
+  panel's X carries `aria-label` "Close".
+- **Bank page polls** every 3 s (up to 2 min) after a statement upload until
+  the line count changes, so lines appear without a reload.

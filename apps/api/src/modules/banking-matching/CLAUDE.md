@@ -734,3 +734,17 @@ the statement that failed:
 - **`parseStatementDate` accepts a two-digit year in the named form** — `01 Aug
   26` is what that statement prints on every line, and without it every row
   would have been skipped for having no date once the columns were found.
+
+
+## A statement that lands AFTER its receipts (27 Oct 2026)
+
+Matching ran only when a document finished coding, so a receipt coded before
+its bank statement arrived was never suggested against the new lines — found
+while recording the walkthrough videos. `PrismaStatementStep` now takes an
+optional `matchBackfill` (the worker passes its `PrismaMatchSuggester`) and,
+after a statement ingests with at least one line, calls
+`suggestForBusiness`: every non-statement document of that client in
+`TO_REVIEW`/`READY`/`PUBLISHED` with a supplier and total and no live match is
+run through the same `run()` (capped at 500, oldest first). A backfill failure
+is logged and never fails the ingest. ⚠ `docType: { not: 'STATEMENT' }` alone
+drops NULL docTypes in Prisma — hence the `OR` with `null`.

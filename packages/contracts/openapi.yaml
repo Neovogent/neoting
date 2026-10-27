@@ -5185,6 +5185,53 @@ paths:
   # flow item 51 asks for lands its result in exactly that blind spot.
   # ==========================================================================
 
+  /chart-categories:
+    get:
+      operationId: listChartCategories
+      summary: The categories a client's documents can be coded to
+      description: |
+        The client's chart of accounts as a picklist: each category's `code`
+        (what a `document.update-coding` correction must name — anything else
+        is refused) and its ledger-prefixed `name` (`Expenses: Software and
+        subscriptions`, the string the export writes). The document panel
+        offers these instead of asking the accountant to type an internal code.
+
+        A pure read: it never seeds or stores a chart, so it is safe to call
+        whenever a category is edited. One page always (`hasMore: false`); a
+        chart is tens of rows. A client the caller cannot see, or a chart that
+        cannot be read, answers an empty list.
+      tags: [approvals]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The client's categories, in chart order.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, name]
+                      properties:
+                        code: { type: string }
+                        name: { type: string }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /rules:
     get:
       operationId: listRules

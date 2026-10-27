@@ -37,7 +37,7 @@ type DraftBody = z.infer<typeof draftApprovalWorkflowBody>;
  * `approvals.module.ts`, so this service never imports `rules-suggestions`.
  */
 export interface ChartNamesReader {
-  (db: ScopedClient, businessId: string): Promise<readonly { readonly name: string }[] | null>;
+  (db: ScopedClient, businessId: string): Promise<readonly { readonly code: string; readonly name: string }[] | null>;
 }
 
 /**
@@ -227,6 +227,21 @@ export class ApprovalWorkflowsService {
    * rendered it. A rule that cannot be seen cannot be audited or retired, and
    * it is the thing that starts coding a client's documents unattended.
    */
+  /**
+   * `GET /v1/chart-categories` — the client's chart as a picklist, so a
+   * correction names a code the coding gate accepts instead of one typed from
+   * memory. The same chart reader the workflow draft uses (a pure read); an
+   * unreadable chart or an unseen client is an empty list.
+   */
+  async listChartCategories(ctx: ScopeContext, businessId: string) {
+    const reader = this.chartNames;
+    const categories = reader === undefined ? [] : ((await scopedDb(this.prisma, ctx, (db) => reader(db, businessId))) ?? []);
+    return {
+      data: categories.map((category) => ({ code: category.code, name: category.name })),
+      pageInfo: { nextCursor: null, hasMore: false },
+    };
+  }
+
   async listRules(ctx: ScopeContext, query: ListQuery): Promise<Page<Rule>> {
     const filters: Prisma.RuleWhereInput = query.businessId === undefined ? {} : { businessId: query.businessId };
     const request: PageRequest<RuleRow> = {

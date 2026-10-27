@@ -60,6 +60,7 @@ const DocumentPreview = lazy(() =>
   import('../components/DynamicComponents/DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })),
 );
 import { EXPORT_HINT } from '../lib/exportRules';
+import { useEscape } from '../lib/useEscape';
 
 const TABS = ['Queue', 'Workflows', 'History'] as const;
 type Tab = (typeof TABS)[number];
@@ -208,6 +209,8 @@ export function ApprovalsView() {
 
   /** The document an approver is looking at before deciding. */
   const [preview, setPreview] = useState<Document | null>(null);
+  // Escape closes the document preview, like every other dialog in the app.
+  useEscape(() => setPreview(null), preview !== null);
   const documentFor = (a: ApprovalItem) => documents.find((d) => d.id === a.documentId);
 
   // The sub-tab is the second path segment, so every one has a link.

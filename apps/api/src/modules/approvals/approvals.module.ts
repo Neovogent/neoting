@@ -21,7 +21,7 @@ import {
 } from '../validation-dedupe/index.js';
 import { ActionProposalsController } from './action-proposals.controller.js';
 import { ActionProposalsService } from './action-proposals.service.js';
-import { ApprovalWorkflowsController, RulesController } from './approval-workflows.controller.js';
+import { ApprovalWorkflowsController, ChartCategoriesController, RulesController } from './approval-workflows.controller.js';
 import { ApprovalWorkflowsService, type ChartNamesReader } from './approval-workflows.service.js';
 import { selectWorkflowModel } from './workflow-draft/select-workflow-model.js';
 import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './tokens.js';
@@ -56,7 +56,7 @@ import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './
  */
 @Module({
   imports: [PublishingModule, NotificationsModule],
-  controllers: [ActionProposalsController, ApprovalWorkflowsController, RulesController],
+  controllers: [ActionProposalsController, ApprovalWorkflowsController, RulesController, ChartCategoriesController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
@@ -231,7 +231,9 @@ import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './
         const charts = new ChartOfAccountsService(prisma);
         const chartNames: ChartNamesReader = async (db, businessId) => {
           try {
-            return (await charts.resolve(db, businessId)).categories;
+            // A read — the workflow draft and the category picklist — so it
+            // never seeds a chart; the coding gate is what stores one.
+            return (await charts.resolve(db, businessId, { seed: false })).categories;
           } catch {
             // An unreadable chart NARROWS what the model may say (no category
             // scope, no category branch) rather than failing the draft — the

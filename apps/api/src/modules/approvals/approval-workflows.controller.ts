@@ -7,6 +7,7 @@ import {
   deleteApprovalWorkflowParams,
   draftApprovalWorkflowBody,
   listApprovalWorkflowsQueryParams,
+  listChartCategoriesQueryParams,
   listRulesQueryParams,
   replaceApprovalWorkflowBody,
   replaceApprovalWorkflowHeader,
@@ -119,5 +120,29 @@ export class RulesController {
     const parsed = parseBoundary(listRulesQueryParams, coerceQuery(listRulesQueryParams, query), 'query parameters');
     const ctx = await this.context.require();
     return this.service.listRules(ctx, parsed);
+  }
+}
+
+/**
+ * `GET /v1/chart-categories` — the category picklist for the document panel.
+ * Its own class only because Nest binds one path prefix per controller.
+ */
+@Controller('chart-categories')
+export class ChartCategoriesController {
+  constructor(
+    @Inject(REQUEST_CONTEXT) private readonly context: RequestContext,
+    @Inject(APPROVAL_WORKFLOWS_SERVICE) private readonly service: ApprovalWorkflowsService,
+  ) {}
+
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async list(@Query() query: unknown) {
+    const parsed = parseBoundary(
+      listChartCategoriesQueryParams,
+      coerceQuery(listChartCategoriesQueryParams, query),
+      'query parameters',
+    );
+    const ctx = await this.context.require();
+    return this.service.listChartCategories(ctx, parsed.businessId);
   }
 }

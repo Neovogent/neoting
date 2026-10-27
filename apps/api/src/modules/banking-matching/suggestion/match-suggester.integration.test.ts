@@ -248,4 +248,25 @@ describe.skipIf(!enabled)('the automatic match suggester, against real Postgres'
     const confirmedRow = confirmedPage.data.find((t) => t.id === TXN);
     expect(confirmedRow?.matchedDocumentId).toBe(DOC);
   });
+
+  test('a statement landing AFTER the receipt still gets it suggested: the backfill runs the same one-candidate rule', async () => {
+    // Read before the statement: the header carries what extraction found.
+    await owner.document.update({
+      where: { id: DOC },
+      data: { supplierName: 'Currys', totalPence: 129_900, documentDate: new Date('2026-08-09T00:00:00.000Z') },
+    });
+    await owner.document.update({
+      where: { id: DOC_AMBIG },
+      data: { supplierName: 'London Linen Co', totalPence: 15_600, documentDate: new Date('2026-08-14T00:00:00.000Z') },
+    });
+    const suggester = new PrismaMatchSuggester(app);
+
+    expect(await suggester.suggestForBusiness({ businessId: BIZ, practiceId: P, traceId: 'p4ms-backfill' })).toBe(1);
+    const matches = await owner.match.findMany({ where: { businessId: BIZ, unmatchedAt: null } });
+    expect(matches.map((m) => [m.documentId, m.transactionId, m.state])).toEqual([[DOC, TXN, 'SUGGESTED']]);
+
+    // Idempotent: a second statement import suggests nothing twice.
+    expect(await suggester.suggestForBusiness({ businessId: BIZ, practiceId: P, traceId: 'p4ms-backfill-2' })).toBe(0);
+  });
+
 });
