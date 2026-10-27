@@ -28,6 +28,7 @@ import {
   type SignupFault,
 } from '../../api/signup';
 import { Wordmark } from '../../assets/Wordmark';
+import { countryFromMobile, guessCountryHere, toE164, type SignupCountry } from './country';
 import { linkProps, navigate, usePath, useQueryParam } from '../../lib/router';
 import { legalPath } from '../legal/documents';
 import { QrCode } from './QrCode';
@@ -84,6 +85,31 @@ const m = defineMessages({
   },
   formPracticeName: { id: 'signup.form.practiceName', defaultMessage: 'Practice name' },
   formPracticeNamePlaceholder: { id: 'signup.form.practiceNamePlaceholder', defaultMessage: 'Northgate Accounts Ltd' },
+  formCountry: { id: 'signup.form.country', defaultMessage: 'Country' },
+  formCountryHintLocation: {
+    id: 'signup.form.countryHintLocation',
+    defaultMessage: 'Picked from your location — change it if that is wrong. It sets your practice’s country and currency.',
+  },
+  formCountryHintMobile: {
+    id: 'signup.form.countryHintMobile',
+    defaultMessage: 'Picked from your mobile number — change it if that is wrong. It sets your practice’s country and currency.',
+  },
+  formCountryHintChosen: {
+    id: 'signup.form.countryHintChosen',
+    defaultMessage: 'It sets your practice’s country and currency.',
+  },
+  formMobile: { id: 'signup.form.mobile', defaultMessage: 'Mobile number (optional)' },
+  formMobilePlaceholder: { id: 'signup.form.mobilePlaceholder', defaultMessage: '+44 7700 900123 or +61 412 345 678' },
+  formMobileHint: {
+    id: 'signup.form.mobileHint',
+    defaultMessage: 'Its country code picks your country for you.',
+  },
+  formMobileInvalid: {
+    id: 'signup.form.mobileInvalid',
+    defaultMessage: 'That does not look like a mobile number. Include the country code, like +61 412 345 678.',
+  },
+  formCountryGB: { id: 'signup.form.countryGB', defaultMessage: 'United Kingdom' },
+  formCountryAU: { id: 'signup.form.countryAU', defaultMessage: 'Australia' },
   formFirstName: { id: 'signup.form.firstName', defaultMessage: 'First name' },
   formLastName: { id: 'signup.form.lastName', defaultMessage: 'Last name' },
   formEmail: { id: 'signup.form.email', defaultMessage: 'Work email' },
@@ -378,6 +404,11 @@ export function SignupView() {
 function SignupForm({ onSent }: { onSent: (email: string) => void }) {
   const intl = useIntl();
   const [practiceName, setPracticeName] = useState('');
+  const [country, setCountry] = useState<SignupCountry>(guessCountryHere);
+  // Where the country came from: the visitor's own pick always wins, then the
+  // mobile's country code, then location (the order bhai asked for).
+  const [countrySource, setCountrySource] = useState<'location' | 'mobile' | 'chosen'>('location');
+  const [mobile, setMobile] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -387,7 +418,18 @@ function SignupForm({ onSent }: { onSent: (email: string) => void }) {
   const [fault, setFault] = useState<SignupFault | null>(null);
 
   const shortBy = Math.max(0, PASSWORD_MIN_LENGTH - password.length);
+  const mobileE164 = mobile.trim() === '' ? undefined : toE164(mobile, country);
+  const mobileInvalid = mobile.trim() !== '' && mobileE164 === undefined;
+  const onMobile = (value: string) => {
+    setMobile(value);
+    const fromMobile = countryFromMobile(value);
+    if (fromMobile !== undefined && countrySource !== 'chosen') {
+      setCountry(fromMobile);
+      setCountrySource('mobile');
+    }
+  };
   const ready =
+    !mobileInvalid &&
     practiceName.trim().length > 0 &&
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
@@ -401,7 +443,15 @@ function SignupForm({ onSent }: { onSent: (email: string) => void }) {
     setBusy(true);
     setFault(null);
     try {
-      await signUpPractice({ practiceName, firstName, lastName, email, password });
+      await signUpPractice({
+        practiceName,
+        countryCode: country,
+        ...(mobileE164 === undefined ? {} : { mobile: mobileE164 }),
+        firstName,
+        lastName,
+        email,
+        password,
+      });
       onSent(email.trim().toLowerCase());
     } catch (error) {
       setFault(faultOf(error));
@@ -425,6 +475,49 @@ function SignupForm({ onSent }: { onSent: (email: string) => void }) {
             placeholder={intl.formatMessage(m.formPracticeNamePlaceholder)}
             className={INPUT}
           />
+        </Field>
+
+        <Field
+          id="signup-mobile"
+          label={intl.formatMessage(m.formMobile)}
+          hint={intl.formatMessage(mobileInvalid ? m.formMobileInvalid : m.formMobileHint)}
+        >
+          <input
+            id="signup-mobile"
+            type="tel"
+            inputMode="tel"
+            value={mobile}
+            onChange={(e) => onMobile(e.target.value)}
+            autoComplete="tel"
+            maxLength={24}
+            disabled={busy}
+            aria-invalid={mobileInvalid}
+            placeholder={intl.formatMessage(m.formMobilePlaceholder)}
+            className={INPUT}
+          />
+        </Field>
+
+        <Field
+          id="signup-country"
+          label={intl.formatMessage(m.formCountry)}
+          hint={intl.formatMessage(
+            countrySource === 'mobile' ? m.formCountryHintMobile : countrySource === 'location' ? m.formCountryHintLocation : m.formCountryHintChosen,
+          )}
+        >
+          <select
+            id="signup-country"
+            value={country}
+            onChange={(e) => {
+              setCountry(e.target.value as SignupCountry);
+              setCountrySource('chosen');
+            }}
+            autoComplete="country"
+            disabled={busy}
+            className={INPUT}
+          >
+            <option value="GB">{intl.formatMessage(m.formCountryGB)}</option>
+            <option value="AU">{intl.formatMessage(m.formCountryAU)}</option>
+          </select>
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

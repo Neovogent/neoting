@@ -242,6 +242,9 @@ model User {
   passwordHash  String?  @map("password_hash")
   firstName     String?  @map("first_name")
   lastName      String?  @map("last_name")
+  /// E.164, given at practice sign-up (optional). Its country code is one of the
+  /// two signals the sign-up form picks the practice's country from.
+  mobile        String?
 
   totpSecretRef String?   @map("totp_secret_ref")
   totpEnabledAt DateTime? @map("totp_enabled_at")

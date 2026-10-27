@@ -1,4 +1,5 @@
 import { NtProblemError } from '@neoting/contracts';
+import type { PracticeSignupRequest } from '@neoting/contracts/model';
 import {
   beginTotpEnrolment,
   confirmTotpEnrolment,
@@ -73,6 +74,10 @@ export const TOTP_LENGTH = 6;
 
 export interface SignupDetails {
   practiceName: string;
+  /** Omitted means GB — the server's default, and every practice before AU. */
+  countryCode?: 'GB' | 'AU';
+  /** E.164 — the form normalises what was typed before it gets here. */
+  mobile?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -89,8 +94,13 @@ export interface SignupDetails {
  * address, and nobody else learns it at all.
  */
 export async function signUpPractice(details: SignupDetails): Promise<void> {
-  const request = createPracticeBody.parse({
+  // Built as the contract's own type and checked against its schema, then the
+  // typed object is sent — intake.ts's pattern, which keeps an omitted
+  // countryCode genuinely absent rather than present-and-undefined.
+  const request: PracticeSignupRequest = {
     practiceName: details.practiceName.trim(),
+    ...(details.countryCode === undefined ? {} : { countryCode: details.countryCode }),
+    ...(details.mobile === undefined ? {} : { mobile: details.mobile }),
     firstName: details.firstName.trim(),
     lastName: details.lastName.trim(),
     // Normalised here as well as on the server: `users.email` is unique on the
@@ -100,7 +110,8 @@ export async function signUpPractice(details: SignupDetails): Promise<void> {
     email: details.email.trim().toLowerCase(),
     password: details.password,
     acceptedTermsVersion: TERMS_VERSION,
-  });
+  };
+  createPracticeBody.parse(request);
   await createPractice(request);
 }
 

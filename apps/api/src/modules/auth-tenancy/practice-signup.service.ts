@@ -53,8 +53,31 @@ import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
  */
 export const TERMS_VERSION_IN_FORCE = '1.0';
 
+/**
+ * What a practice's country sets when it is created. Omitted is GB.
+ * ponytail: only currency and language follow the country today — tax,
+ * statement formats and chasing are still UK-shaped; that is the CountryProfile work.
+ */
+const PRACTICE_COUNTRY = {
+  GB: { baseCurrency: 'GBP', language: 'en-GB' },
+  AU: { baseCurrency: 'AUD', language: 'en-AU' },
+} as const;
+export type PracticeCountry = keyof typeof PRACTICE_COUNTRY;
+
+/** The contract's E.164 pattern for `mobile`. */
+const E164 = /^\+[1-9][0-9]{7,14}$/;
+
+/** A mobile's country code, when it is one a practice can sign up in. */
+export function countryFromMobile(mobile: string | undefined): PracticeCountry | undefined {
+  if (mobile?.startsWith('+61') === true) return 'AU';
+  if (mobile?.startsWith('+44') === true) return 'GB';
+  return undefined;
+}
+
 export interface PracticeSignupInput {
   readonly practiceName: string;
+  readonly countryCode?: PracticeCountry | undefined;
+  readonly mobile?: string | undefined;
   readonly firstName: string;
   readonly lastName: string;
   readonly email: string;
@@ -177,8 +200,11 @@ export class PracticeSignupService {
         const existing = await tx.user.findUnique({ where: { email: input.email }, select: { id: true } });
         if (existing !== null) return null;
 
+        // Explicit choice first, then the mobile's country code, then GB — the
+        // same order the sign-up form uses, so an API caller gets the same answer.
+        const countryCode = input.countryCode ?? countryFromMobile(input.mobile) ?? 'GB';
         const practice = await tx.practice.create({
-          data: { name: input.practiceName.trim() },
+          data: { name: input.practiceName.trim(), countryCode, ...PRACTICE_COUNTRY[countryCode] },
           select: { id: true },
         });
 
@@ -192,6 +218,7 @@ export class PracticeSignupService {
             passwordHash,
             firstName: input.firstName.trim(),
             lastName: input.lastName.trim(),
+            ...(input.mobile === undefined ? {} : { mobile: input.mobile }),
           },
           select: { id: true },
         });
@@ -321,6 +348,17 @@ export function normaliseEmail(email: string): string {
  * refactor from not existing.
  */
 function assertAcceptableSignup(input: PracticeSignupInput): void {
+  // The contract's enum already refuses this over HTTP; repeated for direct callers.
+  if (input.countryCode !== undefined && !Object.hasOwn(PRACTICE_COUNTRY, input.countryCode)) {
+    throw new AppException('NT-VAL-001', HttpStatus.BAD_REQUEST, 'Validation failed', 'That country is not one a practice can sign up in.', [
+      { field: 'countryCode', message: `Must be one of ${Object.keys(PRACTICE_COUNTRY).join(', ')}.` },
+    ]);
+  }
+  if (input.mobile !== undefined && !E164.test(input.mobile)) {
+    throw new AppException('NT-VAL-001', HttpStatus.BAD_REQUEST, 'Validation failed', 'That mobile number is not in international format.', [
+      { field: 'mobile', message: 'Must be in international format, like +61412345678.' },
+    ]);
+  }
   if (input.acceptedTermsVersion !== TERMS_VERSION_IN_FORCE) {
     throw new AppException('NT-VAL-001', HttpStatus.BAD_REQUEST, 'Validation failed', 'The terms version accepted is not the version in force.', [
       { field: 'acceptedTermsVersion', message: `Must be the terms version in force (${TERMS_VERSION_IN_FORCE}).` },
