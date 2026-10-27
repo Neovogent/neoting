@@ -191,7 +191,7 @@ describe.skipIf(!enabled)('chase link → emailed code → portal session, under
   });
 });
 
-test('with the SMS wire configured, the code goes to the REGISTERED MOBILE and email stays quiet', async () => {
+test.skipIf(!enabled)('with the SMS wire configured, the code goes to the REGISTERED MOBILE and email stays quiet', async () => {
   const texts: { to: string; body: string }[] = [];
   const notifications = new NotificationsService(email, new InMemoryEmailRateLimiter());
   const withSms = new PortalOnboardingService(
@@ -226,7 +226,7 @@ test('with the SMS wire configured, the code goes to the REGISTERED MOBILE and e
   expect(issued.token.length).toBeGreaterThan(20);
 });
 
-test('an SMS failure falls back to the registered email — a failed text strands nobody', async () => {
+test.skipIf(!enabled)('an SMS failure falls back to the registered email — a failed text strands nobody', async () => {
   const notifications = new NotificationsService(email, new InMemoryEmailRateLimiter());
   const withBrokenSms = new PortalOnboardingService(
     app,

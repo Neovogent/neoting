@@ -54,6 +54,7 @@ const DocumentPreview = lazy(() =>
 );
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
+import { useEscape } from '../lib/useEscape';
 
 const STATUS_TABS = ['review', 'ready', 'processing', 'published', 'rejected'] as const;
 const INBOXES = ['cost', 'sales'] as const;
@@ -384,6 +385,8 @@ export function InboxesView() {
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<Document | null>(null);
+  // Escape closes the document preview, like every other dialog in the app.
+  useEscape(() => setPreview(null), preview !== null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [teachSender, setTeachSender] = useState(false);
   /** The upload being read on screen, so the result is shown rather than filed silently. */
@@ -1609,7 +1612,11 @@ export function InboxesView() {
               data-tour="document-preview"
               className="relative w-full max-w-3xl"
             >
-              <button onClick={() => setPreview(null)} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
+              <button
+                onClick={() => setPreview(null)}
+                aria-label={intl.formatMessage(commonActions.close)}
+                className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
+              >
                 <X size={18} />
               </button>
               {/* Suspense INSIDE the frame: the modal itself paints at once and

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
-import { CATEGORY_LABEL, isDateLabel, isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
+import { CATEGORY_LABEL, isDateLabel, isEditableLabel, parseCodingDraft, useChartCategories, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
 import { parseUkDate } from '../../lib/tableImport';
 import { UkDateField } from './UkDateField';
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
@@ -167,6 +167,7 @@ const m = defineMessages({
   // necessity — it sits inline beside a value — and it never claims the
   // document is coded: "suggested" is the whole point of the word.
   rowSuggested: { id: 'documents.documentPreview.rowSuggested', defaultMessage: 'Suggested: {category}' },
+  categoryPick: { id: 'documents.documentPreview.categoryPick', defaultMessage: 'Choose a category' },
   rowAcceptSuggestion: { id: 'documents.documentPreview.rowAcceptSuggestion', defaultMessage: 'Accept' },
   rowEditInstead: { id: 'documents.documentPreview.rowEditInstead', defaultMessage: 'Edit' },
   readyHeading: { id: 'documents.documentPreview.readyHeading', defaultMessage: 'Path to Ready' },
@@ -342,6 +343,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   const isProcessing = doc.status === 'processing';
   const detail = useDocumentDetail({ documentId: doc.id, enabled: live, poll: live && isProcessing });
   const bankMatch = useDocumentBankMatch(doc.id, live);
+  const categories = useChartCategories(detail.businessId, live);
   const [confirmingMatch, setConfirmingMatch] = useState(false);
   const [matchProblem, setMatchProblem] = useState(false);
 
@@ -878,6 +880,29 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                               onChange={setDraft}
                             />
                           </div>
+                        ) : f.label === CATEGORY_LABEL && categories.length > 0 ? (
+                          // The client's own chart, by name — free text only
+                          // accepted the code, which nobody types from memory.
+                          <select
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus
+                            aria-label={f.label}
+                            value={categories.find((c) => c.code === draft || c.name === draft)?.code ?? ''}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') setEditing(null);
+                            }}
+                            className="w-72 max-w-full bg-ground border border-brand rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
+                          >
+                            <option value="" disabled>
+                              {intl.formatMessage(m.categoryPick)}
+                            </option>
+                            {categories.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
                         ) : (
                           <input
                             // This input mounts because the user just pressed Edit

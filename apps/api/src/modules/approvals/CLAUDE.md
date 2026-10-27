@@ -999,3 +999,13 @@ seam other callers may reach with that resource.
 moved with it; `LiveProposalFlow` additionally auto-opens the review for any
 TIER-2 kind, so an accountant's chase never sits in a queue waiting for someone
 who is not required.
+
+
+## `GET /v1/chart-categories` (27 Oct 2026)
+
+The client's chart as `{ code, name }` for the category picker in the document
+preview — the free-text box only accepted the code (`SOFTWARE_AND_SUBSCRIPTIONS`),
+which nobody types from memory. It reuses the workflow draft's `ChartNamesReader`
+(now typed with `code`), which calls `ChartOfAccountsService.resolve(..., { seed: false })`
+so a read never stores a chart; the coding gate is still what seeds one. An
+unreadable chart is an empty list and the web keeps the text box.

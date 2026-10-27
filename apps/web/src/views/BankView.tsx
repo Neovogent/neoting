@@ -441,6 +441,24 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
    * condition is that the app walks end to end with no API.
    */
   const [uploadFault, setUploadFault] = useState<string | null>(null);
+  // The statement's lines exist only once the ingest job has read the file —
+  // seconds, sometimes a minute — so a single refetch straight after the upload
+  // found nothing and the tab looked empty until a reload. Keep asking every
+  // 3 s until the line count moves, for at most 2 minutes.
+  const [awaitingLines, setAwaitingLines] = useState<number | null>(null);
+  useEffect(() => {
+    if (awaitingLines === null) return;
+    if (transactions.length !== awaitingLines) {
+      setAwaitingLines(null);
+      return;
+    }
+    const tick = setInterval(() => refetchBank(), 3_000);
+    const stop = setTimeout(() => setAwaitingLines(null), 120_000);
+    return () => {
+      clearInterval(tick);
+      clearTimeout(stop);
+    };
+  }, [awaitingLines, transactions.length, refetchBank]);
   const uploadStatementFile = async (file: File, clientId: string): Promise<void> => {
     if (!liveBank) {
       uploadStatement(file.name, clientId);
@@ -452,8 +470,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       setUploadFault(outcome.failures.join(' · '));
       return;
     }
-    // The rows appear when the ingest job has read the file, so the refetch is
-    // a nudge rather than the thing that makes them exist.
+    // The rows appear when the ingest job has read the file — wait for them.
+    setAwaitingLines(transactions.length);
     refetchBank();
   };
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'needs-you' | 'unmatched' | 'matched' | 'credits'>('all');

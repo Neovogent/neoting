@@ -92,6 +92,15 @@ describe('seeding', () => {
     expect(payload.categories.map((c) => c.name)).toContain('Cost of sales: Materials and consumables');
   });
 
+  test('a picklist read (seed: false) serves the same chart and stores nothing', async () => {
+    const { db, created } = fake({ business: { id: 'biz_1', contextQuestionnaire: CLEANING_AGENCY } });
+    const chart = await service().resolve(db, 'biz_1', { seed: false });
+
+    expect(chart.source).toBe('UNSTORED');
+    expect(chart.categories.length).toBeGreaterThan(20);
+    expect(created).toHaveLength(0);
+  });
+
   test('a second read returns the stored chart and writes nothing', async () => {
     const { db, created } = fake({ business: { id: 'biz_1', contextQuestionnaire: CLEANING_AGENCY } });
     const first = await service().resolve(db, 'biz_1');

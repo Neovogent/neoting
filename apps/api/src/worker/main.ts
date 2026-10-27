@@ -160,8 +160,13 @@ function bootstrap(): void {
   // store would be a second answer to "where are this document's bytes".
   // No reader of its own: it reads whatever the OCR rung above already read,
   // handed forward on the extraction completion.
-  const statements = new PrismaStatementStep(getPrismaClient(), documentStore, { logger: ocrLogger });
+  // The same suggester also runs after a statement lands, for documents read
+  // before it — otherwise their lines arrive with nothing looking for them.
   const matchSuggester = new PrismaMatchSuggester(getPrismaClient());
+  const statements = new PrismaStatementStep(getPrismaClient(), documentStore, {
+    logger: ocrLogger,
+    matchBackfill: matchSuggester,
+  });
   const senderMap = new PrismaSenderMapLoader(getPrismaClient());
   const whatsAppPractices = new PrismaWhatsAppPracticeResolver(getPrismaClient());
 

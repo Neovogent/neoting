@@ -8,12 +8,14 @@ import {
   reviewActionProposal,
   useGetDocument,
   useGetDocumentOriginal,
+  useListChartCategories,
   useListDocumentEvents,
 } from '@neoting/contracts/client';
 import {
   createActionProposalBody,
   getDocumentOriginalResponse,
   getDocumentResponse,
+  listChartCategoriesResponse,
   listDocumentEventsResponse,
 } from '@neoting/contracts/zod';
 import { DocumentType, type UpdateCodingPayload } from '@neoting/contracts/model';
@@ -773,4 +775,19 @@ export async function refreshDocument(queryClient: QueryClient, documentId: stri
     queryClient.invalidateQueries({ queryKey: getGetDocumentQueryKey(documentId) }),
     queryClient.invalidateQueries({ queryKey: getListDocumentEventsQueryKey(documentId) }),
   ]);
+}
+
+/**
+ * The client's chart as a picklist (`GET /v1/chart-categories`), so a category
+ * correction is chosen by name and staged by the code the coding gate accepts.
+ * Empty while loading, off-contract or unreadable — the caller then keeps the
+ * free-text box.
+ */
+export function useChartCategories(businessId: string, enabled: boolean): readonly { code: string; name: string }[] {
+  const query = useListChartCategories({ businessId }, { query: { enabled: enabled && businessId !== '', staleTime: 5 * 60_000 } });
+  return useMemo(() => {
+    if (query.data === undefined) return [];
+    const parsed = listChartCategoriesResponse.safeParse(unwrapBody(query.data));
+    return parsed.success ? parsed.data.data : [];
+  }, [query.data]);
 }

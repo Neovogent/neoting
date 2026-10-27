@@ -88,8 +88,62 @@ export class RecordingMatchSuggester implements MatchSuggester {
  */
 const CANDIDATE_LIMIT = 100;
 
-export class PrismaMatchSuggester implements MatchSuggester {
+/** Re-run the suggester over a client's documents — after a statement lands. */
+export interface BusinessMatchBackfill {
+  suggestForBusiness(input: { businessId: string; practiceId: string; traceId: string }): Promise<number>;
+}
+
+/** Documents a statement import may now have a line for: read, live, unmatched. */
+const BACKFILL_STATES = ['TO_REVIEW', 'READY', 'PUBLISHED'] as const;
+const BACKFILL_LIMIT = 500;
+
+export class PrismaMatchSuggester implements MatchSuggester, BusinessMatchBackfill {
   constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * The suggester only ever ran when a DOCUMENT finished extraction, so a
+   * receipt read BEFORE its statement was uploaded never got a suggestion —
+   * the statement's lines arrived with nothing looking for them. This is the
+   * other direction: after a statement imports, every read, unmatched document
+   * of the client goes through `run`, with its exactly-one-candidate rule and
+   * compare-and-swap unchanged. Returns how many suggestions were written.
+   * ponytail: capped at the newest 500 documents per import; page it if a
+   * client ever has more unmatched documents than that.
+   */
+  async suggestForBusiness(input: { businessId: string; practiceId: string; traceId: string }): Promise<number> {
+    const systemUserId = await resolveSystemActor(this.prisma, input.practiceId);
+    const documents = await scopedDb(this.prisma, systemContext(input.practiceId, systemUserId), (db) =>
+      db.document.findMany({
+        where: {
+          businessId: input.businessId,
+          deletedAt: null,
+          state: { in: [...BACKFILL_STATES] },
+          // `not` alone would drop documents with no type at all (SQL NULL).
+          OR: [{ docType: null }, { docType: { not: 'STATEMENT' } }],
+          supplierName: { not: null },
+          totalPence: { not: null },
+          matches: { none: { unmatchedAt: null } },
+        },
+        select: { id: true, supplierName: true, totalPence: true, documentDate: true },
+        orderBy: { createdAt: 'desc' },
+        take: BACKFILL_LIMIT,
+      }),
+    );
+    let suggested = 0;
+    for (const doc of documents) {
+      const result = await this.run({
+        documentId: doc.id,
+        businessId: input.businessId,
+        practiceId: input.practiceId,
+        supplierName: doc.supplierName,
+        totalPence: doc.totalPence,
+        documentDate: doc.documentDate,
+        traceId: input.traceId,
+      });
+      if (result.suggested !== null) suggested++;
+    }
+    return suggested;
+  }
 
   async run(input: MatchSuggesterInput): Promise<MatchSuggesterResult> {
     // The compare's own rule, applied before any query: a document missing a
