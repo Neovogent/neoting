@@ -464,15 +464,16 @@ locals {
     # ⚠ LIVE-mode price, because this deployment's Stripe key is `rk_live_`
     # (see apps/api/CLAUDE.md) and a test-mode price id would simply not resolve.
     { name = "STRIPE_VAULT_PRICE_ID", value = "price_1UIuMOGMdHp4NCWv0YYB66q3" },
-    # D52 / D53 (2 Nov 2026) — EMPTY until the three LIVE prices exist, and empty
-    # is a valid deployment: AU clients stay on the GBP plan, and the tax
-    # estimate add-on is simply not sold (every client's flag is written false).
-    # Create them in the live account (docs/runbooks/stripe-billing.md §2), paste
-    # the ids here, then apply: the A$17/month AU plan, and the tax estimate at
-    # GBP 15.00/month and A$30.00/month, all tax_behavior=exclusive.
-    { name = "STRIPE_PRICE_ID_AUD", value = "" },
-    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID", value = "" },
-    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID_AUD", value = "" },
+    # D52 / D53 (2 Nov 2026) — LIVE-mode prices in the same account as the plan
+    # (acct_1RQtbxGMdHp4NCWv), all monthly and tax_behavior=exclusive:
+    #   the AU plan, A$17.00 (on the plan's own product prod_V9kV5iBcc7dMgT);
+    #   the tax estimate add-on, GBP 15.00 and A$30.00 (product prod_VYVFNt94wfzkk5).
+    # Emptying one stops selling it (AU falls back to the GBP plan; the add-on
+    # answers NT-BIL-004). ⚠ Selling either add-on ALSO needs the restricted key's
+    # Subscriptions: Write permission (docs/runbooks/stripe-billing.md §2).
+    { name = "STRIPE_PRICE_ID_AUD", value = "price_1UXOFQGMdHp4NCWvJHumuond" },
+    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID", value = "price_1UXOFOGMdHp4NCWvTjpmB7Xc" },
+    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID_AUD", value = "price_1UXOFPGMdHp4NCWvSsDUqbG7" },
     { name = "STRIPE_TAX", value = "rate" },
     # The 20% GB rate, exclusive: GBP 8.50 is the NET price and VAT goes on top
     # (D48). `env.ts` refuses to boot on `STRIPE_TAX=rate` with this empty,

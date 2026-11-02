@@ -122,6 +122,11 @@ must sit on the same subscription), all `tax_behavior=exclusive`, all monthly:
 | Tax estimate, UK (D52) | `unit_amount=1500`, `currency=gbp` | `STRIPE_TAX_ESTIMATE_PRICE_ID` |
 | Tax estimate, AU (D52) | `unit_amount=3000`, `currency=aud` | `STRIPE_TAX_ESTIMATE_PRICE_ID_AUD` |
 
+**Created in LIVE mode on 2 Nov 2026** (account `acct_1RQtbxGMdHp4NCWv`): AU plan
+`price_1UXOFQGMdHp4NCWvJHumuond` (on `prod_V9kV5iBcc7dMgT`), tax estimate
+`price_1UXOFOGMdHp4NCWvTjpmB7Xc` (GBP) and `price_1UXOFPGMdHp4NCWvSsDUqbG7` (AUD),
+both on `prod_VYVFNt94wfzkk5`. Set in `infra/envs/staging/services.tf`.
+
 ```bash
 stripe post /v1/products -d name="Neo Accounting — Tax estimate" \
   -d description="VAT/GST and company tax estimate for one client business. For reference; not a tax return." \
