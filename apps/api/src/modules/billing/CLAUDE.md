@@ -227,6 +227,25 @@ subtotal/tax/total are still 850/170/1020. The unit tests pin the request
 shape; only the API can tell you the shape is *accepted*.
 
 
+## The tax estimate add-on and A$ billing (D52, D53 — 2 Nov 2026)
+
+- **A second add-on, the same shape as D51.** `setVaultAddOn` became
+  `setAddOn({ addOn, country, enabled })`, which picks the price from the add-on
+  AND the client's country; the webhook writes `taxEstimateAddon` from
+  `hasAnyPrice(subscription, [gbp, aud])` on every subscription event, beside
+  `vaultAddon`, and `planOf` excludes every add-on price. `mayUseTaxEstimate`
+  is the entitlement (live subscription AND the flag).
+- **`POST /v1/billing/add-ons` is the first caller of the add-on toggle**, for
+  both add-ons. ⚠ Portal bearer ONLY — it changes what the client's card is
+  charged, so the accountant's cookie path is refused before anything is read;
+  the bearer then goes through `principalFor` (business match + billing
+  authority). 202: Stripe is told, the webhook decides.
+- **D53: an AU business checks out on `STRIPE_PRICE_ID_AUD` with no UK VAT
+  rate**, and its add-on is the A$ price. One Stripe subscription cannot mix
+  currencies, which is the whole reason. Empty AUD price = the old behaviour.
+- ⚠ **The live restricted key needs Subscriptions: Write** before either add-on
+  can be sold — `docs/runbooks/stripe-billing.md` §2.
+
 ## The webhook tells the practice when a client finishes (8 Sep 2026 — item 2)
 
 > *"Registered as client — no notification received via email or portal

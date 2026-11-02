@@ -3240,3 +3240,25 @@ documents no longer exist to be shown.
   panel's X carries `aria-label` "Close".
 - **Bank page polls** every 3 s (up to 2 min) after a statement upload until
   the line count changes, so lines appear without a reload.
+
+## The tax estimate add-on (D52, 2 Nov 2026)
+
+- **One panel, two homes.** `components/DynamicComponents/TaxEstimatePanel.tsx`
+  is presentational (controls, the not-submittable banner, the result + range,
+  the completeness meters, the form boxes, notes, assumptions, the documents
+  counted, and a print-to-PDF window). `ClientTaxEstimate` (the client page's
+  **Tax estimate** tab) and `views/business/LivePortalTax.tsx` (the portal's
+  **Tax** tab) own the query and say what to show when the add-on is off.
+  Both are `lazy()`, so the panel and `api/taxEstimate.ts` never ride a route's
+  opening download; measured 2 Nov 2026 (not paired): ClientDetailView route
+  248,144 B, portal route 243,281 B, the panel its own 4,647 B chunk.
+- ⚠ **Every surface says it is an estimate that cannot be submitted** (banner
+  and printout). The figures, labels, notes and assumptions are the SERVER's;
+  this app does no tax arithmetic. The printout is black on white by design
+  (paper; the colour tokens do not exist in that window) and escapes every
+  string, because document names come from strangers' invoices.
+- **The client buys it**, from the portal's Plan section
+  (`views/business/PortalAddOns.tsx`, lazy) or the Tax tab's offer. The button
+  tells Stripe; the webhook decides, so the row says "Updating…" and re-reads
+  the home until the flag flips, never flipping a switch Stripe has not
+  confirmed. The Plan section also shows A$ prices for an AU business (D53).

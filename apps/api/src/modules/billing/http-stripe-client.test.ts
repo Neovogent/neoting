@@ -247,3 +247,71 @@ test('a 200 with an unparseable body is a failure, not a silent success', async 
     client.createPortalSession({ customerId: 'cus_1', returnUrl: 'https://app.example/', idempotencyKey: 'k' }),
   ).rejects.toMatchObject({ code: 'NT-SRV-001' });
 });
+
+// ── D52 / D53 ────────────────────────────────────────────────────────────────
+
+const AU_CONFIG: Partial<HttpStripeConfig> = {
+  priceIdAud: 'price_plan_aud',
+  taxEstimatePriceId: 'price_tax_estimate_gbp',
+  taxEstimatePriceIdAud: 'price_tax_estimate_aud',
+};
+const CHECKOUT = {
+  customerId: 'cus_1',
+  businessId: 'biz_1',
+  practiceId: 'prac_1',
+  successUrl: 'https://app.example/ok',
+  cancelUrl: 'https://app.example/no',
+  idempotencyKey: 'k',
+};
+const LIVE_SUBSCRIPTION = { data: [{ id: 'sub_1', status: 'active', items: { data: [{ id: 'si_plan', price: { id: 'price_plan_aud' } }] } }] };
+
+test('D53: an AU business checks out on the A$ plan with no UK VAT', async () => {
+  const { calls, client } = harness(AU_CONFIG);
+  await client.createCheckoutSession({ ...CHECKOUT, country: 'AU' });
+  const body = calls[0]!.body;
+  expect(body.get('line_items[0][price]')).toBe('price_plan_aud');
+  expect([...body.keys()].some((key) => key.includes('tax_rates'))).toBe(false);
+});
+
+test('D53: a UK business, or AU with no A$ plan configured, keeps the £ plan and the VAT rate', async () => {
+  const uk = harness(AU_CONFIG);
+  await uk.client.createCheckoutSession({ ...CHECKOUT, country: 'GB' });
+  expect(uk.calls[0]!.body.get('line_items[0][price]')).toBe('price_neo_accounting');
+  expect(uk.calls[0]!.body.get('subscription_data[default_tax_rates][0]')).toBe('txr_gb_vat_20');
+
+  const auWithoutAudPlan = harness();
+  await auWithoutAudPlan.client.createCheckoutSession({ ...CHECKOUT, country: 'AU' });
+  expect(auWithoutAudPlan.calls[0]!.body.get('line_items[0][price]')).toBe('price_neo_accounting');
+});
+
+test('D52: the tax estimate add-on is the A$ price, with no VAT, on an AU subscription', async () => {
+  const { calls, client } = harness(AU_CONFIG, LIVE_SUBSCRIPTION);
+  await client.setAddOn({ customerId: 'cus_1', addOn: 'TAX_ESTIMATE', country: 'AU', enabled: true, idempotencyKey: 'k' });
+  const post = calls.find((c) => c.url.endsWith('/subscription_items'));
+  expect(post?.body.get('price')).toBe('price_tax_estimate_aud');
+  expect(post?.body.get('subscription')).toBe('sub_1');
+  expect(post?.body.has('tax_rates[0]')).toBe(false);
+});
+
+test('D52: on a UK subscription it is the £ price with the VAT rate on the item', async () => {
+  const { calls, client } = harness(AU_CONFIG, LIVE_SUBSCRIPTION);
+  await client.setAddOn({ customerId: 'cus_1', addOn: 'TAX_ESTIMATE', country: 'GB', enabled: true, idempotencyKey: 'k' });
+  const post = calls.find((c) => c.url.endsWith('/subscription_items'));
+  expect(post?.body.get('price')).toBe('price_tax_estimate_gbp');
+  expect(post?.body.get('tax_rates[0]')).toBe('txr_gb_vat_20');
+});
+
+test('D52: adding an add-on that is already on adds nothing (no double billing)', async () => {
+  const already = { data: [{ id: 'sub_1', status: 'active', items: { data: [{ id: 'si_te', price: { id: 'price_tax_estimate_gbp' } }] } }] };
+  const { calls, client } = harness(AU_CONFIG, already);
+  await client.setAddOn({ customerId: 'cus_1', addOn: 'TAX_ESTIMATE', country: 'GB', enabled: true, idempotencyKey: 'k' });
+  expect(calls.some((c) => c.url.endsWith('/subscription_items'))).toBe(false);
+});
+
+test('D52: an add-on this deployment does not sell is refused as NT-BIL-004 before Stripe is called', async () => {
+  const { calls, client } = harness({}, LIVE_SUBSCRIPTION);
+  await expect(
+    client.setAddOn({ customerId: 'cus_1', addOn: 'TAX_ESTIMATE', country: 'GB', enabled: true, idempotencyKey: 'k' }),
+  ).rejects.toMatchObject({ code: 'NT-BIL-004' });
+  expect(calls).toHaveLength(0);
+});

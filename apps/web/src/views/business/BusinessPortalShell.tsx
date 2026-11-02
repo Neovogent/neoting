@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Building2, Camera, FolderLock, Home, Moon, Settings, Sun, Upload } from 'lucide-react';
+import { Building2, Calculator, Camera, FolderLock, Home, Moon, Settings, Sun, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -40,6 +40,7 @@ const m = defineMessages({
   tabUpload: { id: 'portal.businessPortal.tabUpload', defaultMessage: 'Upload' },
   tabCapture: { id: 'portal.businessPortal.tabCapture', defaultMessage: 'Capture' },
   tabVault: { id: 'portal.businessPortal.tabVault', defaultMessage: 'Vault' },
+  tabTax: { id: 'portal.businessPortal.tabTax', defaultMessage: 'Tax estimate' },
   tabSettings: { id: 'portal.businessPortal.tabSettings', defaultMessage: 'Settings' },
   // The thumb bar gives each label roughly 90px at 360px wide. English fits;
   // German does not, so the short form is its own id a translator can shorten
@@ -48,6 +49,7 @@ const m = defineMessages({
   tabUploadShort: { id: 'portal.businessPortal.tabUpload.short', defaultMessage: 'Upload' },
   tabCaptureShort: { id: 'portal.businessPortal.tabCapture.short', defaultMessage: 'Capture' },
   tabVaultShort: { id: 'portal.businessPortal.tabVault.short', defaultMessage: 'Vault' },
+  tabTaxShort: { id: 'portal.businessPortal.tabTax.short', defaultMessage: 'Tax' },
   tabSettingsShort: { id: 'portal.businessPortal.tabSettings.short', defaultMessage: 'Settings' },
   thumbBarLabel: { id: 'portal.businessPortal.thumbBarLabel', defaultMessage: 'Portal' },
   tabBarLabel: { id: 'portal.businessPortal.tabBarLabel', defaultMessage: 'Portal sections' },
@@ -59,6 +61,7 @@ const CHROME: Record<PortalTab, { icon: typeof Home; label: typeof m.tabHome; sh
   Upload: { icon: Upload, label: m.tabUpload, short: m.tabUploadShort },
   Capture: { icon: Camera, label: m.tabCapture, short: m.tabCaptureShort },
   Vault: { icon: FolderLock, label: m.tabVault, short: m.tabVaultShort },
+  Tax: { icon: Calculator, label: m.tabTax, short: m.tabTaxShort },
   Settings: { icon: Settings, label: m.tabSettings, short: m.tabSettingsShort },
 };
 

@@ -41,6 +41,7 @@ const HOME = (canManageBilling: boolean): BusinessPortalHome => ({
   statementRequests: [],
   profile: { tradingName: '', companyNumber: '', legalStructure: '', industry: '', website: '', vatRegistered: null, vatNumber: '' },
   plan: null,
+  countryCode: 'GB',
   expiresAt: null,
 });
 

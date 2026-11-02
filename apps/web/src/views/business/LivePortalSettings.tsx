@@ -9,6 +9,8 @@ import { SectionStrip } from '../../components/DynamicComponents/SectionStrip';
 import { PortalPill } from './PortalStatusPill';
 import { Panel } from './LivePortalHome';
 import { hiddenSectionsFor, sectionsForTab } from './portalTabs';
+// D51/D52 — lazy: the add-on billing call downloads only when Plan is open.
+const PortalAddOns = lazy(() => import('./PortalAddOns').then((mod) => ({ default: mod.PortalAddOns })));
 
 /**
  * ⚠ **Lazy, and it is a BUDGET rule rather than a tidy-up.** The portal route is
@@ -101,10 +103,14 @@ const m = defineMessages({
   planRenewsLabel: { id: 'portal.livePortalSettings.planRenewsLabel', defaultMessage: 'Renews on' },
   planPriceLabel: { id: 'portal.livePortalSettings.planPriceLabel', defaultMessage: 'Price' },
   // Never a bare figure: exclusive of VAT and labelled as such (§24.5).
-  planPriceValue: { id: 'portal.livePortalSettings.planPriceValue', defaultMessage: '£8.50 + VAT per month' },
+  planPriceValue: {
+    id: 'portal.livePortalSettings.planPriceValue',
+    defaultMessage: '{country, select, AU {A$17 per month} other {£8.50 + VAT per month}}',
+  },
   planPriceNote: {
     id: 'portal.livePortalSettings.planPriceNote',
-    defaultMessage: 'Shown excluding VAT. The VAT and the total are on your Stripe invoice, in sterling.',
+    defaultMessage:
+      '{country, select, AU {Billed in Australian dollars. The total is on your Stripe invoice.} other {Shown excluding VAT. The VAT and the total are on your Stripe invoice, in sterling.}}',
   },
   planManageAction: { id: 'portal.livePortalSettings.planManageAction', defaultMessage: 'Manage billing in Stripe' },
   planManageNote: {
@@ -299,6 +305,7 @@ export function LivePortalSettings({
   onSubscribe,
   onManageBilling,
   onSignOut,
+  onAddOnChanged,
 }: {
   readonly home: BusinessPortalHome;
   readonly email: string;
@@ -318,6 +325,8 @@ export function LivePortalSettings({
   readonly onSubscribe: () => void;
   readonly onManageBilling: () => void;
   readonly onSignOut: () => void;
+  /** D51/D52 — re-read the home after an add-on is switched, so the row shows Stripe's answer. */
+  readonly onAddOnChanged?: () => void;
 }) {
   const intl = useIntl();
   const sections = sectionsFor(home.canManageBilling);
@@ -421,9 +430,9 @@ export function LivePortalSettings({
 
               <Row
                 label={intl.formatMessage(m.planPriceLabel)}
-                value={<span className="text-white font-semibold">{intl.formatMessage(m.planPriceValue)}</span>}
+                value={<span className="text-white font-semibold">{intl.formatMessage(m.planPriceValue, { country: home.countryCode })}</span>}
               />
-              <p className="text-[12px] text-zinc-600 leading-relaxed mt-1">{intl.formatMessage(m.planPriceNote)}</p>
+              <p className="text-[12px] text-zinc-600 leading-relaxed mt-1">{intl.formatMessage(m.planPriceNote, { country: home.countryCode })}</p>
 
               <div className="flex flex-col gap-2 mt-4">
                 {home.subscriptionActive ? (
@@ -458,6 +467,18 @@ export function LivePortalSettings({
                 )}
                 <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.planManageNote)}</p>
               </div>
+              {sessionToken !== null && home.businessId !== null && (
+                <Suspense fallback={null}>
+                  <PortalAddOns
+                    token={sessionToken}
+                    businessId={home.businessId}
+                    country={home.countryCode}
+                    addOns={home.plan?.addOns ?? { taxEstimate: false, documentVault: false }}
+                    subscriptionActive={home.subscriptionActive}
+                    onChanged={onAddOnChanged ?? (() => undefined)}
+                  />
+                </Suspense>
+              )}
             </Panel>
           )}
 

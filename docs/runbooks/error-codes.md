@@ -167,6 +167,25 @@ can know that without a second request.
 
 ---
 
+## `NT-BIL-004` — this deployment does not sell that add-on
+
+**Status:** `402` · **Surface:** `POST /v1/billing/add-ons` · **Added by:** D52 (2 Nov 2026)
+
+**Symptom.** A client presses **Add** on an add-on (the tax estimate, or the
+Document Vault) and is told it is not available.
+
+**What it means.** The add-on's Stripe price is not configured for the client's
+currency: `STRIPE_TAX_ESTIMATE_PRICE_ID` (GBP) / `STRIPE_TAX_ESTIMATE_PRICE_ID_AUD`
+for the tax estimate, `STRIPE_VAULT_PRICE_ID` for the vault (GBP only — an A$
+subscription cannot carry a £ item). Empty is a valid deployment that does not
+sell it; nothing reached Stripe.
+
+**Fix.** Create the price in the live Stripe account
+(`docs/runbooks/stripe-billing.md` §2, *The tax estimate add-on*) and set the id
+in `infra/envs/staging/services.tf`, then apply.
+
+---
+
 ## `NT-PRM-001` — actor lacks permission for this action kind
 
 **Status:** `403` · **Surface:** `POST /v1/action-proposals/{id}/approve` · **Added by:** stage A12

@@ -62,6 +62,7 @@ const HOME: BusinessPortalHome = {
   statementRequests: [],
   profile: { tradingName: '', companyNumber: '', legalStructure: '', industry: '', website: '', vatRegistered: null, vatNumber: '' },
   plan: null,
+  countryCode: 'GB',
   expiresAt: '2026-09-02T12:00:00.000Z',
 };
 
@@ -282,7 +283,7 @@ test('an unknown checkout value on the address claims nothing at all', () => {
  * item 5), composed by `useBusinessPortalSession#messageFor`.
  */
 test('a failed billing-portal open wears the server problem and its NT- code', async () => {
-  await signIn({ ...HOME, plan: { status: 'ACTIVE', plan: null, currentPeriodEnd: null } });
+  await signIn({ ...HOME, plan: { status: 'ACTIVE', plan: null, currentPeriodEnd: null, addOns: { taxEstimate: false, documentVault: false } } });
   await openTab('Settings');
   await openTab('Plan');
 

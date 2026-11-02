@@ -1112,6 +1112,57 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /billing/add-ons:
+    post:
+      operationId: setBillingAddOn
+      summary: Add or remove a paid add-on on the client's own subscription
+      description: |
+        The client switches an add-on on or off from their portal's Plan page:
+        the tax estimate (D52, £15/month + VAT, or A$30/month for an Australian
+        business) or the Document Vault (D51, £2/month + VAT). It is a second
+        ITEM on the same Stripe subscription, so one bill, one card, one
+        cancellation.
+
+        ⚠ **Only the client's portal session may call this** — it changes what
+        their card is charged, so an accountant cannot add it for them.
+
+        ⚠ **202, not 200, and nothing local changes here.** The add-on columns
+        are written only by the Stripe webhook (D48's rule), so the feature
+        switches on when Stripe confirms the subscription change, normally
+        within seconds.
+      tags: [billing]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddOnRequest' }
+      responses:
+        '202':
+          description: Stripe has the change; the webhook will switch the add-on.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddOnAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '402':
+          description: |
+            No live subscription to add it to (`NT-BIL-001`), or this deployment
+            does not sell that add-on (`NT-BIL-004`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /billing/portal-sessions:
     post:
       operationId: createBillingPortalSession
@@ -2791,6 +2842,61 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/PortalDocument' }
                   pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/tax-estimate:
+    get:
+      operationId: getPortalTaxEstimate
+      summary: The client's own tax estimate (D52)
+      description: |
+        `GET /tax-estimates` for the client's own business, behind their portal
+        session — the client pays for the add-on, so the client sees it too.
+        Same `TaxEstimateView`, same rules: `active: false` is the offer, not
+        an error, and nothing here can be submitted anywhere.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/TaxEstimateKind' }
+        - name: periodStart
+          in: query
+          required: true
+          description: First day of the period, `YYYY-MM-DD`.
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        - name: periodEnd
+          in: query
+          required: true
+          description: Last day of the period, `YYYY-MM-DD`, inclusive. At most 400 days after `periodStart`.
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        - name: vatScheme
+          in: query
+          required: false
+          description: UK VAT only. Defaults to the client's own scheme, else STANDARD.
+          schema: { type: string, enum: [STANDARD, FLAT_RATE] }
+        - name: flatRateBasisPoints
+          in: query
+          required: false
+          description: The Flat Rate Scheme percentage in basis points (1650 = 16.5%). Required with `vatScheme=FLAT_RATE`.
+          schema: { type: integer, minimum: 1, maximum: 10000 }
+      responses:
+        '200':
+          description: The add-on's state and, when it is active, the estimate.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxEstimateView' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401':
           description: Portal session missing, invalid or expired — `NT-OTP-002`.
@@ -5185,6 +5291,70 @@ paths:
   # flow item 51 asks for lands its result in exactly that blind spot.
   # ==========================================================================
 
+  /tax-estimates:
+    get:
+      operationId: getTaxEstimate
+      summary: An estimate of a client's VAT/GST return or company tax (D52)
+      description: |
+        The tax estimate add-on (SoT §25): for one client and one period, what
+        their VAT return (UK) or BAS GST (Australia), or their company tax,
+        would come to — laid out like the real form, computed from the
+        documents, sales invoices and bank statements already in Neo, with a
+        **range** and a **completeness score** instead of a promised accuracy.
+
+        ⚠ **Never submittable.** There is no HMRC or ATO connection; every
+        surface that renders this says it is an AI-generated estimate for
+        reference only.
+
+        ⚠ **`active: false` is a normal answer, not an error.** Without the
+        add-on (or with a lapsed subscription) the estimate is null and the
+        surface explains how the client adds it. A 402 would leave the tab
+        unable to draw that explanation. A pure read either way.
+      tags: [tax-estimates]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: kind
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/TaxEstimateKind' }
+        - name: periodStart
+          in: query
+          required: true
+          description: First day of the period, `YYYY-MM-DD`.
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        - name: periodEnd
+          in: query
+          required: true
+          description: Last day of the period, `YYYY-MM-DD`, inclusive. At most 400 days after `periodStart`.
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+        - name: vatScheme
+          in: query
+          required: false
+          description: UK VAT only. Defaults to the client's own scheme, else STANDARD.
+          schema: { type: string, enum: [STANDARD, FLAT_RATE] }
+        - name: flatRateBasisPoints
+          in: query
+          required: false
+          description: The Flat Rate Scheme percentage in basis points (1650 = 16.5%). Required with `vatScheme=FLAT_RATE`.
+          schema: { type: integer, minimum: 1, maximum: 10000 }
+      responses:
+        '200':
+          description: The add-on's state and, when it is active, the estimate.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxEstimateView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /chart-categories:
     get:
       operationId: listChartCategories
@@ -6341,6 +6511,7 @@ components:
         # extra" send a client to two different places, and the second one is a
         # £2 button rather than a card problem. Both are 402.
         - NT-BIL-003   # the Document Vault add-on is not active on this business
+        - NT-BIL-004   # this deployment does not sell that add-on
         # Document lifecycle (DOC family, document management 2 Sep 2026). The
         # family already exists as a `documents.failure_code` value —
         # `NT-DOC-001`, "rejected by a reviewer" — and that one is deliberately
@@ -10129,6 +10300,113 @@ components:
             - type: 'null'
         expiresAt: { type: string, format: date-time }
 
+    TaxEstimateKind:
+      type: string
+      description: Which estimate — the VAT return (UK) or BAS GST (Australia), or company tax.
+      enum: [VAT, COMPANY_TAX]
+
+    TaxEstimateFigure:
+      type: object
+      description: One box or label of the form, or one line of the tax computation.
+      required: [code, label, amountPence]
+      properties:
+        code:
+          type: string
+          description: The form's own reference — `1`…`9` (UK VAT return), `G1`/`G10`/`G11`/`1A`/`1B` (BAS), or a computation line such as `PROFIT` or `TAX`.
+        label: { type: string }
+        amountPence:
+          type: integer
+          x-nt-money: true
+          description: Minor units of the estimate's currency (pence or cents).
+
+    TaxEstimateLine:
+      type: object
+      description: One document the estimate counted, and how.
+      required: [documentId, label, date, inbox, grossPence, taxPence, treatment]
+      properties:
+        documentId: { type: string }
+        label: { type: string }
+        date: { type: string, description: '`YYYY-MM-DD`' }
+        inbox: { type: string, enum: [SALES, COSTS] }
+        grossPence: { type: integer, x-nt-money: true }
+        taxPence: { type: integer, x-nt-money: true }
+        treatment: { type: string, description: 'How the estimate treated it, in words — e.g. "Purchase — VAT not reclaimable".' }
+
+    TaxEstimate:
+      type: object
+      description: |
+        An ESTIMATE, never a return (D52, SoT §25). `result` is the central
+        figure with a range; `completeness` says how much of the period the
+        evidence covers. Sentences in `notes` and `assumptions` are written to
+        be shown as they are.
+      required: [country, kind, currency, periodStart, periodEnd, applicable, figures, result, completeness, notes, assumptions, lines]
+      properties:
+        country: { type: string, enum: [GB, AU] }
+        kind: { $ref: '#/components/schemas/TaxEstimateKind' }
+        currency: { type: string, enum: [GBP, AUD] }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        applicable:
+          type: boolean
+          description: False when the estimate does not apply (not VAT/GST-registered; company tax for a sole trader). `notes` says why.
+        figures:
+          type: array
+          items: { $ref: '#/components/schemas/TaxEstimateFigure' }
+        result:
+          type: object
+          description: Positive is to pay; negative is to reclaim (VAT/GST only).
+          required: [amountPence, lowPence, highPence]
+          properties:
+            amountPence: { type: integer, x-nt-money: true }
+            lowPence: { type: integer, x-nt-money: true }
+            highPence: { type: integer, x-nt-money: true }
+        completeness:
+          type: object
+          required: [scorePercent, statementCoveragePercent, evidencedPercent, reviewedPercent, unevidencedDebitsPence, unevidencedCreditsPence]
+          properties:
+            scorePercent: { type: integer, description: 'Statement coverage × evidenced share, 0–100. Review status is reported beside it, not multiplied in.' }
+            statementCoveragePercent: { type: integer, description: "Share of the period's days covered by a bank statement." }
+            evidencedPercent: { type: integer, description: "Share of the period's bank money that has a receipt or invoice." }
+            reviewedPercent: { type: integer, description: "Share of the documents' value a person has reviewed." }
+            unevidencedDebitsPence: { type: integer, x-nt-money: true }
+            unevidencedCreditsPence: { type: integer, x-nt-money: true }
+        notes:
+          type: array
+          items: { type: string }
+        assumptions:
+          type: array
+          items: { type: string }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/TaxEstimateLine' }
+
+    TaxEstimateView:
+      type: object
+      required: [active, estimate]
+      properties:
+        active:
+          type: boolean
+          description: The add-on is on the subscription AND the subscription is live.
+        estimate:
+          oneOf:
+            - $ref: '#/components/schemas/TaxEstimate'
+            - type: 'null'
+
+    AddOnRequest:
+      type: object
+      required: [businessId, addOn, enabled]
+      properties:
+        businessId: { type: string }
+        addOn: { type: string, enum: [TAX_ESTIMATE, DOCUMENT_VAULT] }
+        enabled: { type: boolean }
+
+    AddOnAccepted:
+      type: object
+      required: [addOn, enabled]
+      properties:
+        addOn: { type: string, enum: [TAX_ESTIMATE, DOCUMENT_VAULT] }
+        enabled: { type: boolean }
+
     PortalVault:
       type: object
       description: |
@@ -10346,6 +10624,9 @@ components:
           type: [string, 'null']
           format: date-time
           description: When this client last sent anything. Null if they never have.
+        countryCode:
+          type: string
+          description: The business's country (`GB` or `AU`) — which prices and which tax forms apply (D53).
         subscription:
           description: |
             The client's own plan, so the Settings tab can state the truth
@@ -10821,6 +11102,13 @@ components:
           type: [string, 'null']
           format: date-time
           description: When the current paid period ends — the renewal date a settings screen shows.
+        addOns:
+          type: object
+          description: Which paid add-ons are on the subscription, as the Stripe webhook last wrote them (D51, D52).
+          required: [taxEstimate, documentVault]
+          properties:
+            taxEstimate: { type: boolean }
+            documentVault: { type: boolean }
 
     Business:
       type: object

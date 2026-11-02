@@ -8,6 +8,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import {
   CheckoutSessionObjectSchema,
   currentPeriodEndMs,
+  hasAnyPrice,
   hasVaultAddOn,
   planOf,
   StripeEventSchema,
@@ -123,6 +124,12 @@ export class StripeWebhookService {
      * know whether the add-on exists.
      */
     private readonly vaultPriceId: string = '',
+    /**
+     * D52 — the tax estimate add-on's prices, one per currency (£15, A$30).
+     * Empty entries are ignored, so a deployment that sells neither writes
+     * `taxEstimateAddon: false` for everyone, exactly like the vault.
+     */
+    private readonly taxEstimatePriceIds: readonly string[] = [],
   ) {}
 
   async handle(rawEvent: unknown): Promise<WebhookOutcome> {
@@ -165,8 +172,10 @@ export class StripeWebhookService {
     // the plan, and so the add-on flag is read from the SAME parsed object in
     // the same event — two reads of one subscription cannot disagree.
     const vaultPriceId = this.vaultPriceId;
-    const plan = planOf(subscription, vaultPriceId === '' ? [] : [vaultPriceId]);
+    const addOnPriceIds = [vaultPriceId, ...this.taxEstimatePriceIds].filter((id) => id !== '');
+    const plan = planOf(subscription, addOnPriceIds);
     const vaultAddon = hasVaultAddOn(subscription, vaultPriceId);
+    const taxEstimateAddon = hasAnyPrice(subscription, this.taxEstimatePriceIds);
     const terminal = type === 'customer.subscription.deleted';
 
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
@@ -213,6 +222,7 @@ export class StripeWebhookService {
           // item and nothing else to mark it, so an `if (vaultAddon)` here
           // would let a cancelled add-on stay switched on forever.
           vaultAddon,
+          taxEstimateAddon,
           subscriptionCurrentPeriodEnd: periodEndMs === null ? null : new Date(periodEndMs),
         },
       });

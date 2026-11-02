@@ -17,6 +17,8 @@ import { PortalDocumentList } from './PortalDocumentList';
 const LivePortalVault = lazy(() =>
   import('./LivePortalVault').then((mod) => ({ default: mod.LivePortalVault })),
 );
+// D52 — the tax estimate tab, lazy for the same reason.
+const LivePortalTax = lazy(() => import('./LivePortalTax').then((mod) => ({ default: mod.LivePortalTax })));
 import type { PortalAsk } from './portalAsk';
 import { hiddenSectionsFor, pathForSection, pathForTab, sectionFromPath, tabFromPath, type PortalTab } from './portalTabs';
 import { useBusinessPortalSession } from './useBusinessPortalSession';
@@ -302,6 +304,8 @@ export function LiveBusinessPortal() {
   }
 
   const home = session.home;
+  // D52: an add-on bought on the Tax tab shows on the Plan page without a reload.
+  const refreshHome = () => void session.refresh();
 
   const sendFor = (next: PortalAsk) => {
     setAsk(next);
@@ -384,6 +388,19 @@ export function LiveBusinessPortal() {
           </LivePortalVault>
         </Suspense>
       )}
+      {tab === 'Tax' && session.token !== null && (
+        <Suspense fallback={null}>
+          <LivePortalTax
+            token={session.token}
+            businessId={home.businessId}
+            businessName={home.businessName}
+            country={home.countryCode}
+            canManageBilling={home.canManageBilling}
+            subscriptionActive={home.subscriptionActive}
+            onChanged={refreshHome}
+          />
+        </Suspense>
+      )}
       {tab === 'Settings' && (
         <LivePortalSettings
           home={home}
@@ -398,6 +415,7 @@ export function LiveBusinessPortal() {
           onSubscribe={() => void session.startCheckout()}
           onManageBilling={() => void session.manageBilling()}
           onSignOut={session.signOut}
+          onAddOnChanged={refreshHome}
         />
       )}
     </BusinessPortalShell>

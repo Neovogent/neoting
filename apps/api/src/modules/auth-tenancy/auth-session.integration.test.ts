@@ -137,7 +137,8 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     expect(scope).not.toBeNull();
     const me = await new AuthService(app, { SESSION_SECRET: SECRET, OTP_MODE: 'demo' } as Env, new InMemorySignInThrottle()).me(scope!);
     expect(me.user.id).toBe(U_MINE);
-    expect(me.practice).toEqual({ id: P_MINE, name: 'S1A Mine LLP' });
+    // Country and currency joined /me with the AU sign-up (PR #324); a practice defaults to GB/GBP.
+    expect(me.practice).toEqual({ id: P_MINE, name: 'S1A Mine LLP', countryCode: 'GB', baseCurrency: 'GBP' });
     expect(me.role).toBe('PRACTICE_ADMIN');
     // D44's other half, read out of real Postgres through the real `select`:
     // the release gate is `role AND isOwner`, and the contract makes the flag

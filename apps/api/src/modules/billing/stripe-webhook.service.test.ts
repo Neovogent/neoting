@@ -23,7 +23,7 @@ interface Calls {
   notifications: Array<{ data?: Record<string, unknown> }>;
 }
 
-function harness(options: { rows?: Row[]; systemActor?: string | null; vaultPriceId?: string } = {}) {
+function harness(options: { rows?: Row[]; systemActor?: string | null; vaultPriceId?: string; taxEstimatePriceIds?: string[] } = {}) {
   const calls: Calls = { membershipFindFirst: [], businessFindMany: [], update: [], guc: [], notifications: [] };
   const rows = options.rows ?? [{ id: 'biz_1', subscriptionStatus: null, subscriptionCurrentPeriodEnd: null }];
 
@@ -68,6 +68,7 @@ function harness(options: { rows?: Row[]; systemActor?: string | null; vaultPric
       new InMemoryStripeEventReplayStore(clock),
       undefined,
       options.vaultPriceId ?? '',
+      options.taxEstimatePriceIds ?? [],
     ),
   };
 }
@@ -100,6 +101,8 @@ test('a subscription event writes status, plan and the renewal date', async () =
     // D51 — written on EVERY subscription event, false when the add-on price is
     // not among the items. Never conditionally written: see the service.
     vaultAddon: false,
+    // D52 — the same rule for the tax estimate add-on.
+    taxEstimateAddon: false,
     subscriptionCurrentPeriodEnd: new Date(PERIOD_END_S * 1000),
   });
 });
@@ -292,4 +295,25 @@ test('a checkout session naming a different business is reported, not applied an
 test('an envelope that is not a Stripe event at all is rejected at the boundary', async () => {
   const { service } = harness();
   await expect(service.handle({ hello: 'world' })).rejects.toThrow();
+});
+
+test('D52: the tax estimate add-on is on when EITHER currency price is on the subscription, and is never the plan', async () => {
+  const { calls, service } = harness({ vaultPriceId: 'price_vault', taxEstimatePriceIds: ['price_te_gbp', 'price_te_aud'] });
+  await service.handle(
+    subscriptionEvent({
+      items: {
+        data: [
+          { current_period_end: PERIOD_END_S, price: { id: 'price_te_aud' } },
+          { current_period_end: PERIOD_END_S, price: { id: 'price_plan_aud' } },
+        ],
+      },
+    }),
+  );
+  expect(calls.update[0]?.data).toMatchObject({ taxEstimateAddon: true, vaultAddon: false, plan: 'price_plan_aud' });
+});
+
+test('D52: no tax estimate price on the subscription writes the add-on OFF, explicitly', async () => {
+  const { calls, service } = harness({ taxEstimatePriceIds: ['price_te_gbp', ''] });
+  await service.handle(subscriptionEvent());
+  expect(calls.update[0]?.data).toMatchObject({ taxEstimateAddon: false });
 });

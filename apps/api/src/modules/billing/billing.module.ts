@@ -99,6 +99,8 @@ import {
           // value enters the subscription lane, so `plan` and `vaultAddon` are
           // decided from the same id in the same event.
           env.STRIPE_VAULT_PRICE_ID,
+          // D52 — both currencies' tax estimate prices, read in the same event.
+          [env.STRIPE_TAX_ESTIMATE_PRICE_ID, env.STRIPE_TAX_ESTIMATE_PRICE_ID_AUD],
         ),
       inject: [PRISMA, STRIPE_EVENT_REPLAY_STORE, NOTIFICATIONS_SERVICE, ENV],
     },

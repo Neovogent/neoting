@@ -154,6 +154,17 @@ export function planOf(subscription: SubscriptionObject, addOnPriceIds: readonly
  * client on it simply has no vault.
  */
 export function hasVaultAddOn(subscription: SubscriptionObject, vaultPriceId: string): boolean {
-  if (vaultPriceId === '') return false;
-  return (subscription.items?.data ?? []).some((item) => item.price?.id === vaultPriceId);
+  return hasAnyPrice(subscription, [vaultPriceId]);
+}
+
+/**
+ * Whether any of these add-on prices is on the subscription — D52's tax
+ * estimate has one price per currency (£15 and A$30), and either means "on".
+ * Same rule as the vault: presence of the PRICE, and an unconfigured (`''`)
+ * id never matches.
+ */
+export function hasAnyPrice(subscription: SubscriptionObject, priceIds: readonly string[]): boolean {
+  const wanted = priceIds.filter((id) => id !== '');
+  if (wanted.length === 0) return false;
+  return (subscription.items?.data ?? []).some((item) => item.price?.id !== undefined && wanted.includes(item.price.id));
 }

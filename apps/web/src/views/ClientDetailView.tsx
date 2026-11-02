@@ -52,6 +52,8 @@ const ChaseComposer = lazy(() =>
 );
 const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
 const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
+// D52 — lazy, so the estimate panel and its generated client never ride this route's opening download.
+const ClientTaxEstimate = lazy(() => import('../components/DynamicComponents/ClientTaxEstimate').then((m) => ({ default: m.ClientTaxEstimate })));
 // The live Chases tab (review item 63) — its own chunk because it carries
 // `api/chases.ts` + the generated chases client, and this route is within
 // ~1.5 kB of the 250 kB budget. Synthetic keeps the seeded table below.
@@ -674,7 +676,7 @@ const m = defineMessages({
  * lookup, so translating a tab cannot break a route.
  */
 const TABS = [
-  'Overview', 'Costs', 'Sales', 'Bank', 'Supplier Statements', 'Expense Claims',
+  'Overview', 'Costs', 'Sales', 'Bank', 'Tax estimate', 'Supplier Statements', 'Expense Claims',
   'Approvals', 'Documents', 'Chases', 'Tasks', 'Users', 'Connections', 'Settings', 'AI',
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -705,6 +707,7 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   Costs: { id: 'clients.clientDetailView.tabCosts', defaultMessage: 'Costs' },
   Sales: { id: 'clients.clientDetailView.tabSales', defaultMessage: 'Sales' },
   Bank: { id: 'clients.clientDetailView.tabBank', defaultMessage: 'Bank' },
+  'Tax estimate': { id: 'clients.clientDetailView.tabTaxEstimate', defaultMessage: 'Tax estimate' },
   'Supplier Statements': { id: 'clients.clientDetailView.tabSupplierStatements', defaultMessage: 'Supplier Statements' },
   'Expense Claims': { id: 'clients.clientDetailView.tabExpenseClaims', defaultMessage: 'Expense Claims' },
   Approvals: { id: 'clients.clientDetailView.tabApprovals', defaultMessage: 'Approvals' },
@@ -1518,6 +1521,13 @@ export function ClientDetailView() {
           {tab === 'Supplier Statements' && (
             <Suspense fallback={<TabSkeleton />}>
               <ClientSupplierStatements client={client} />
+            </Suspense>
+          )}
+
+          {/* D52 — the client's VAT/GST and company tax estimate (a paid add-on the client buys). */}
+          {tab === 'Tax estimate' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientTaxEstimate businessId={serverClientIdFor(client.id)} name={client.name} />
             </Suspense>
           )}
 

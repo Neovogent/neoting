@@ -1,8 +1,8 @@
 import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
-import type { HostedBillingSession, SubscriptionStatus } from '@neoting/contracts/model';
-import type { createBillingPortalSessionBody, createCheckoutSessionBody } from '@neoting/contracts/zod';
+import type { AddOnAccepted, HostedBillingSession, SubscriptionStatus } from '@neoting/contracts/model';
+import type { createBillingPortalSessionBody, createCheckoutSessionBody, setBillingAddOnBody } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
@@ -14,6 +14,7 @@ import type { StripeClient } from './stripe-client.js';
 
 export type CheckoutRequest = z.infer<typeof createCheckoutSessionBody>;
 export type PortalRequest = z.infer<typeof createBillingPortalSessionBody>;
+export type AddOnRequest = z.infer<typeof setBillingAddOnBody>;
 
 export interface BillingConfig {
   /** Parsed from `BILLING_RETURN_ORIGINS` once, at composition time. */
@@ -96,10 +97,42 @@ export class BillingService {
       successUrl: request.successUrl,
       cancelUrl: request.cancelUrl,
       idempotencyKey: `neoting-checkout-${idempotencyKey}`,
+      country: business.countryCode === 'AU' ? 'AU' : 'GB',
     });
 
     const response: HostedBillingSession = { url: session.url, expiresAt: session.expiresAt };
     await this.remember('checkout', request.businessId, idempotencyKey, request, response);
+    return response;
+  }
+
+  /**
+   * Add or remove a paid add-on (D51 vault, D52 tax estimate) on this
+   * business's own subscription. 202 semantics: Stripe is told, and the
+   * webhook — the only writer of the add-on columns — switches the feature
+   * when Stripe confirms.
+   */
+  async setAddOn(ctx: ScopeContext, request: AddOnRequest, idempotencyKey: string): Promise<AddOnAccepted> {
+    const replay = await this.replayed<AddOnAccepted>('add-on', request.businessId, idempotencyKey, request);
+    if (replay !== null) return replay;
+
+    const business = await this.reachableBusiness(ctx, request.businessId);
+    if (business.stripeCustomerId === null) {
+      throw new AppException(
+        'NT-BIL-001',
+        HttpStatus.PAYMENT_REQUIRED,
+        'No subscription yet',
+        'This client business has not subscribed yet, so an add-on cannot be added to its bill.',
+      );
+    }
+    await this.stripe.setAddOn({
+      customerId: business.stripeCustomerId,
+      addOn: request.addOn,
+      country: business.countryCode === 'AU' ? 'AU' : 'GB',
+      enabled: request.enabled,
+      idempotencyKey: `neoting-addon-${idempotencyKey}`,
+    });
+    const response: AddOnAccepted = { addOn: request.addOn, enabled: request.enabled };
+    await this.remember('add-on', request.businessId, idempotencyKey, request, response);
     return response;
   }
 
@@ -160,6 +193,8 @@ export class BillingService {
           practiceId: true,
           stripeCustomerId: true,
           subscriptionStatus: true,
+          // D53: which currency (and whether UK VAT) the bill is in.
+          countryCode: true,
           // The primary contact's address, for the Stripe customer. `take: 1`
           // rather than a join over every contact — this is the only field
           // needed and a client business can have many.
@@ -269,7 +304,7 @@ export class BillingService {
  * URL returned where a portal URL was asked for is a client being sent to pay
  * again for something they already have.
  */
-type Operation = 'checkout' | 'portal';
+type Operation = 'checkout' | 'portal' | 'add-on';
 
 function storeKey(op: Operation, businessId: string, idempotencyKey: string): string {
   return `billing:${op}:${businessId}:${idempotencyKey}`;

@@ -1,0 +1,2 @@
+export const TAX_ESTIMATE_SERVICE = Symbol('TAX_ESTIMATE_SERVICE');
+export const PRISMA = Symbol('TAX_ESTIMATE_PRISMA');
