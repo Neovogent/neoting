@@ -21,6 +21,7 @@ export {
   assertMayIngest,
   assertMayUseVault,
   mayIngest,
+  mayUseTaxEstimate,
   mayUseVault,
   type SubscriptionFacts,
   toBusinessSubscription,

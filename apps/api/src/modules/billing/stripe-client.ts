@@ -62,6 +62,8 @@ export interface CreateCheckoutSessionRequest {
   readonly successUrl: string;
   readonly cancelUrl: string;
   readonly idempotencyKey: string;
+  /** D53 — an AU business is billed in A$ with no UK VAT. Absent means GB. */
+  readonly country?: 'GB' | 'AU';
 }
 
 export interface CreatePortalSessionRequest {
@@ -78,11 +80,17 @@ export interface CreatePortalSessionRequest {
  * out-of-order guard in the webhook reads that column, and two subscriptions
  * would give it two answers.
  */
-export interface SetVaultAddOnRequest {
+export interface SetAddOnRequest {
   readonly customerId: string;
+  /** D51 the Document Vault, D52 the tax estimate. */
+  readonly addOn: AddOn;
+  /** Picks the price: one subscription cannot mix currencies, so an AU plan takes the A$ add-on. */
+  readonly country: 'GB' | 'AU';
   readonly enabled: boolean;
   readonly idempotencyKey: string;
 }
+
+export type AddOn = 'DOCUMENT_VAULT' | 'TAX_ESTIMATE';
 
 export interface StripeClient {
   createCustomer(request: CreateCustomerRequest): Promise<{ readonly id: string }>;
@@ -91,11 +99,12 @@ export interface StripeClient {
   /**
    * Add or remove the add-on item on this customer's active subscription.
    *
-   * Returns nothing: the result that matters is `businesses.vault_addon`, and
-   * the ONLY writer of that column is the Stripe webhook (D48's rule, kept).
-   * Returning a flag here would be a second answer to "is the vault on", minted
-   * before Stripe had confirmed anything — which is how a client ends up with a
-   * switched-on feature they were never charged for.
+   * Returns nothing: the result that matters is the add-on column
+   * (`vault_addon`, `tax_estimate_addon`), and the ONLY writer of those is the
+   * Stripe webhook (D48's rule, kept). Returning a flag here would be a second
+   * answer to "is it on", minted before Stripe had confirmed anything — which
+   * is how a client ends up with a switched-on feature they were never charged
+   * for.
    */
-  setVaultAddOn(request: SetVaultAddOnRequest): Promise<void>;
+  setAddOn(request: SetAddOnRequest): Promise<void>;
 }

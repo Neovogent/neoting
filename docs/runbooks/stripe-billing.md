@@ -111,6 +111,44 @@ inclusive reading.
 
 ---
 
+### The tax estimate add-on and the A$ plan (D52, D53 — 2 Nov 2026)
+
+Three more prices, all in the SAME live account as the plan (a client's add-on
+must sit on the same subscription), all `tax_behavior=exclusive`, all monthly:
+
+| Price | Amount | Setting |
+|---|---|---|
+| AU plan (D53) | `unit_amount=1700`, `currency=aud` | `STRIPE_PRICE_ID_AUD` |
+| Tax estimate, UK (D52) | `unit_amount=1500`, `currency=gbp` | `STRIPE_TAX_ESTIMATE_PRICE_ID` |
+| Tax estimate, AU (D52) | `unit_amount=3000`, `currency=aud` | `STRIPE_TAX_ESTIMATE_PRICE_ID_AUD` |
+
+```bash
+stripe post /v1/products -d name="Neo Accounting — Tax estimate" \
+  -d description="VAT/GST and company tax estimate for one client business. For reference; not a tax return." \
+  -d tax_code=txcd_10103001
+stripe post /v1/prices -d product=<prod_tax_estimate> -d currency=gbp -d unit_amount=1500 \
+  -d "recurring[interval]=month" -d tax_behavior=exclusive -d nickname="Tax estimate (net of VAT)"
+stripe post /v1/prices -d product=<prod_tax_estimate> -d currency=aud -d unit_amount=3000 \
+  -d "recurring[interval]=month" -d tax_behavior=exclusive -d nickname="Tax estimate (AUD)"
+stripe post /v1/prices -d product=<the plan's prod_…> -d currency=aud -d unit_amount=1700 \
+  -d "recurring[interval]=month" -d tax_behavior=exclusive -d nickname="Neo Accounting monthly (AUD)"
+```
+
+⚠ **One subscription cannot mix currencies**, which is why D53 exists: an AU
+client's plan must be A$ before an A$ add-on can join it. With
+`STRIPE_PRICE_ID_AUD` empty, AU clients stay on the GBP plan exactly as before.
+An AU business's A$ items carry **no UK VAT rate** (a UK supplier's digital
+service to an Australian business is outside the scope of UK VAT).
+
+⚠ **The restricted key needs a FOURTH permission before any add-on can be sold**
+— **Subscriptions: Write** (it covers listing the subscription and adding or
+removing its items). The three in §7 were derived from the three calls the
+client made; `setAddOn` makes two more (`GET /v1/subscriptions`,
+`POST`/`DELETE /v1/subscription_items`). Without it the Add button fails with
+the "Stripe refused" detail (§9). This is also why the Document Vault add-on
+was never sellable from the product: the call existed with no button and no
+permission.
+
 ## 3. VAT: `rate` or `automatic`, and why the default is `rate`
 
 `STRIPE_TAX=rate` attaches the explicit 20% GB rate through

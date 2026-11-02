@@ -61,7 +61,7 @@ import { slug } from '../../lib/router';
  * section.
  */
 
-export const PORTAL_TABS = ['Home', 'Upload', 'Capture', 'Vault', 'Settings'] as const;
+export const PORTAL_TABS = ['Home', 'Upload', 'Capture', 'Vault', 'Tax', 'Settings'] as const;
 
 export type PortalTab = (typeof PORTAL_TABS)[number];
 
@@ -83,6 +83,8 @@ export const PORTAL_SECTIONS: Readonly<Record<PortalTab, readonly string[]>> = {
   // The drive consent comes back to `/portal/vault?code=…`, a QUERY on the tab's
   // own address, which needs no segment and no new route.
   Vault: [],
+  // D52 — the tax estimate add-on. No sections.
+  Tax: [],
   // The client's own settings. `People` is why this exists — see the header.
   Settings: ['Business', 'Plan', 'Sending', 'Notifications', 'People', 'Security'],
 };

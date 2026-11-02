@@ -619,6 +619,16 @@ const EnvSchema = z.object({
   // environment, and making it a boot gate would have taken staging down the
   // moment the add-on was added to the code and before it was added to Stripe.
   STRIPE_VAULT_PRICE_ID: z.string().default(''),
+  // D53 — the AU plan, A$17/month, `tax_behavior=exclusive`, for a business
+  // whose country is AU. Empty = AU clients stay on the GBP plan above (the
+  // behaviour before D53), so adding this to the code cannot break checkout.
+  STRIPE_PRICE_ID_AUD: z.string().default(''),
+  // D52 — the tax estimate add-on: £15/month (GBP) and A$30/month (AUD), each
+  // added as a second ITEM like the vault. Empty = this deployment does not
+  // sell it (every client's `taxEstimateAddon` is written false), for the same
+  // reason the vault price is not a boot gate.
+  STRIPE_TAX_ESTIMATE_PRICE_ID: z.string().default(''),
+  STRIPE_TAX_ESTIMATE_PRICE_ID_AUD: z.string().default(''),
 
   // How VAT is added on top of that net price.
   //

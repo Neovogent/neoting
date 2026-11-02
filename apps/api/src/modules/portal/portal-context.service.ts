@@ -202,6 +202,10 @@ export class PortalContextService {
           website: true,
           vatRegistered: true,
           vatNumber: true,
+          // D52/D53: which prices and tax forms apply, and which add-ons are on.
+          countryCode: true,
+          vaultAddon: true,
+          taxEstimateAddon: true,
         },
       });
       if (business === null) throw contextUnavailable();
@@ -329,6 +333,7 @@ export class PortalContextService {
           // no contact and therefore cannot claim — there is nobody to owe.
           canSubmitExpenseClaims: acting?.canSubmitExpenseClaims ?? false,
           lastDocumentAt: latest?.createdAt.toISOString() ?? null,
+          ...(typeof business.countryCode === 'string' ? { countryCode: business.countryCode } : {}),
           subscription: toClientSubscription(business),
         },
         expiresAt: facts.expiresAt.toISOString(),
@@ -373,12 +378,19 @@ function toClientSubscription(business: {
   readonly subscriptionStatus: SubscriptionStatus | null;
   readonly plan: string | null;
   readonly subscriptionCurrentPeriodEnd: Date | null;
+  readonly vaultAddon?: boolean;
+  readonly taxEstimateAddon?: boolean;
 }): BusinessSubscription | null {
   if (business.subscriptionStatus === null) return null;
   return {
     status: business.subscriptionStatus,
     plan: business.plan,
     currentPeriodEnd: business.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
+    // D51/D52 — what the Plan section's add-on switches show; only when both
+    // columns were read, so an absent object never means "no add-ons".
+    ...(typeof business.taxEstimateAddon === 'boolean' && typeof business.vaultAddon === 'boolean'
+      ? { addOns: { taxEstimate: business.taxEstimateAddon, documentVault: business.vaultAddon } }
+      : {}),
   };
 }
 

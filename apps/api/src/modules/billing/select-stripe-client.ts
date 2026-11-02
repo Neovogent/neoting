@@ -25,5 +25,8 @@ export function selectStripeClient(env: Env, clock?: Clock): StripeClient {
     taxMode: env.STRIPE_TAX,
     taxRateId: env.STRIPE_TAX_RATE_ID,
     vaultPriceId: env.STRIPE_VAULT_PRICE_ID,
+    priceIdAud: env.STRIPE_PRICE_ID_AUD,
+    taxEstimatePriceId: env.STRIPE_TAX_ESTIMATE_PRICE_ID,
+    taxEstimatePriceIdAud: env.STRIPE_TAX_ESTIMATE_PRICE_ID_AUD,
   });
 }

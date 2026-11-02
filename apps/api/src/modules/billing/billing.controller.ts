@@ -1,11 +1,13 @@
 import { Body, Controller, Headers, HttpCode, HttpStatus, Inject, Post } from '@nestjs/common';
 
-import type { HostedBillingSession } from '@neoting/contracts/model';
+import type { AddOnAccepted, HostedBillingSession } from '@neoting/contracts/model';
 import {
   createBillingPortalSessionBody,
   createBillingPortalSessionHeader,
   createCheckoutSessionBody,
   createCheckoutSessionHeader,
+  setBillingAddOnBody,
+  setBillingAddOnHeader,
 } from '@neoting/contracts/zod';
 
 import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
@@ -108,6 +110,34 @@ export class BillingController {
    * this rule would be a second place for it to be right, and one of the two
    * would eventually not be.
    */
+  /**
+   * `POST /billing/add-ons` — the client switches a paid add-on on or off (D51,
+   * D52). ⚠ **Portal bearer only**: it changes what the client's card is
+   * charged, so the accountant's cookie path is refused before anything else
+   * is read. The bearer then goes through the same `principalFor` as checkout,
+   * which is where the business match and the billing authority live.
+   */
+  @Post('add-ons')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async addOn(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('authorization') authorization: string | undefined,
+  ): Promise<AddOnAccepted> {
+    if (authorization === undefined || authorization.trim() === '') {
+      throw new AppException(
+        'NT-PRM-001',
+        HttpStatus.FORBIDDEN,
+        'Only the client can change their add-ons',
+        "An add-on changes what the client's card is charged, so the client adds it from their own portal.",
+      );
+    }
+    const key = parseIdempotencyKey(setBillingAddOnHeader, idempotencyKey);
+    const parsed = parseBoundary(setBillingAddOnBody, body, 'request body');
+    const ctx = await this.principalFor(parsed.businessId, authorization);
+    return this.service.setAddOn(ctx, parsed, key);
+  }
+
   private async principalFor(businessId: string, authorization: string | undefined): Promise<ScopeContext> {
     if (authorization === undefined || authorization.trim() === '') {
       // `require()` resolves the context inside Nest's pipeline, so a bad one

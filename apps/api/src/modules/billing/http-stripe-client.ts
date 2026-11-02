@@ -7,7 +7,7 @@ import type {
   CreateCustomerRequest,
   CreatePortalSessionRequest,
   HostedSession,
-  SetVaultAddOnRequest,
+  SetAddOnRequest,
   StripeClient,
 } from './stripe-client.js';
 
@@ -52,6 +52,11 @@ export interface HttpStripeConfig {
   readonly taxRateId: string;
   /** The £2/month Document Vault add-on price (D51). Empty = this deployment does not sell it. */
   readonly vaultPriceId: string;
+  /** D53 — the A$17/month plan for an AU business. Empty = AU clients use `priceId`. */
+  readonly priceIdAud?: string;
+  /** D52 — the tax estimate add-on, £15/month and A$30/month. Empty = not sold. */
+  readonly taxEstimatePriceId?: string;
+  readonly taxEstimatePriceIdAud?: string;
 }
 
 /**
@@ -158,7 +163,7 @@ export class HttpStripeClient implements StripeClient {
         // ⚠ NO `payment_method_types`. Omitting it is what lets Stripe show the
         // methods each client is actually eligible for, configured from the
         // dashboard; hardcoding `['card']` locks out everything else forever.
-        line_items: [{ price: this.config.priceId, quantity: 1 }],
+        line_items: [{ price: this.planPriceFor(request.country), quantity: 1 }],
         // The promotion-code box on Stripe's hosted page.
         //
         // ⚠ Without this a coupon can EXIST and still be unusable — there is
@@ -220,10 +225,10 @@ export class HttpStripeClient implements StripeClient {
           // Merged INTO subscription_data rather than spread beside it: a
           // second `subscription_data` key would replace this one wholesale
           // and take the metadata with it.
-          ...this.subscriptionTaxParams(),
+          ...(this.billsInAud(request.country) ? {} : this.subscriptionTaxParams()),
         },
         integration_identifier: INTEGRATION_IDENTIFIER,
-        ...this.sessionTaxParams(),
+        ...(this.billsInAud(request.country) ? {} : this.sessionTaxParams()),
       },
       request.idempotencyKey,
     );
@@ -250,13 +255,15 @@ export class HttpStripeClient implements StripeClient {
    * save this on its own: the "add" and the "remove" are different calls to
    * different paths, so the guard has to be the read.
    */
-  async setVaultAddOn(request: SetVaultAddOnRequest): Promise<void> {
-    if (this.config.vaultPriceId === '') {
+  async setAddOn(request: SetAddOnRequest): Promise<void> {
+    const priceId = this.addOnPriceFor(request.addOn, request.country);
+    const name = request.addOn === 'DOCUMENT_VAULT' ? 'Document Vault' : 'tax estimate';
+    if (priceId === '') {
       throw new AppException(
-        'NT-BIL-003',
+        'NT-BIL-004',
         HttpStatus.PAYMENT_REQUIRED,
-        'Document Vault not available',
-        'The Document Vault add-on is not configured on this deployment.',
+        'Add-on not available',
+        `The ${name} add-on is not available on this deployment.`,
       );
     }
 
@@ -269,11 +276,11 @@ export class HttpStripeClient implements StripeClient {
         'NT-BIL-001',
         HttpStatus.PAYMENT_REQUIRED,
         'No active subscription',
-        'This client business has no live subscription, so the Document Vault add-on cannot be added to it.',
+        `This client business has no live subscription, so the ${name} add-on cannot be added to it.`,
       );
     }
 
-    const existing = (subscription.items?.data ?? []).find((item) => item.price?.id === this.config.vaultPriceId);
+    const existing = (subscription.items?.data ?? []).find((item) => item.price?.id === priceId);
 
     if (request.enabled) {
       // Already on. Returning quietly rather than adding a duplicate line is
@@ -283,7 +290,7 @@ export class HttpStripeClient implements StripeClient {
         'subscription_items',
         {
           subscription: subscription.id,
-          price: this.config.vaultPriceId,
+          price: priceId,
           quantity: 1,
           // Bill the part-month now rather than at renewal, so what the client
           // is charged matches the moment the feature switched on.
@@ -292,7 +299,8 @@ export class HttpStripeClient implements StripeClient {
           // subscription; on an ITEM it is rejected outright. Same 20% GB rate,
           // different parameter name — which is why this does not reuse
           // `subscriptionTaxParams()` even though the value is identical.
-          ...(this.config.taxMode === 'rate' ? { tax_rates: [this.config.taxRateId] } : {}),
+          // D53: no UK VAT on an AU business's A$ items.
+          ...(this.config.taxMode === 'rate' && !this.billsInAud(request.country) ? { tax_rates: [this.config.taxRateId] } : {}),
         },
         request.idempotencyKey,
       );
@@ -315,6 +323,24 @@ export class HttpStripeClient implements StripeClient {
    * `env.ts` refuses to boot `rate` without an id, because the failure mode of
    * a missing one is charging 8.50 gross and absorbing the VAT.
    */
+  /**
+   * D53: an AU business is billed in A$ when the A$ plan is configured. One
+   * Stripe subscription cannot mix currencies, so this one answer decides the
+   * plan price, the add-on price and whether UK VAT applies.
+   */
+  private billsInAud(country: 'GB' | 'AU' | undefined): boolean {
+    return country === 'AU' && (this.config.priceIdAud ?? '') !== '';
+  }
+
+  private planPriceFor(country: 'GB' | 'AU' | undefined): string {
+    return this.billsInAud(country) ? (this.config.priceIdAud as string) : this.config.priceId;
+  }
+
+  private addOnPriceFor(addOn: SetAddOnRequest['addOn'], country: 'GB' | 'AU'): string {
+    if (addOn === 'DOCUMENT_VAULT') return this.billsInAud(country) ? '' : this.config.vaultPriceId;
+    return this.billsInAud(country) ? (this.config.taxEstimatePriceIdAud ?? '') : (this.config.taxEstimatePriceId ?? '');
+  }
+
   private sessionTaxParams(): Record<string, unknown> {
     return this.config.taxMode === 'automatic' ? { automatic_tax: { enabled: true } } : {};
   }

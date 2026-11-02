@@ -325,6 +325,8 @@ export interface BusinessPortalPlan {
   readonly plan: string | null;
   /** ISO instant. The renewal date a settings screen shows. */
   readonly currentPeriodEnd: string | null;
+  /** D51/D52 — the paid add-ons on the subscription, as the webhook last wrote them. */
+  readonly addOns: { readonly taxEstimate: boolean; readonly documentVault: boolean };
 }
 
 /** What the business record already holds — the details step's prefill. */
@@ -377,6 +379,8 @@ export interface BusinessPortalHome {
    * question and stays the only thing gating the upload button.
    */
   readonly plan: BusinessPortalPlan | null;
+  /** D53 — GB or AU: which prices and which tax forms apply. GB when an older server says nothing. */
+  readonly countryCode: 'GB' | 'AU';
   /** The session's own expiry, ISO. The bearer stops working at this instant. */
   readonly expiresAt: string | null;
 }
@@ -457,8 +461,10 @@ const portalHomeShape = z.object({
           ]),
           plan: z.string().nullish(),
           currentPeriodEnd: z.string().nullish(),
+          addOns: z.object({ taxEstimate: z.boolean(), documentVault: z.boolean() }).nullish(),
         })
         .nullish(),
+      countryCode: z.string().nullish(),
     })
     .nullish(),
 });
@@ -514,7 +520,9 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
             status: body.summary.subscription.status,
             plan: body.summary.subscription.plan ?? null,
             currentPeriodEnd: body.summary.subscription.currentPeriodEnd ?? null,
+            addOns: body.summary.subscription.addOns ?? { taxEstimate: false, documentVault: false },
           },
+    countryCode: body.summary.countryCode === 'AU' ? 'AU' : 'GB',
     expiresAt: body.expiresAt ?? null,
   };
 }

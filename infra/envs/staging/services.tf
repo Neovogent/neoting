@@ -464,6 +464,15 @@ locals {
     # ⚠ LIVE-mode price, because this deployment's Stripe key is `rk_live_`
     # (see apps/api/CLAUDE.md) and a test-mode price id would simply not resolve.
     { name = "STRIPE_VAULT_PRICE_ID", value = "price_1UIuMOGMdHp4NCWv0YYB66q3" },
+    # D52 / D53 (2 Nov 2026) — EMPTY until the three LIVE prices exist, and empty
+    # is a valid deployment: AU clients stay on the GBP plan, and the tax
+    # estimate add-on is simply not sold (every client's flag is written false).
+    # Create them in the live account (docs/runbooks/stripe-billing.md §2), paste
+    # the ids here, then apply: the A$17/month AU plan, and the tax estimate at
+    # GBP 15.00/month and A$30.00/month, all tax_behavior=exclusive.
+    { name = "STRIPE_PRICE_ID_AUD", value = "" },
+    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID", value = "" },
+    { name = "STRIPE_TAX_ESTIMATE_PRICE_ID_AUD", value = "" },
     { name = "STRIPE_TAX", value = "rate" },
     # The 20% GB rate, exclusive: GBP 8.50 is the NET price and VAT goes on top
     # (D48). `env.ts` refuses to boot on `STRIPE_TAX=rate` with this empty,

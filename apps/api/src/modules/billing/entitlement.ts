@@ -44,6 +44,8 @@ export interface SubscriptionFacts {
   readonly subscriptionCurrentPeriodEnd?: Date | null;
   /** D51 — the £2/month Document Vault add-on, written only by the Stripe webhook. */
   readonly vaultAddon?: boolean | null;
+  /** D52 — the tax estimate add-on (£15 / A$30), written only by the Stripe webhook. */
+  readonly taxEstimateAddon?: boolean | null;
 }
 
 /** Pure, and the whole rule. Exported so a test pins all nine cases rather than the two that are convenient. */
@@ -135,5 +137,19 @@ export function toBusinessSubscription(facts: SubscriptionFacts): BusinessSubscr
     status: facts.subscriptionStatus,
     plan: facts.plan ?? null,
     currentPeriodEnd: facts.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
+    // Only when the caller read both columns — an absent object says "not
+    // read here", which is different from "no add-ons".
+    ...(facts.vaultAddon != null && facts.taxEstimateAddon != null
+      ? { addOns: { taxEstimate: facts.taxEstimateAddon, documentVault: facts.vaultAddon } }
+      : {}),
   };
+}
+
+/**
+ * Whether this business may see the tax estimate (D52). Same two conditions as
+ * the vault, for the same reason: the add-on flag alone would stay true on a
+ * cancelled subscription until the webhook's next write.
+ */
+export function mayUseTaxEstimate(facts: SubscriptionFacts): boolean {
+  return mayIngest(facts.subscriptionStatus) && facts.taxEstimateAddon === true;
 }

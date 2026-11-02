@@ -171,6 +171,8 @@ model Business {
   /// BOTH this flag and an entitled `subscription_status`, because an add-on on
   /// a lapsed subscription is not a paid feature. See `billing/entitlement.ts`.
   vaultAddon                   Boolean             @default(false) @map("vault_addon")
+  /// D52 — the tax estimate add-on (£15 / A$30 a month). Written only by the Stripe webhook, like vaultAddon.
+  taxEstimateAddon             Boolean             @default(false) @map("tax_estimate_addon")
   /// The Stripe price/plan reference this business is on. Free text, not an
   /// enum: it is Stripe's identifier, and pinning our own enum to a value only
   /// Stripe mints would make a dashboard change a schema change.

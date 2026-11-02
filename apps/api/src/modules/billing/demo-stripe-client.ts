@@ -65,7 +65,7 @@ export class DemoStripeClient implements StripeClient {
    * 402s). Pretending otherwise here would put a second, fake writer of
    * entitlement into the one module whose whole rule is that there is one.
    */
-  async setVaultAddOn(): Promise<void> {
+  async setAddOn(): Promise<void> {
     return;
   }
 }
