@@ -1,12 +1,63 @@
 # Neoting (Neo Accounting, UK) — engineering handover
 
-**Written:** 2026-09-07 · **Branch audited:** `item-54-tasks`, including the uncommitted item-54 working tree · **Audience:** the AI assistant and product team planning an Australian version and an MVP on top of this codebase.
+**Written:** 2026-09-07 · **Updated:** 2026-10-14 (see §0, and the in-place corrections it lists) · **Branch audited:** `item-54-tasks`, including the uncommitted item-54 working tree · **Audience:** the AI assistant and product team planning an Australian version and an MVP on top of this codebase.
 
 **Status legend:** `DONE` (built, wired, tested) · `PARTIAL` (works, with named gaps) · `STUB` (UI or interface exists, nothing real behind it) · `MISSING` (not present).
 
 **Governing documents, in reading order:** `CLAUDE.md` (repo entry point) → `docs/Source_Of_Truth.md` (scope, v1.6) → `docs/Engineering_Governance.md` (engineering rules, v1.6) → `docs/Team_Engineering_Guideline.md`. Conflict rule: Source of Truth wins on scope, Governance wins on process. The release being built is **Initial Delivery (ID)**, not v1 — a narrower product with a complete spine, with its own scope fence (SoT §24, decisions D39–D49).
 
 **Already in the repo and directly relevant to the Australia work:** `docs/research/australia-market-entry.md` — 333 lines, dated 3 Sep 2026, a verified gap analysis with regulatory citations, a UK→AU terminology table, a competitive survey, and a tiered gap list with effort estimates. Section 13 below is grounded in it and should not be re-derived from scratch.
+
+---
+
+# 0. Addendum — what changed between 7 September and 14 October 2026
+
+Written 14 Oct 2026 from a read-only audit of the live AWS account (252959251643, eu-west-2), the staging logs and the repository. Where the body of this document now says something untrue, the line has been corrected in place and marked *(corrected 14 Oct 2026)*; everything else below is additive. Sections 13 and 14 were not re-derived.
+
+## 0.1 Decisions and releases since the audit
+
+| | |
+|---|---|
+| **Initial Delivery has shipped** (SoT v1.7, 15 Sep). The SoT no longer describes ID as the release being built. | `docs/Source_Of_Truth.md` |
+| **D50 supersedes D42 — the ledger lane is live.** Xero, QuickBooks Online and FreeAgent each accept a bill with the source PDF attached; the read-back check (#314) warns when the vendor stored different figures. **Proven only on sandbox / Xero's Demo Company** (`LEDGER_SANDBOX=true` on staging). Sage reached its consent screen on 15 Sep; no bill has been posted. §5.13 below is corrected accordingly. | `publishing/ledger/`, PRs #300–#314 |
+| **D51 — the Document Vault add-on** (£2/month on the £8.50): the client's own documents in the portal, searchable, ZIP download, copy to Google Drive. OneDrive greyed until a Microsoft app registration exists. ZIP + Drive proven on a local build (21–23 Sep); on staging only the route and settings are confirmed. *Not* SoT §10's practice vault, which stays unbuilt. | `archive-vault-search/CLAUDE.md` |
+| **Statement-request chase** (engine (c), first real use, 2 Sep) and the **real SMS wire** (`SMS_SENDER=aws`, AWS End User Messaging, UK long code +44 7441 471756, registration complete, $50/month spend cap). | `chase/CLAUDE.md` |
+| **Chase delivery mode flipped twice.** `aws` from 11 Sep; reverted to `email+sms` on 14 Oct (#316) after statement requests to an email-only contact refused silently at approve. #317 (merged and deployed 14 Oct) makes `aws` fall back to email for a contact with no mobile; the flip back to `aws` is one value in `infra/envs/staging/services.tf` and is the owner's call. | #316, #317 |
+| **Web hosting moved from Vercel to CloudFront + S3** (`deploy-web.yml`, bucket `nt-staging-web-…`, distribution `E24D6MM4QETYOZ`, aliases `neoacc.neovogent.com` and `app.neoting.neovogent.com`). §2.1, §3.1 and §10 are corrected. | `.github/workflows/deploy-web.yml` |
+| **Email intake has an ECS service** (`nt-staging-email-intake`, L4 fix of 8 Sep) — see §0.3 for why it is not running. | `infra/envs/staging/services.tf` |
+| **Production was torn down in October.** Only `nt-prod-*` task-definition revision 1 and the RDS snapshot `nt-prod-final-2026-10` remain. Staging (`nt-staging`) is the only environment and serves the public domain. | AWS |
+| **First real accounting practice signed up on 14 Oct 2026** (SME Outsourcing). Until then every tenant was a test. | staging logs |
+
+## 0.2 Live environment, as measured 14 Oct 2026
+
+ECS `nt-staging`: api 2 tasks (0.25 vCPU / 1 GB, ARM64), workers 1, email-intake 0 of 1 wanted, clamav and unleash scaled to 0. RDS Postgres 16.14 `db.t4g.small`, 50 GB, encrypted, single-AZ, 35-day backups, ~4.5 % CPU. ElastiCache `cache.t4g.micro`, TLS + at-rest encryption. 35 CloudWatch alarms, none firing. SES production access (50k/day), domain verified, DMARC `p=none`. Bedrock usage over 45 days: 918 Opus 4.6 calls (0 client errors), 156 Sonnet 4.6 (6 errors); Textract 106 successful calls. Spend: Neoting-tagged $258 (Aug), $120 (Sep), $50 (1–14 Oct); budgets `neoting-monthly-1300` and `neoting-pot-8000` well under. Stripe is **live mode on the personal account** (launch blocker L1 of the 8 Sep walk, still open).
+
+## 0.3 Operational defects found 14 Oct 2026
+
+1. **`nt-staging-email-intake` cannot start.** The service was pinned by hand to task definition revision 2 (image `nt/workers:665a12a`); the deploy pipeline (stage 9) never updates this service and Terraform `ignore_changes` it, so it stayed on revision 2 while the ECR lifecycle rule (keep 30) deleted that image. Every placement fails `CannotPullContainerError`. Mail to `doc@` is still written to `inbound/`; nothing consumes it. Fix: a revision on the current image, and add the service to stage 9 so it cannot fall behind again. Replace in place (`0/100`) — two pollers race the same prefix.
+2. **Worker start-up logs print the Redis connection string including the password** (`ingest worker starting (redis rediss://:…@…)`). Anyone with CloudWatch read can see it. Stop logging it, then rotate the auth token.
+3. **ElastiCache eviction policy is `volatile-lru`.** BullMQ warns on every boot that it must be `noeviction`; under memory pressure queued jobs can be silently dropped.
+4. **Stripe webhook crashes for one practice** (`cmtbxk96…`): `no SYSTEM actor for practice … refusing to persist an orphaned document`, ~10 times 28 Sep–6 Oct. That practice predates the signup fix in §"Every practice needs a SYSTEM actor" and the backfill has not been run for it.
+5. **CI stages 1–8 are DISABLED** on `check.yml` — the readiness probe skips typecheck/lint/test/build/e2e/security and stage 9 deploys anyway. A green `check` on `main` does not mean the suites ran.
+6. Leftovers: `nt-prod-*` task definitions, `tmp-oidc-probe` / `tmp-oidc-env-probe` workflows, `TWILIO_*` secrets with no Twilio code.
+
+## 0.4 Work opened 14 Oct 2026 (all DRAFT, none merged, none deployed)
+
+| PR | Closes / needs | What it does |
+|---|---|---|
+| **#319** `feat(chat): draw statements as grounded tables and charts` | #233, #231 — both contract halves were already on `main` (#239/#253/#254); this adds the missing join. No LAW change. | Chat answers "show me X's statements" with a server-built table or verdict bar chart; `PROMPT_VERSION` bumped, so the owner must re-record cassettes and the live eval (~50 calls). |
+| **#320** `feat(banking): serve supplier-statement reconciliation from the API` | contract-change **#318** | `GET /v1/supplier-statements` computes MATCHED / MISSING / UNREADABLE per line with the product's one matching ruler; the screen reads it. **Nothing yet creates a supplier statement**, so the live tab is honest but empty until a write lane is decided. §5.8 is still accurate about that. |
+| **#321** `feat(ingestion): real ClamAV scan + quarantine behind VIRUS_SCANNER` | — (no LAW, no dependency) | clamd INSTREAM client over `node:net`, fail-closed; infected originals to the quarantine bucket; ClamAV ARM64 image + Terraform (service discovery, SG, IAM); runbook `docs/runbooks/virus-scanning.md`. **Merging applies staging Terraform** (`TERRAFORM_AUTO_APPLY=true`), which is why it is a draft. Staging stays `VIRUS_SCANNER=fixture` until the runbook's switch-on steps are run. |
+
+## 0.5 Status corrections to the §5 inventory
+
+| § | Was | Now |
+|---|---|---|
+| 5.3 Email intake | `DONE` | `DONE` in code; **service down** (§0.3 item 1) |
+| 5.9 Chase delivery | SMS `DONE` for chases | wire works; staging on email; SMS off until the owner flips it |
+| 5.13 Integrations | `STUB` | `PARTIAL` — Xero/QBO/FreeAgent write bills with attachments on sandbox books; Sage unproven; OAuth exists (`common/oauth/`) |
+| 5.19 Billing | `DONE` | `DONE`, but live on the wrong Stripe account (L1) |
+| 11.1 item 4 "No real ledger adapter" | open | superseded by D50 |
 
 ---
 
@@ -47,7 +98,7 @@ Neoting is a chat-first document-to-bookkeeping platform for UK accounting pract
 | Antivirus | ClamAV defined in Terraform — **interface only in code** | `fixtureVirusScanner` matches the EICAR string and nothing else | `.../sanitisation/virus-scan.ts`, `infra/envs/staging/clamav.tf` |
 | Auth | Own implementation: scrypt passwords, HMAC stateless session cookie, TOTP via `otplib` 13, separate OTP portal sessions | no Auth0, no Cognito | `apps/api/src/modules/auth-tenancy/` |
 | Contracts | OpenAPI 3 → orval-generated Zod schemas, TS models, React-Query client | 10,543-line spec, 76 paths | `packages/contracts/openapi.yaml` |
-| Hosting | **API + workers:** AWS ECS Fargate, ARM64/Graviton, behind an ALB, `eu-west-2`. **Web:** Vercel static, with a `/v1/*` rewrite to the API | `infra/envs/{staging,prod}/`, `vercel.json`, `apps/api/Dockerfile` |
+| Hosting | **API + workers:** AWS ECS Fargate, ARM64/Graviton, behind an ALB, `eu-west-2`. **Web:** static build in S3 behind CloudFront, which also fronts `/v1/*` to the ALB *(corrected 14 Oct 2026 — was Vercel; `vercel.json` is a leftover)* | `infra/envs/{staging,prod}/`, `.github/workflows/deploy-web.yml`, `apps/api/Dockerfile` |
 | IaC | Terraform — `account`, `staging`, `prod` envs plus shared modules | `infra/` |
 | CI/CD | GitHub Actions: a nine-stage `check` workflow fronted by a readiness probe, plus `deploy-web.yml` and `terraform.yml` | `.github/workflows/` |
 | Containerisation | Docker Compose locally (postgres, redis, minio, minio-init, mailhog, migrate, api, workers, web, unleash, unleash-init); one image, three commands, in production | `docker-compose.yml`, `apps/api/Dockerfile` |
@@ -96,11 +147,11 @@ Six workspace entries (`packages/ui`, `packages/tokens`, `packages/component-gra
 
 ```
                         ┌──────────────────────────────────────────────┐
-   accountant  ────────▶│  apps/web  (React SPA, Vercel)               │
+   accountant  ────────▶│  apps/web  (React SPA, CloudFront + S3)      │
    client      ────────▶│  /app workspace · /p/<token> portal ·        │
                         │  / landing · /legal                          │
                         └───────────────┬──────────────────────────────┘
-                                        │ HTTPS  /v1/*  (Vercel rewrite → ALB)
+                                        │ HTTPS  /v1/*  (CloudFront → ALB)
                                         ▼
    Meta WhatsApp ──webhook──▶┌────────────────────────────────────────┐
    Stripe        ──webhook──▶│  apps/api  (NestJS on ECS Fargate)     │
@@ -474,7 +525,7 @@ Paths: `apps/api/src/modules/auth-tenancy/businesses.service.ts`, `.../clients-t
 | Client portal upload | `DONE` | `portal/portal-upload.service.ts`; staged files, explicit Upload button, optional note |
 | Portal camera capture | `DONE` | `apps/web/src/views/business/portalCamera.ts`, `LivePortalCapture.tsx` |
 | Chat upload | `DONE` | `apps/web/src/components/ChatUpload.tsx` + a decision card that asks what the document is before ingesting |
-| Email intake | `DONE` | `ingestion-routing/email/inbound/`; SES→S3 or MailHog; known senders only (D45) |
+| Email intake | `DONE` in code · **service not running** *(corrected 14 Oct 2026, §0.3)* | `ingestion-routing/email/inbound/`; SES→S3 or MailHog; known senders only (D45); ECS service `nt-staging-email-intake` pinned to a deleted image |
 | WhatsApp | `PARTIAL` | webhook + routing `DONE`; media fetch is `MEDIA_FETCH=fixture` by default and needs a Meta System User token to be real |
 | SMS-portal link | `DONE` | `chase/portal-link.ts` + `portal/` OTP |
 | Structured import (CSV/XLSX) | `PARTIAL` | `imports` table + `apps/web/src/lib/tableImport.ts` + `spreadsheet.ts`; bank statements go through the real server path, other structured imports are client-side only |
@@ -594,18 +645,18 @@ There is **no tax computation** anywhere: no VAT return, no rate table, no recla
 - Boards and counters: Clients board, Inboxes, Approvals queue, Bank screen, Chases board, `PipelineStats`. `GET /v1/documents/counts` is the one real aggregate endpoint.
 - **No financial reports at all** — no P&L, no balance sheet, no VAT summary, no aged creditors. Correctly so: the product does not hold a ledger.
 
-## 5.13 Accounting-software integrations — `STUB`
+## 5.13 Accounting-software integrations — `PARTIAL` *(corrected 14 Oct 2026; was `STUB`)*
 
 | System | Read | Write | Status | Notes |
 |---|---|---|---|---|
-| Xero | ✗ | ✗ | `STUB` | `IntegrationKind.XERO` + `DemoXeroAdapter` (no socket). `XERO_CLIENT_ID/SECRET` unused |
-| QuickBooks | ✗ | ✗ | `STUB` | Enum value only. `INTUIT_CLIENT_ID/SECRET` unused |
-| Sage | ✗ | ✗ | `STUB` | Enum value only |
-| FreeAgent | ✗ | ✗ | `STUB` | Enum value only |
+| Xero | ✓ accounts, contacts, tax rates | ✓ bill (ACCPAY invoice) + PDF attachment | `DONE` on **Demo Company** | OAuth + token store in `common/oauth/`; adapter in `publishing/ledger/`. Xero has no sandbox; live books untested |
+| QuickBooks Online | ✓ accounts, vendors, tax codes + rates (CDC deltas) | ✓ vendor, bill, attachment | `DONE` on **sandbox** | Tax code derived from the document; reverse-charge codes never selected (#309–#313) |
+| FreeAgent | ✓ company, contacts, categories, bank accounts | ✓ contact, bill | `DONE` on **sandbox** | Gross-on-item money shape (`62daf0c`, `915a464`) |
+| Sage Business Cloud | ✗ | ✗ | `STUB` | Consent screen reached 15 Sep; nothing read or written since |
 | **VT Transaction+** | ✗ | **CSV file, `DONE`** | `DONE` | `exports-public-api/emitters/vt/` — Universal Input Sheet, `DD/MM/YYYY` cells, magnitudes with a `Type` code (`PIN`/`PCR`/`SIN`/`SCR`/`PAY`/`CHQ`/`REC`), `Analysis account` carrying the ledger prefix |
 | Generic CSV | ✗ | **CSV file, `DONE`** | `DONE` | `emitters/generic-csv/` — canonical signs, one row per analysis line, 11 columns including `Source code` and `Source URL` |
 
-Sync frequency: **none — export is user-initiated.** Auth flow: **none — no OAuth anywhere.** The `LedgerAdapter` interface (`publishing/ledger-adapter.ts`) is the real seam a Xero/QBO adapter would drop into, and it already encodes two rules a future adapter must honour: never hold a tenant transaction across an external call, and a per-item failure is a result, not a throw.
+Sync frequency: reference lists refresh on connect, on Sync, and by a 12-hourly worker sweep; a publish is still user-initiated through Review → Approve. Auth flow: OAuth 2 per vendor (`common/oauth/`), callbacks on `api.neoting.neovogent.com`. `LEDGER_SANDBOX=true` on staging selects the sandbox hosts for QBO and FreeAgent. *(corrected 14 Oct 2026)* The `LedgerAdapter` interface (`publishing/ledger-adapter.ts`) is the real seam a Xero/QBO adapter would drop into, and it already encodes two rules a future adapter must honour: never hold a tenant transaction across an external call, and a per-item failure is a result, not a throw.
 
 ## 5.14 Dext / other capture-tool integrations — `MISSING`
 
@@ -955,7 +1006,7 @@ There are **no `it.skip`, `test.skip` or `.todo` tests** anywhere.
 
 ## 10.3 CI status
 
-`.github/workflows/check.yml` — a nine-stage pipeline fronted by a **readiness probe** that inspects every workspace `package.json` and classifies a script as real only if it exists and does not start with `echo`. A stage with no suite behind it is skipped and labelled `NOT IMPLEMENTED`, and every run prints a debt table naming the stage, its governance clause and the condition that turns it on. A stage that *is* implemented treats Turbo's "No tasks were executed" as a failure. Draft PRs are skipped; `pull_request` runs cancel in progress, pushes to `main` queue. Branch protection pins the required check to the literal job name `check` (`.github/scripts/apply-branch-protection.sh`). Two more workflows: `deploy-web.yml` (Vercel), `terraform.yml`.
+`.github/workflows/check.yml` — a nine-stage pipeline fronted by a **readiness probe** that inspects every workspace `package.json` and classifies a script as real only if it exists and does not start with `echo`. A stage with no suite behind it is skipped and labelled `NOT IMPLEMENTED`, and every run prints a debt table naming the stage, its governance clause and the condition that turns it on. A stage that *is* implemented treats Turbo's "No tasks were executed" as a failure. Draft PRs are skipped; `pull_request` runs cancel in progress, pushes to `main` queue. Branch protection pins the required check to the literal job name `check` (`.github/scripts/apply-branch-protection.sh`). Two more workflows: `deploy-web.yml` (S3 + CloudFront invalidation, runs after `check`), `terraform.yml` (auto-applies on `main`, `TERRAFORM_AUTO_APPLY=true`). *(corrected 14 Oct 2026)*
 
 ⚠ **A saved memory from this environment records that CI checks are currently DISABLED locally — a green result may mean nothing ran. Verify the live GitHub Actions state before trusting it.**
 
@@ -989,7 +1040,7 @@ There are **no `it.skip`, `test.skip` or `.todo` tests** anywhere.
 
 - **Auth:** scrypt passwords with a burn-hash against timing enumeration; HMAC-signed stateless session cookie; TOTP (RFC 6238) with single-use recovery codes; sign-in throttling (`sign-in-throttle.ts`) with rate-limit headers; portal OTP with attempt counting and lockout (`portal/otp-attempts.ts`); five distinct portal failures collapse into one `NT-OTP-001` to avoid an enumeration oracle.
 - **Tenancy:** Postgres RLS, forced, with a non-superuser non-bypassing application role and a boot-time assertion that it stays that way.
-- **Encryption in transit:** HTTPS via ALB and Vercel; VPC endpoints for AWS services (`infra/*/endpoints.tf`).
+- **Encryption in transit:** HTTPS via CloudFront and ALB; VPC endpoints for AWS services (`infra/*/endpoints.tf`).
 - **Encryption at rest:** customer-managed KMS keys for secrets and documents (`infra/envs/*/secrets.tf`, `modules/storage/`); RDS `storage_encrypted`; request-time encryption gating (ADR 0008).
 - **Secrets management:** AWS Secrets Manager, KMS-encrypted, injected into ECS task definitions; the execution role's `secretsmanager:GetSecretValue` is scoped to the named ARNs and its `kms:Decrypt` is conditioned on `kms:ViaService`. No secret is in the repo; `.env.example` holds names and blanks only.
 - **Input validation:** Zod at every boundary — controllers, job payloads, webhook receivers, portal endpoints, model outputs, adapter responses (`common/validation/parse-boundary.ts`).
@@ -1055,7 +1106,7 @@ Sources: code comments, `docs/reviews/MUBASHIR_REVIEW_NOTES.md` (67 numbered rev
 1. **Four of five chase detection engines do not exist.** `chase/detection.ts:12` — only `UNMATCHED_TRANSACTION`. `SUPPLIER_STATEMENT_GAP`, `STATEMENT_PERIOD_GAP`, `LEDGER_TXN_NO_ATTACHMENT`, `EXPECTED_RECURRING_MISSING` are enum values.
 2. **No scheduler anywhere.** `Chase.schedule` is never written; `ChaseState.REMINDED` and `ESCALATED` are unreachable; `scripts/purge-expired-trash.ts` must be run by hand; there is no cron, repeatable job or EventBridge rule in the repo.
 3. **Per-client chase suppression descriptors need a schema column** — `chase/suppression.ts:15`, a `DEMO-MOCK`, blocked on a LAW change.
-4. **No real ledger adapter.** `publishing/ledger-adapter.ts:10`, `demo-xero-adapter.ts:8`.
+4. ~~**No real ledger adapter.**~~ Superseded by D50 — see §0.1 and §5.13. The remaining gap is Sage, and live (non-sandbox) books for all four. *(corrected 14 Oct 2026)*
 5. **Two proposal kinds throw `ProposalNotImplementedError`** — `document.move-business` and `document.split` (`validation-dedupe/proposals/registry.ts`). Each needs its own issue.
 6. **`hideFinancialFields` is written and never enforced** when serving a document — `prisma/schema.prisma` (on both `invites` and `memberships`) calls this out: "an accepted setting that governs nothing… the redaction is owed."
 7. **`memberships.permissions` is populated and consulted by nothing** — `approvals/assert-can.ts`.
